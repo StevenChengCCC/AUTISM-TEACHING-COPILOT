@@ -35,3 +35,4 @@ def test_image_confirmation_persists_approved_assets():
     assert len(saved) == 1
     assert saved[0].id == 1
     assert saved[0].source_type == "searched"
+    assert saved[0].teacher_approved is True

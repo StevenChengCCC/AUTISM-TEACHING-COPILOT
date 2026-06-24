@@ -6,9 +6,14 @@ class ChildProfileCreate(BaseModel):
     age: int | None = None
     diagnosis_level: str | None = None
     attention_span_minutes: int | None = None
+    communication_mode: str | None = None
     communication_level: str | None = None
+    current_level: str = ""
     interests: list[str] = Field(default_factory=list)
     reinforcers: list[str] = Field(default_factory=list)
+    preferred_reinforcers: list[str] = Field(default_factory=list)
+    prompting_that_works: str = ""
+    avoid_notes: str = ""
     behavior_notes: str = ""
     notes: str = ""
 
@@ -17,6 +22,19 @@ class ChildProfileRead(ChildProfileCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class ProfileQuestion(BaseModel):
+    field: str
+    question: str
+    reason: str
+
+
+class ProfileCompletenessResult(BaseModel):
+    child_id: int
+    is_complete: bool
+    missing_fields: list[str] = Field(default_factory=list)
+    guided_questions: list[ProfileQuestion] = Field(default_factory=list)
 
 
 class TeachingGoalCreate(BaseModel):
@@ -65,6 +83,7 @@ class ImageCandidate(BaseModel):
     quality_score: int = 0
     license_info: str | None = None
     license_label: str | None = None
+    teacher_approved: bool = False
     reason: str | None = None
     generation_prompt: str | None = None
 
@@ -91,6 +110,7 @@ class LessonPlanRequest(BaseModel):
     goal_id: int | None = None
     target_skill: str
     duration_minutes: int = 25
+    print_formats: list[str] = Field(default_factory=lambda: ["a4", "letter"])
     selected_image_asset_ids: list[int] = Field(default_factory=list)
 
 
@@ -105,6 +125,7 @@ class LessonPlanResponse(BaseModel):
     generalization_plan: list[dict]
     reinforcement_plan: dict
     candidate_images: list[ImageCandidate] = Field(default_factory=list)
+    downloadable_card_pdf_links: dict[str, str] = Field(default_factory=dict)
     teacher_script: list[str]
     data_recording_sheet: dict
     session_notes_template: dict = Field(default_factory=dict)
@@ -130,3 +151,68 @@ class SessionRecordRead(SessionRecordCreate):
     mastery_level: int = 0
     progress_delta: int = 0
     confidence_score: int = 0
+
+
+class UploadedMaterialCreate(BaseModel):
+    child_id: int
+    title: str
+    material_type: str = "document"
+    source_path: str | None = None
+    extracted_text: str = ""
+
+
+class UploadedMaterialRead(UploadedMaterialCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: str = "uploaded"
+
+
+class OrganizationCreate(BaseModel):
+    name: str
+    external_ref: str | None = None
+
+
+class OrganizationRead(OrganizationCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class TeacherCreate(BaseModel):
+    organization_id: int | None = None
+    display_name: str
+    email: str | None = None
+    role: str = "teacher"
+
+
+class TeacherRead(TeacherCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class TeacherChildAccessCreate(BaseModel):
+    teacher_id: int
+    child_id: int
+    permission_level: str = "editor"
+
+
+class TeacherChildAccessRead(TeacherChildAccessCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class CurriculumContentCreate(BaseModel):
+    organization_id: int | None = None
+    title: str
+    content_type: str = "goal_template"
+    content_json: dict = Field(default_factory=dict)
+    status: str = "draft"
+
+
+class CurriculumContentRead(CurriculumContentCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int

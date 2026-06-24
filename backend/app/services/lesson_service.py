@@ -1,9 +1,10 @@
 import json
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.repositories.children import ChildProfileRepository
 from app.repositories.goals import TeachingGoalRepository
+from app.repositories.images import ImageAssetRepository, asset_to_candidate
 from app.repositories.lessons import LessonPackageRepository, SessionRecordRepository
 from app.domain.engines import (
     build_attention_segments,
@@ -18,6 +19,8 @@ from app.schemas.dto import (
     SessionRecordRead,
 )
 from app.services.profile_mapper import child_to_dict
+from app.services.profile_completeness_service import ProfileCompletenessService
+from app.services.printable_card_service import PrintableCardService
 
 
 class LessonService:
@@ -30,6 +33,7 @@ class LessonService:
         self.db = db
         self.children = ChildProfileRepository(db)
         self.goals = TeachingGoalRepository(db)
+        self.images = ImageAssetRepository(db)
         self.lessons = LessonPackageRepository(db)
         self.records = SessionRecordRepository(db)
 
@@ -37,15 +41,37 @@ class LessonService:
         child = self.children.get(req.child_id)
         if not child:
             raise NotFoundError("Child profile not found")
+        completeness = ProfileCompletenessService().check(child)
+        if not completeness.is_complete:
+            raise ValidationError(
+                "Child profile is incomplete. Answer guided questions before generating a teaching package.",
+                payload={"profile_completeness": completeness.model_dump()},
+            )
         goal = self.goals.get(req.goal_id) if req.goal_id is not None else None
         if req.goal_id is not None and not goal:
             raise NotFoundError("Teaching goal not found")
         if goal and goal.child_id != req.child_id:
             raise NotFoundError("Teaching goal does not belong to child profile")
+        if not req.selected_image_asset_ids:
+            raise ValidationError(
+                "Teacher-confirmed images are required before saving a teaching package.",
+                payload={
+                    "guided_action": "Run the image pipeline, select candidate images, confirm them, then generate the package."
+                },
+            )
+        selected_assets = self.images.get_approved_by_ids(req.selected_image_asset_ids)
+        if len(selected_assets) != len(set(req.selected_image_asset_ids)):
+            raise ValidationError(
+                "All selected image assets must exist and be teacher-approved.",
+                payload={
+                    "selected_image_asset_ids": req.selected_image_asset_ids,
+                    "approved_image_asset_ids": [asset.id for asset in selected_assets],
+                },
+            )
 
         profile = child_to_dict(child)
         interests = profile["interests"]
-        reinforcers = profile["reinforcers"]
+        reinforcers = profile["preferred_reinforcers"] or profile["reinforcers"]
         target_skill = goal.target_skill if goal else req.target_skill
         concept = (
             goal.concept if goal and goal.concept else self._infer_concept(target_skill)
@@ -76,7 +102,8 @@ class LessonService:
             segments=segments,
             generalization_plan=generalization_plan,
             reinforcement_plan=reinforcement_plan,
-            candidate_images=[],
+            candidate_images=[asset_to_candidate(asset) for asset in selected_assets],
+            downloadable_card_pdf_links={},
             teacher_script=teacher_script,
             data_recording_sheet=data_recording_sheet,
             session_notes_template=session_notes_template,
@@ -96,7 +123,15 @@ class LessonService:
             selected_image_asset_ids=req.selected_image_asset_ids,
             package_json=response.model_dump_json(),
         )
+        printable_links = PrintableCardService().generate_pdfs(
+            lesson=lesson,
+            assets=selected_assets,
+            concept=concept,
+            formats=req.print_formats,
+        )
+        self.lessons.update_printable_links(lesson, printable_links)
         response.id = lesson.id
+        response.downloadable_card_pdf_links = printable_links
         return response
 
     def create_record(self, req: SessionRecordCreate) -> SessionRecordRead:

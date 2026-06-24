@@ -37,6 +37,15 @@ export function LessonPackagePreviewPage({ lesson }: Props) {
       </div>
       <div className="card">
         <h2>Teacher Script</h2>
+        <div className="heroActions left">
+          {Object.entries(lesson.downloadable_card_pdf_links).map(
+            ([format, href]) => (
+              <a className="buttonLink" href={href} key={format}>
+                Download {format.toUpperCase()} Cards
+              </a>
+            ),
+          )}
+        </div>
         <ol>
           {lesson.teacher_script.map((line) => (
             <li key={line}>{line}</li>

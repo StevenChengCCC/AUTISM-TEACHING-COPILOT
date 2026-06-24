@@ -21,6 +21,7 @@ def asset_to_candidate(
         variation_type=asset.variation_type,
         quality_score=asset.quality_score,
         license_info=asset.license_info,
+        teacher_approved=asset.approved,
         reason=asset.reason,
     )
 
@@ -50,6 +51,20 @@ class ImageAssetRepository:
             )
             .order_by(ImageAsset.quality_score.desc(), ImageAsset.id.desc())
             .limit(limit)
+            .all()
+        )
+
+    def get_by_ids(self, asset_ids: list[int]) -> list[ImageAsset]:
+        if not asset_ids:
+            return []
+        return self.db.query(ImageAsset).filter(ImageAsset.id.in_(asset_ids)).all()
+
+    def get_approved_by_ids(self, asset_ids: list[int]) -> list[ImageAsset]:
+        if not asset_ids:
+            return []
+        return (
+            self.db.query(ImageAsset)
+            .filter(ImageAsset.id.in_(asset_ids), ImageAsset.approved.is_(True))
             .all()
         )
 

@@ -1,19 +1,22 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.core.exceptions import AppError
+from app.core.exceptions import AppError, ValidationError
 from app.core.logging import configure_logging
 from app.domain import models as domain_models
 
 configure_logging()
 logger = logging.getLogger(__name__)
 Base.metadata.create_all(bind=engine)
+Path(settings.STORAGE_DIR).mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title=settings.APP_NAME)
 
@@ -26,11 +29,17 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.mount("/storage", StaticFiles(directory=settings.STORAGE_DIR), name="storage")
 
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
     logger.info("Application error on %s: %s", request.url.path, exc.message)
+    if isinstance(exc, ValidationError):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.message, **exc.payload},
+        )
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
 

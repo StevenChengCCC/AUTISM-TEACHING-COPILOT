@@ -9,6 +9,16 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000/api";
 
+export class ApiError extends Error {
+  data: unknown;
+
+  constructor(message: string, data: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.data = data;
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -19,7 +29,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed: ${res.status}`);
+    try {
+      const data = JSON.parse(text);
+      throw new ApiError(data.detail || `Request failed: ${res.status}`, data);
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      throw new Error(text || `Request failed: ${res.status}`);
+    }
   }
   return res.json();
 }
@@ -74,6 +90,7 @@ export const api = {
     goal_id?: number | null;
     target_skill: string;
     duration_minutes: number;
+    print_formats?: string[];
     selected_image_asset_ids: number[];
   }) =>
     request<LessonPlanResponse>("/lessons", {

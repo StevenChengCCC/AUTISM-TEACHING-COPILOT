@@ -13,9 +13,14 @@ class ChildProfile(Base):
     age = Column(Integer, nullable=True)
     diagnosis_level = Column(String(100), nullable=True)
     attention_span_minutes = Column(Integer, nullable=True)
+    communication_mode = Column(String(255), nullable=True)
     communication_level = Column(String(255), nullable=True)
+    current_level = Column(Text, default="")
     interests_json = Column(Text, default="[]")
     reinforcers_json = Column(Text, default="[]")
+    preferred_reinforcers_json = Column(Text, default="[]")
+    prompting_that_works = Column(Text, default="")
+    avoid_notes = Column(Text, default="")
     behavior_notes = Column(Text, default="")
     notes = Column(Text, default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -24,6 +29,7 @@ class ChildProfile(Base):
     goals = relationship("TeachingGoal", back_populates="child")
     lesson_packages = relationship("LessonPackage", back_populates="child")
     records = relationship("SessionRecord", back_populates="child")
+    uploaded_materials = relationship("UploadedMaterial", back_populates="child")
 
 
 class TeachingGoal(Base):
@@ -76,6 +82,7 @@ class LessonPackage(Base):
     target_skill = Column(String(255), nullable=False)
     duration_minutes = Column(Integer, default=25)
     selected_image_asset_ids_json = Column(Text, default="[]")
+    printable_card_pdf_links_json = Column(Text, default="{}")
     package_json = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -106,3 +113,64 @@ class SessionRecord(Base):
 
 
 LessonPlan = LessonPackage
+
+
+class UploadedMaterial(Base):
+    __tablename__ = "uploaded_materials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    child_id = Column(Integer, ForeignKey("child_profiles.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    material_type = Column(String(100), default="document")
+    source_path = Column(Text, nullable=True)
+    extracted_text = Column(Text, default="")
+    status = Column(String(50), default="uploaded")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    child = relationship("ChildProfile", back_populates="uploaded_materials")
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    external_ref = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class Teacher(Base):
+    __tablename__ = "teachers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    display_name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=True)
+    role = Column(String(100), default="teacher")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class TeacherChildAccess(Base):
+    __tablename__ = "teacher_child_access"
+
+    id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=False)
+    child_id = Column(Integer, ForeignKey("child_profiles.id"), nullable=False)
+    permission_level = Column(String(100), default="editor")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CurriculumContent(Base):
+    __tablename__ = "curriculum_content"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    title = Column(String(255), nullable=False)
+    content_type = Column(String(100), default="goal_template")
+    content_json = Column(Text, default="{}")
+    status = Column(String(50), default="draft")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())

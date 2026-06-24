@@ -4,9 +4,14 @@ export type ChildProfile = {
   age?: number | null;
   diagnosis_level?: string | null;
   attention_span_minutes?: number | null;
+  communication_mode?: string | null;
   communication_level?: string | null;
+  current_level: string;
   interests: string[];
   reinforcers: string[];
+  preferred_reinforcers: string[];
+  prompting_that_works: string;
+  avoid_notes: string;
   behavior_notes: string;
   notes: string;
 };
@@ -62,6 +67,7 @@ export type LessonPlanResponse = {
     saturation_warnings: string[];
   };
   candidate_images: ImageCandidate[];
+  downloadable_card_pdf_links: Record<string, string>;
   teacher_script: string[];
   data_recording_sheet: Record<string, unknown>;
   session_notes_template: Record<string, unknown>;

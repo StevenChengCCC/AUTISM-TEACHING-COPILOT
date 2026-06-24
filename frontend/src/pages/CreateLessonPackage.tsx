@@ -42,6 +42,7 @@ export function CreateLessonPackagePage({
         goal_id: goal.id,
         target_skill: goal.target_skill,
         duration_minutes: durationMinutes,
+        print_formats: ["a4", "letter"],
         selected_image_asset_ids: confirmedImages.flatMap((image) =>
           image.id ? [image.id] : [],
         ),

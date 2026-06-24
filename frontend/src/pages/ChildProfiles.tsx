@@ -21,9 +21,12 @@ export function ChildProfilesPage({
     age: "8",
     diagnosis_level: "ASD Level 2",
     attention_span_minutes: "5",
-    communication_level: "short phrases",
+    communication_mode: "short spoken phrases",
+    current_level: "Can match identical picture cards with gesture prompts.",
     interests: "cars, dinosaurs",
-    reinforcers: "car toy, sticker",
+    preferred_reinforcers: "car toy, sticker",
+    prompting_that_works: "gesture prompt, model prompt",
+    avoid_notes: "avoid long verbal instructions and noisy materials",
     behavior_notes: "Attention drops when tasks are too long.",
     notes: "Use anonymous learner codes only.",
   });
@@ -54,9 +57,14 @@ export function ChildProfilesPage({
         age: Number(form.age) || null,
         diagnosis_level: form.diagnosis_level,
         attention_span_minutes: Number(form.attention_span_minutes) || null,
-        communication_level: form.communication_level,
+        communication_mode: form.communication_mode,
+        communication_level: form.communication_mode,
+        current_level: form.current_level,
         interests: splitList(form.interests),
-        reinforcers: splitList(form.reinforcers),
+        reinforcers: splitList(form.preferred_reinforcers),
+        preferred_reinforcers: splitList(form.preferred_reinforcers),
+        prompting_that_works: form.prompting_that_works,
+        avoid_notes: form.avoid_notes,
         behavior_notes: form.behavior_notes,
         notes: form.notes,
       });
@@ -101,11 +109,18 @@ export function ChildProfilesPage({
             }
           />
         </div>
-        <label>Communication</label>
+        <label>Communication Mode</label>
         <input
-          value={form.communication_level}
+          value={form.communication_mode}
           onChange={(event) =>
-            setForm({ ...form, communication_level: event.target.value })
+            setForm({ ...form, communication_mode: event.target.value })
+          }
+        />
+        <label>Current Level</label>
+        <input
+          value={form.current_level}
+          onChange={(event) =>
+            setForm({ ...form, current_level: event.target.value })
           }
         />
         <label>Interests</label>
@@ -115,11 +130,25 @@ export function ChildProfilesPage({
             setForm({ ...form, interests: event.target.value })
           }
         />
-        <label>Reinforcers</label>
+        <label>Preferred Reinforcers</label>
         <input
-          value={form.reinforcers}
+          value={form.preferred_reinforcers}
           onChange={(event) =>
-            setForm({ ...form, reinforcers: event.target.value })
+            setForm({ ...form, preferred_reinforcers: event.target.value })
+          }
+        />
+        <label>Prompting That Works</label>
+        <input
+          value={form.prompting_that_works}
+          onChange={(event) =>
+            setForm({ ...form, prompting_that_works: event.target.value })
+          }
+        />
+        <label>Avoid Notes</label>
+        <input
+          value={form.avoid_notes}
+          onChange={(event) =>
+            setForm({ ...form, avoid_notes: event.target.value })
           }
         />
         <button className="primary" disabled={loading} onClick={createChild}>

@@ -31,6 +31,17 @@ class LessonPackageRepository:
         self.db.refresh(lesson)
         return lesson
 
+    def update_printable_links(
+        self, lesson: LessonPackage, printable_links: dict[str, str]
+    ) -> LessonPackage:
+        lesson.printable_card_pdf_links_json = json.dumps(printable_links)
+        package = json.loads(lesson.package_json)
+        package["downloadable_card_pdf_links"] = printable_links
+        lesson.package_json = json.dumps(package, ensure_ascii=False)
+        self.db.commit()
+        self.db.refresh(lesson)
+        return lesson
+
 
 class SessionRecordRepository:
     def __init__(self, db: Session):

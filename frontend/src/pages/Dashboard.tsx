@@ -5,6 +5,8 @@ import { ImagePipelineReviewPage } from "./ImagePipelineReview";
 import { LessonPackagePreviewPage } from "./LessonPackagePreview";
 import { SessionRecordsPage } from "./SessionRecords";
 import { TeachingGoalsPage } from "./TeachingGoals";
+import { TeacherWorkflowPage } from "./TeacherWorkflow";
+import { api } from "../api/client";
 import type {
   ChildProfile,
   ImageCandidate,
@@ -15,6 +17,7 @@ import type {
 import "../styles.css";
 
 type PageKey =
+  | "workflow"
   | "children"
   | "goals"
   | "images"
@@ -23,7 +26,7 @@ type PageKey =
   | "records";
 
 export function Dashboard() {
-  const [page, setPage] = useState<PageKey>("children");
+  const [page, setPage] = useState<PageKey>("workflow");
   const [children, setChildren] = useState<ChildProfile[]>([]);
   const [goals, setGoals] = useState<TeachingGoal[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -44,10 +47,28 @@ export function Dashboard() {
   );
 
   useEffect(() => {
+    api
+      .listChildren()
+      .then(setChildren)
+      .catch(() => setChildren([]));
+  }, []);
+
+  useEffect(() => {
     if (!selectedChildId && children.length > 0) {
       setSelectedChildId(children[0].id);
     }
   }, [children, selectedChildId]);
+
+  useEffect(() => {
+    if (!selectedChildId) {
+      setGoals([]);
+      return;
+    }
+    api
+      .listGoals(selectedChildId)
+      .then(setGoals)
+      .catch(() => setGoals([]));
+  }, [selectedChildId]);
 
   useEffect(() => {
     if (selectedGoalId && goals.some((goal) => goal.id === selectedGoalId))
@@ -70,6 +91,7 @@ export function Dashboard() {
         <div className="heroActions">
           {(
             [
+              "workflow",
               "children",
               "goals",
               "images",
@@ -99,6 +121,21 @@ export function Dashboard() {
         <span>Confirmed images: {confirmedImages.length}</span>
       </section>
 
+      {page === "workflow" && (
+        <TeacherWorkflowPage
+          children={children}
+          goals={goals}
+          selectedChildId={selectedChildId}
+          selectedGoalId={selectedGoalId}
+          confirmedImages={confirmedImages}
+          onSelectChild={setSelectedChildId}
+          onGoalsChange={setGoals}
+          onSelectGoal={setSelectedGoalId}
+          onLessonChange={setLesson}
+          onNavigateImages={() => setPage("images")}
+          onNavigatePreview={() => setPage("preview")}
+        />
+      )}
       {page === "children" && (
         <ChildProfilesPage
           children={children}
@@ -149,6 +186,7 @@ export function Dashboard() {
 function pageLabel(page: PageKey): string {
   return {
     children: "Child Profiles",
+    workflow: "Workflow",
     goals: "Teaching Goals",
     images: "Image Review",
     lesson: "Create Package",

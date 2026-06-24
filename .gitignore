@@ -14,6 +14,7 @@ env/
 *.log
 server.out.log
 server.err.log
+storage/
 
 node_modules/
 dist/

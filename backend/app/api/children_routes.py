@@ -2,7 +2,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.dto import ChildProfileCreate, ChildProfileRead
+from app.schemas.dto import (
+    ChildProfileCreate,
+    ChildProfileRead,
+    ProfileCompletenessResult,
+)
 from app.services.profile_service import ChildProfileService
 
 router = APIRouter(prefix="/children", tags=["children"])
@@ -16,3 +20,8 @@ def create_child_profile(payload: ChildProfileCreate, db: Session = Depends(get_
 @router.get("", response_model=list[ChildProfileRead])
 def list_child_profiles(db: Session = Depends(get_db)):
     return ChildProfileService(db).list_child_profiles()
+
+
+@router.get("/{child_id}/completeness", response_model=ProfileCompletenessResult)
+def check_child_profile_completeness(child_id: int, db: Session = Depends(get_db)):
+    return ChildProfileService(db).check_completeness(child_id)

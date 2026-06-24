@@ -19,6 +19,7 @@ class ImageAssetService:
                 c.license_info = c.license_label
             asset = self.assets.save_candidate(c, payload.skill_target, payload.concept)
             c.id = asset.id
+            c.teacher_approved = True
             saved.append(c)
         self.assets.commit()
         return saved

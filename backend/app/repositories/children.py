@@ -13,9 +13,16 @@ def child_to_read(child: ChildProfile) -> ChildProfileRead:
         age=child.age,
         diagnosis_level=child.diagnosis_level,
         attention_span_minutes=child.attention_span_minutes,
+        communication_mode=child.communication_mode or child.communication_level,
         communication_level=child.communication_level,
+        current_level=child.current_level or "",
         interests=json.loads(child.interests_json or "[]"),
         reinforcers=json.loads(child.reinforcers_json or "[]"),
+        preferred_reinforcers=json.loads(
+            child.preferred_reinforcers_json or child.reinforcers_json or "[]"
+        ),
+        prompting_that_works=child.prompting_that_works or "",
+        avoid_notes=child.avoid_notes or "",
         behavior_notes=child.behavior_notes or "",
         notes=child.notes or "",
     )
@@ -40,9 +47,19 @@ class ChildProfileRepository:
             age=payload.age,
             diagnosis_level=payload.diagnosis_level,
             attention_span_minutes=payload.attention_span_minutes,
-            communication_level=payload.communication_level,
+            communication_mode=payload.communication_mode
+            or payload.communication_level,
+            communication_level=payload.communication_level
+            or payload.communication_mode,
+            current_level=payload.current_level,
             interests_json=json.dumps(payload.interests, ensure_ascii=False),
             reinforcers_json=json.dumps(payload.reinforcers, ensure_ascii=False),
+            preferred_reinforcers_json=json.dumps(
+                payload.preferred_reinforcers or payload.reinforcers,
+                ensure_ascii=False,
+            ),
+            prompting_that_works=payload.prompting_that_works,
+            avoid_notes=payload.avoid_notes,
             behavior_notes=payload.behavior_notes,
             notes=payload.notes,
         )
