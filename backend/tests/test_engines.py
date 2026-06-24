@@ -34,7 +34,9 @@ def test_reinforcement_engine_builds_rotation_and_warnings():
 
 
 def test_progress_engine_is_deterministic():
-    progress = evaluate_progress(independent_count=8, prompted_count=1, error_count=1, previous_mastery_level=2)
+    progress = evaluate_progress(
+        independent_count=8, prompted_count=1, error_count=1, previous_mastery_level=2
+    )
 
     assert progress.mastery_level == 4
     assert progress.progress_delta == 2

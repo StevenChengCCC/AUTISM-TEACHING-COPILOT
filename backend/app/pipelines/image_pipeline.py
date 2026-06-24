@@ -9,6 +9,7 @@ from app.schemas.dto import ImageNeedRequest, ImageCandidate, ImagePipelineResul
 from app.integrations.ai import get_ai_provider
 from app.domain.engines import build_image_search_queries
 
+
 class ImagePipeline:
     """Cost-controlled image pipeline: Reuse → Search → Generate.
 
@@ -33,10 +34,14 @@ class ImagePipeline:
                 strategy_used="reuse_existing_assets",
                 candidates=reused[: req.needed_count],
                 next_action="teacher_review",
-                notes=["All candidate images came from the approved asset library; no search or generation cost."],
+                notes=[
+                    "All candidate images came from the approved asset library; no search or generation cost."
+                ],
             )
 
-        notes.append(f"Asset library matched {len(reused)} image(s); remaining need moves to external search.")
+        notes.append(
+            f"Asset library matched {len(reused)} image(s); remaining need moves to external search."
+        )
         searched = self._search(req, req.needed_count - len(reused))
         combined = reused + searched
         if len(combined) >= req.needed_count:
@@ -46,10 +51,15 @@ class ImagePipeline:
                 strategy_used="reuse_then_search_external_assets",
                 candidates=combined[: req.needed_count],
                 next_action="teacher_review",
-                notes=notes + ["External search supplied enough candidates; image generation was not used."],
+                notes=notes
+                + [
+                    "External search supplied enough candidates; image generation was not used."
+                ],
             )
 
-        notes.append(f"Still missing {req.needed_count - len(combined)} image(s) after search; creating generation candidates.")
+        notes.append(
+            f"Still missing {req.needed_count - len(combined)} image(s) after search; creating generation candidates."
+        )
         generated = self._generate(req, req.needed_count - len(combined))
         candidates = (combined + generated)[: req.needed_count]
         return ImagePipelineResult(
@@ -59,17 +69,24 @@ class ImagePipeline:
             candidates=candidates,
             next_action="teacher_review",
             missing_count=max(0, req.needed_count - len(candidates)),
-            notes=notes + ["Mock mode returns generation prompts; configured image generation can create actual assets later."],
+            notes=notes
+            + [
+                "Mock mode returns generation prompts; configured image generation can create actual assets later."
+            ],
         )
 
     def _reuse(self, req: ImageNeedRequest) -> list[ImageCandidate]:
-        assets = self.assets.find_reusable(req.concept, req.target_skill, req.needed_count)
+        assets = self.assets.find_reusable(
+            req.concept, req.target_skill, req.needed_count
+        )
         return [asset_to_candidate(asset, "reused") for asset in assets]
 
     def _search(self, req: ImageNeedRequest, count: int) -> list[ImageCandidate]:
         if count <= 0:
             return []
-        queries = build_image_search_queries(req.concept, req.variation_requirements, req.prefer_real_photos)
+        queries = build_image_search_queries(
+            req.concept, req.variation_requirements, req.prefer_real_photos
+        )
         candidates: list[ImageCandidate] = []
 
         # Providers are optional; if keys are absent, deterministic placeholders keep MVP runnable.
@@ -100,18 +117,25 @@ class ImagePipeline:
                     quality_score=65,
                     license_info="generated-by-configured-model",
                     license_label="generated-by-configured-model",
+                    reason="Generated candidate because reuse and external search did not fully satisfy the requested count.",
                     generation_prompt=prompt,
                 )
             )
         return candidates
 
-    def _search_pexels(self, query: str, req: ImageNeedRequest, count: int) -> list[ImageCandidate]:
+    def _search_pexels(
+        self, query: str, req: ImageNeedRequest, count: int
+    ) -> list[ImageCandidate]:
         if not settings.PEXELS_API_KEY or count <= 0:
             return []
         try:
             res = requests.get(
                 "https://api.pexels.com/v1/search",
-                params={"query": query, "per_page": min(count, 10), "orientation": "landscape"},
+                params={
+                    "query": query,
+                    "per_page": min(count, 10),
+                    "orientation": "landscape",
+                },
                 headers={"Authorization": settings.PEXELS_API_KEY},
                 timeout=8,
             )
@@ -128,19 +152,28 @@ class ImagePipeline:
                     quality_score=80,
                     license_info="Pexels license - verify before commercial use",
                     license_label="Pexels license - verify before commercial use",
+                    reason="External search candidate returned after approved library reuse was insufficient.",
                 )
                 for photo in data.get("photos", [])
             ]
         except Exception:
             return []
 
-    def _search_pixabay(self, query: str, req: ImageNeedRequest, count: int) -> list[ImageCandidate]:
+    def _search_pixabay(
+        self, query: str, req: ImageNeedRequest, count: int
+    ) -> list[ImageCandidate]:
         if not settings.PIXABAY_API_KEY or count <= 0:
             return []
         try:
             res = requests.get(
                 "https://pixabay.com/api/",
-                params={"key": settings.PIXABAY_API_KEY, "q": query, "per_page": min(count, 10), "image_type": "photo", "safesearch": "true"},
+                params={
+                    "key": settings.PIXABAY_API_KEY,
+                    "q": query,
+                    "per_page": min(count, 10),
+                    "image_type": "photo",
+                    "safesearch": "true",
+                },
                 timeout=8,
             )
             res.raise_for_status()
@@ -156,6 +189,7 @@ class ImagePipeline:
                     quality_score=78,
                     license_info="Pixabay content license - verify before commercial use",
                     license_label="Pixabay content license - verify before commercial use",
+                    reason="External search candidate returned after approved library reuse was insufficient.",
                 )
                 for hit in data.get("hits", [])
             ]
@@ -174,6 +208,7 @@ class ImagePipeline:
                 quality_score=55,
                 license_info="placeholder - configure PEXELS_API_KEY or PIXABAY_API_KEY",
                 license_label="placeholder - configure PEXELS_API_KEY or PIXABAY_API_KEY",
+                reason="Mock searched asset keeps the review workflow runnable without external API keys.",
             )
             for i in range(count)
         ]

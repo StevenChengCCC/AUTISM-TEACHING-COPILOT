@@ -1,4 +1,10 @@
-from app.integrations.ai import AIProvider, AzureOpenAIProvider, MockProvider, OpenAIProvider, get_ai_provider
+from app.integrations.ai import (
+    AIProvider,
+    AzureOpenAIProvider,
+    MockProvider,
+    OpenAIProvider,
+    get_ai_provider,
+)
 
 AIClient = AIProvider
 MockAIClient = MockProvider

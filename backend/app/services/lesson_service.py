@@ -3,15 +3,22 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError
 from app.repositories.children import ChildProfileRepository
+from app.repositories.goals import TeachingGoalRepository
 from app.repositories.lessons import LessonPackageRepository, SessionRecordRepository
-from app.schemas.dto import LessonPlanRequest, LessonPlanResponse, SessionRecordCreate, SessionRecordRead
-from app.services.profile_mapper import child_to_dict
 from app.domain.engines import (
     build_attention_segments,
     build_generalization_plan,
     build_reinforcement_plan,
     evaluate_progress,
 )
+from app.schemas.dto import (
+    LessonPlanRequest,
+    LessonPlanResponse,
+    SessionRecordCreate,
+    SessionRecordRead,
+)
+from app.services.profile_mapper import child_to_dict
+
 
 class LessonService:
     """Lesson generation service.
@@ -22,6 +29,7 @@ class LessonService:
     def __init__(self, db: Session):
         self.db = db
         self.children = ChildProfileRepository(db)
+        self.goals = TeachingGoalRepository(db)
         self.lessons = LessonPackageRepository(db)
         self.records = SessionRecordRepository(db)
 
@@ -29,27 +37,41 @@ class LessonService:
         child = self.children.get(req.child_id)
         if not child:
             raise NotFoundError("Child profile not found")
+        goal = self.goals.get(req.goal_id) if req.goal_id is not None else None
+        if req.goal_id is not None and not goal:
+            raise NotFoundError("Teaching goal not found")
+        if goal and goal.child_id != req.child_id:
+            raise NotFoundError("Teaching goal does not belong to child profile")
 
         profile = child_to_dict(child)
         interests = profile["interests"]
         reinforcers = profile["reinforcers"]
+        target_skill = goal.target_skill if goal else req.target_skill
+        concept = (
+            goal.concept if goal and goal.concept else self._infer_concept(target_skill)
+        )
 
-        segments = build_attention_segments(req.target_skill, req.duration_minutes, profile["attention_span_minutes"])
-        concept = self._infer_concept(req.target_skill)
+        segments = build_attention_segments(
+            target_skill, req.duration_minutes, profile["attention_span_minutes"]
+        )
         generalization_plan = build_generalization_plan(concept)
         reinforcement_plan = build_reinforcement_plan(interests, reinforcers)
-        teacher_script = self._build_teacher_script(req.target_skill, concept, profile)
-        data_recording_sheet = self._build_data_recording_sheet(req.target_skill)
-        session_notes_template = self._build_session_notes_template(req.target_skill)
+        teacher_script = self._build_teacher_script(target_skill, concept, profile)
+        data_recording_sheet = self._build_data_recording_sheet(target_skill)
+        session_notes_template = self._build_session_notes_template(target_skill)
 
         response = LessonPlanResponse(
+            child_id=req.child_id,
+            goal_id=goal.id if goal else None,
             teaching_goal={
-                "target_skill": req.target_skill,
+                "id": goal.id if goal else None,
+                "target_skill": target_skill,
                 "concept": concept,
                 "decision_owner": "teacher",
-                "status": "draft",
+                "status": goal.status if goal else "draft",
+                "mastery_level": goal.mastery_level if goal else 0,
             },
-            target_skill=req.target_skill,
+            target_skill=target_skill,
             duration_minutes=req.duration_minutes,
             segments=segments,
             generalization_plan=generalization_plan,
@@ -68,8 +90,10 @@ class LessonService:
 
         lesson = self.lessons.create(
             child_id=req.child_id,
-            target_skill=req.target_skill,
+            goal_id=goal.id if goal else None,
+            target_skill=target_skill,
             duration_minutes=req.duration_minutes,
+            selected_image_asset_ids=req.selected_image_asset_ids,
             package_json=response.model_dump_json(),
         )
         response.id = lesson.id
@@ -79,12 +103,23 @@ class LessonService:
         child = self.children.get(req.child_id)
         if not child:
             raise NotFoundError("Child profile not found")
-        previous = self.records.latest_for_skill(req.child_id, req.target_skill)
+        goal = self.goals.get(req.goal_id) if req.goal_id is not None else None
+        if req.goal_id is not None and not goal:
+            raise NotFoundError("Teaching goal not found")
+        if goal and goal.child_id != req.child_id:
+            raise NotFoundError("Teaching goal does not belong to child profile")
+        target_skill = goal.target_skill if goal else req.target_skill
+        previous = self.records.latest_for_skill(
+            req.child_id, target_skill, req.goal_id
+        )
         previous_level = previous.mastery_level if previous else 0
-        progress = evaluate_progress(req.independent_count, req.prompted_count, req.error_count, previous_level)
+        progress = evaluate_progress(
+            req.independent_count, req.prompted_count, req.error_count, previous_level
+        )
         record = self.records.create(
             child_id=req.child_id,
-            target_skill=req.target_skill,
+            goal_id=goal.id if goal else None,
+            target_skill=target_skill,
             independent_count=req.independent_count,
             prompted_count=req.prompted_count,
             error_count=req.error_count,
@@ -93,9 +128,12 @@ class LessonService:
             progress_delta=progress.progress_delta,
             confidence_score=progress.confidence_score,
         )
+        if goal:
+            self.goals.update_mastery(goal, progress.mastery_level)
         return SessionRecordRead(
             id=record.id,
             child_id=record.child_id,
+            goal_id=record.goal_id,
             target_skill=record.target_skill,
             independent_count=record.independent_count,
             prompted_count=record.prompted_count,
@@ -113,9 +151,13 @@ class LessonService:
             target_skill = target_skill.replace(token, "")
         return target_skill.strip(" ：:，,。") or target_skill
 
-    def _build_teacher_script(self, target_skill: str, concept: str, profile: dict) -> list[str]:
+    def _build_teacher_script(
+        self, target_skill: str, concept: str, profile: dict
+    ) -> list[str]:
         attention = profile.get("attention_span_minutes") or 5
-        preferred = (profile.get("reinforcers") or profile.get("interests") or ["短强化"])[0]
+        preferred = (
+            profile.get("reinforcers") or profile.get("interests") or ["短强化"]
+        )[0]
         return [
             f"先把“{concept}”相关图片/实物放到孩子能看到的位置，等待孩子注意。",
             f"用一句短指令开始：现在我们练习“{target_skill}”。",
@@ -132,7 +174,11 @@ class LessonService:
                 {"key": "independent_count", "label": "独立完成次数", "type": "number"},
                 {"key": "prompted_count", "label": "提示后完成次数", "type": "number"},
                 {"key": "error_count", "label": "错误/无反应次数", "type": "number"},
-                {"key": "used_variations", "label": "本节使用的泛化变式", "type": "text"},
+                {
+                    "key": "used_variations",
+                    "label": "本节使用的泛化变式",
+                    "type": "text",
+                },
                 {"key": "reinforcer_effect", "label": "强化物效果", "type": "text"},
                 {"key": "notes", "label": "备注", "type": "text"},
             ],

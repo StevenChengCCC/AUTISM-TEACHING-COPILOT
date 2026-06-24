@@ -15,7 +15,9 @@ class AIProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def generate_image_prompt(self, concept: str, variation: str, style: str = "realistic teaching card") -> str:
+    def generate_image_prompt(
+        self, concept: str, variation: str, style: str = "realistic teaching card"
+    ) -> str:
         raise NotImplementedError
 
     @abstractmethod
@@ -31,17 +33,28 @@ class MockProvider(AIProvider):
     def generate_lesson_text(self, prompt: str) -> str:
         return f"Mock teacher-facing text: {prompt[:160]}"
 
-    def generate_image_prompt(self, concept: str, variation: str, style: str = "realistic teaching card") -> str:
+    def generate_image_prompt(
+        self, concept: str, variation: str, style: str = "realistic teaching card"
+    ) -> str:
         return (
             f"A clear {style} image of {concept}, variation: {variation}. "
             "single main subject, low-distraction background, printable learning card, no text, no watermark."
         )
 
     def extract_profile_from_text(self, text: str) -> dict:
-        return {"mock": True, "source_preview": text[:160], "interests": [], "reinforcers": []}
+        return {
+            "mock": True,
+            "source_preview": text[:160],
+            "interests": [],
+            "reinforcers": [],
+        }
 
     def evaluate_lesson(self, lesson_package: dict) -> dict:
-        return {"mock": True, "quality": "not_evaluated", "notes": ["Mock mode: no external AI call."]}
+        return {
+            "mock": True,
+            "quality": "not_evaluated",
+            "notes": ["Mock mode: no external AI call."],
+        }
 
 
 class OpenAIProvider(AIProvider):
@@ -56,23 +69,36 @@ class OpenAIProvider(AIProvider):
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
             temperature=0.2,
         )
         return response.choices[0].message.content or ""
 
     def generate_lesson_text(self, prompt: str) -> str:
-        return self._complete("Polish autism special education teacher-facing lesson language.", prompt)
+        return self._complete(
+            "Polish autism special education teacher-facing lesson language.", prompt
+        )
 
-    def generate_image_prompt(self, concept: str, variation: str, style: str = "realistic teaching card") -> str:
-        return self._complete("Write concise image prompts for special education teaching cards.", f"{concept}; {variation}; {style}")
+    def generate_image_prompt(
+        self, concept: str, variation: str, style: str = "realistic teaching card"
+    ) -> str:
+        return self._complete(
+            "Write concise image prompts for special education teaching cards.",
+            f"{concept}; {variation}; {style}",
+        )
 
     def extract_profile_from_text(self, text: str) -> dict:
         content = self._complete("Extract structured learner profile JSON only.", text)
         return json.loads(content or "{}")
 
     def evaluate_lesson(self, lesson_package: dict) -> dict:
-        content = self._complete("Evaluate lesson package JSON for autism intervention planning. Return JSON.", json.dumps(lesson_package))
+        content = self._complete(
+            "Evaluate lesson package JSON for autism intervention planning. Return JSON.",
+            json.dumps(lesson_package),
+        )
         return json.loads(content or "{}")
 
 
@@ -80,7 +106,11 @@ class AzureOpenAIProvider(OpenAIProvider):
     def __init__(self):
         from openai import AzureOpenAI
 
-        if not settings.AZURE_OPENAI_ENDPOINT or not settings.AZURE_OPENAI_API_KEY or not settings.AZURE_OPENAI_DEPLOYMENT:
+        if (
+            not settings.AZURE_OPENAI_ENDPOINT
+            or not settings.AZURE_OPENAI_API_KEY
+            or not settings.AZURE_OPENAI_DEPLOYMENT
+        ):
             raise RuntimeError("Azure OpenAI credentials are missing")
         self.client = AzureOpenAI(
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,

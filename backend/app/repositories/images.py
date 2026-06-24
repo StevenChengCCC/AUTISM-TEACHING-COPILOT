@@ -7,7 +7,9 @@ from app.domain.models import ImageAsset
 from app.schemas.dto import ImageCandidate
 
 
-def asset_to_candidate(asset: ImageAsset, source_type: str | None = None) -> ImageCandidate:
+def asset_to_candidate(
+    asset: ImageAsset, source_type: str | None = None
+) -> ImageCandidate:
     return ImageCandidate(
         id=asset.id,
         title=asset.title,
@@ -19,6 +21,7 @@ def asset_to_candidate(asset: ImageAsset, source_type: str | None = None) -> Ima
         variation_type=asset.variation_type,
         quality_score=asset.quality_score,
         license_info=asset.license_info,
+        reason=asset.reason,
     )
 
 
@@ -27,9 +30,13 @@ class ImageAssetRepository:
         self.db = db
 
     def list_recent(self, limit: int = 100) -> list[ImageAsset]:
-        return self.db.query(ImageAsset).order_by(ImageAsset.id.desc()).limit(limit).all()
+        return (
+            self.db.query(ImageAsset).order_by(ImageAsset.id.desc()).limit(limit).all()
+        )
 
-    def find_reusable(self, concept: str, target_skill: str, limit: int) -> list[ImageAsset]:
+    def find_reusable(
+        self, concept: str, target_skill: str, limit: int
+    ) -> list[ImageAsset]:
         terms = [concept, target_skill]
         return (
             self.db.query(ImageAsset)
@@ -46,7 +53,9 @@ class ImageAssetRepository:
             .all()
         )
 
-    def save_candidate(self, candidate: ImageCandidate, skill_target: str, concept: str) -> ImageAsset:
+    def save_candidate(
+        self, candidate: ImageCandidate, skill_target: str, concept: str
+    ) -> ImageAsset:
         asset = ImageAsset(
             title=candidate.title,
             source_type=candidate.source_type,
@@ -59,6 +68,7 @@ class ImageAssetRepository:
             variation_type=candidate.variation_type,
             quality_score=candidate.quality_score,
             license_info=candidate.license_info,
+            reason=candidate.reason or "",
             approved=True,
         )
         self.db.add(asset)

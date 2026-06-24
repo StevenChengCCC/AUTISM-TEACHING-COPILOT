@@ -9,7 +9,9 @@ from app.schemas.dto import ImageNeedRequest
 
 
 def test_image_pipeline_search_fallback_before_generation():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    engine = create_engine(
+        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+    )
     Base.metadata.create_all(bind=engine)
     session = sessionmaker(bind=engine)()
     session.add(ChildProfile(code="C-1", attention_span_minutes=5))

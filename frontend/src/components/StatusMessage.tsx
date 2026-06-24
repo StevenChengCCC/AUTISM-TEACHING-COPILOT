@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
 type StatusMessageProps = {
-  tone: 'error' | 'success' | 'hint';
+  tone: "error" | "success" | "hint";
   children: ReactNode;
 };
 

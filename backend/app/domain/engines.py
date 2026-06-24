@@ -12,9 +12,19 @@ class ProgressResult:
 
 GENERALIZATION_DIMENSIONS = {
     "visual_variation": ["different colors", "different sizes", "front/side/top view"],
-    "physical_object_variation": ["real object", "toy version", "photo card", "simple illustration"],
+    "physical_object_variation": [
+        "real object",
+        "toy version",
+        "photo card",
+        "simple illustration",
+    ],
     "instructor_variation": ["lead teacher", "support teacher", "caregiver"],
-    "environment_variation": ["classroom table", "therapy room", "home", "community setting"],
+    "environment_variation": [
+        "classroom table",
+        "therapy room",
+        "home",
+        "community setting",
+    ],
     "instruction_variation": ["point to", "give me", "what is this", "find the same"],
 }
 
@@ -25,7 +35,9 @@ def normalize_attention_span(minutes: int | None) -> int:
     return max(2, min(minutes, 10))
 
 
-def build_attention_segments(target_skill: str, duration_minutes: int, attention_span_minutes: int | None) -> list[dict]:
+def build_attention_segments(
+    target_skill: str, duration_minutes: int, attention_span_minutes: int | None
+) -> list[dict]:
     unit = normalize_attention_span(attention_span_minutes)
     segments: list[dict] = []
     elapsed_seconds = 0
@@ -33,7 +45,9 @@ def build_attention_segments(target_skill: str, duration_minutes: int, attention
     cycle = 1
 
     while elapsed_seconds < total_seconds:
-        activity_seconds = min(max(120, unit * 60 - 120), total_seconds - elapsed_seconds)
+        activity_seconds = min(
+            max(120, unit * 60 - 120), total_seconds - elapsed_seconds
+        )
         segments.append(
             {
                 "order": len(segments) + 1,
@@ -49,7 +63,9 @@ def build_attention_segments(target_skill: str, duration_minutes: int, attention
             break
 
         reinforcement_seconds = 30 if unit <= 5 else 60
-        reinforcement_seconds = min(reinforcement_seconds, total_seconds - elapsed_seconds)
+        reinforcement_seconds = min(
+            reinforcement_seconds, total_seconds - elapsed_seconds
+        )
         segments.append(
             {
                 "order": len(segments) + 1,
@@ -82,7 +98,9 @@ def build_attention_segments(target_skill: str, duration_minutes: int, attention
     return segments
 
 
-def build_generalization_plan(concept: str, requested_dimensions: list[str] | None = None) -> list[dict]:
+def build_generalization_plan(
+    concept: str, requested_dimensions: list[str] | None = None
+) -> list[dict]:
     requested = requested_dimensions or list(GENERALIZATION_DIMENSIONS)
     plan = []
     for dimension, variations in GENERALIZATION_DIMENSIONS.items():
@@ -100,9 +118,14 @@ def build_generalization_plan(concept: str, requested_dimensions: list[str] | No
 
 
 def build_reinforcement_plan(interests: list[str], reinforcers: list[str]) -> dict:
-    rotation = (reinforcers or interests or ["verbal praise", "sticker", "30-second preferred activity"])[:5]
+    rotation = (
+        reinforcers
+        or interests
+        or ["verbal praise", "sticker", "30-second preferred activity"]
+    )[:5]
     saturation_warnings = [
-        f"Watch for reduced response to {item} after repeated use." for item in rotation[:3]
+        f"Watch for reduced response to {item} after repeated use."
+        for item in rotation[:3]
     ]
     return {
         "rotation": rotation,
@@ -115,10 +138,17 @@ def build_reinforcement_plan(interests: list[str], reinforcers: list[str]) -> di
     }
 
 
-def evaluate_progress(independent_count: int, prompted_count: int, error_count: int, previous_mastery_level: int = 0) -> ProgressResult:
+def evaluate_progress(
+    independent_count: int,
+    prompted_count: int,
+    error_count: int,
+    previous_mastery_level: int = 0,
+) -> ProgressResult:
     total = max(0, independent_count) + max(0, prompted_count) + max(0, error_count)
     if total == 0:
-        return ProgressResult(mastery_level=0, progress_delta=-previous_mastery_level, confidence_score=0)
+        return ProgressResult(
+            mastery_level=0, progress_delta=-previous_mastery_level, confidence_score=0
+        )
 
     independent_rate = independent_count / total
     success_rate = (independent_count + prompted_count * 0.5) / total
@@ -133,16 +163,25 @@ def evaluate_progress(independent_count: int, prompted_count: int, error_count: 
     else:
         mastery = 0
     confidence = round(min(100, total * 8) * max(0.2, success_rate))
-    return ProgressResult(mastery_level=mastery, progress_delta=mastery - previous_mastery_level, confidence_score=confidence)
+    return ProgressResult(
+        mastery_level=mastery,
+        progress_delta=mastery - previous_mastery_level,
+        confidence_score=confidence,
+    )
 
 
-def build_image_search_queries(concept: str, variations: list[str], prefer_real: bool) -> list[str]:
+def build_image_search_queries(
+    concept: str, variations: list[str], prefer_real: bool
+) -> list[str]:
     style = "photo" if prefer_real else "picture card"
     queries = []
     for variation in variations or ["general"]:
         lower = variation.lower()
         if "visual" in lower or "颜色" in variation:
-            queries += [f"{concept} different colors {style}", f"{concept} different sizes {style}"]
+            queries += [
+                f"{concept} different colors {style}",
+                f"{concept} different sizes {style}",
+            ]
         elif "object" in lower or "媒介" in variation:
             queries += [f"{concept} real object toy photo card {style}"]
         elif "environment" in lower or "场景" in variation:

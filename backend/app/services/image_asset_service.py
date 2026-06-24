@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.repositories.images import ImageAssetRepository
 from app.schemas.dto import ConfirmImageRequest, ImageCandidate
 
+
 class ImageAssetService:
     def __init__(self, db: Session):
         self.db = db

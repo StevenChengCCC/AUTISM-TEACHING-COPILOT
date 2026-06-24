@@ -11,6 +11,16 @@ export type ChildProfile = {
   notes: string;
 };
 
+export type TeachingGoal = {
+  id: number;
+  child_id: number;
+  target_skill: string;
+  concept?: string | null;
+  status: string;
+  mastery_level: number;
+  notes: string;
+};
+
 export type ImageCandidate = {
   id?: number | null;
   title: string;
@@ -23,6 +33,7 @@ export type ImageCandidate = {
   quality_score: number;
   license_info?: string | null;
   license_label?: string | null;
+  reason?: string | null;
   generation_prompt?: string | null;
 };
 
@@ -38,6 +49,8 @@ export type ImagePipelineResult = {
 
 export type LessonPlanResponse = {
   id?: number | null;
+  child_id?: number | null;
+  goal_id?: number | null;
   target_skill: string;
   duration_minutes: number;
   teaching_goal: Record<string, unknown>;
@@ -59,6 +72,7 @@ export type LessonPlanResponse = {
 export type SessionRecordRead = {
   id: number;
   child_id: number;
+  goal_id?: number | null;
   target_skill: string;
   independent_count: number;
   prompted_count: number;

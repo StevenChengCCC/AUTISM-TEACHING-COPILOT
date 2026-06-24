@@ -27,15 +27,18 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api")
 
+
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
     logger.info("Application error on %s: %s", request.url.path, exc.message)
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
+
 @app.exception_handler(Exception)
 async def unhandled_error_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error on %s", request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
 
 @app.get("/health")
 def health_check():
@@ -46,6 +49,7 @@ def health_check():
         "ai_provider": settings.AI_PROVIDER,
         "mode": "mock" if settings.AI_PROVIDER == "mock" else "external_optional",
     }
+
 
 @app.get("/ready")
 def readiness_check():

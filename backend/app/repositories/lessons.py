@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy.orm import Session
 
 from app.domain.models import LessonPackage, SessionRecord
@@ -7,11 +9,21 @@ class LessonPackageRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create(self, child_id: int, target_skill: str, duration_minutes: int, package_json: str) -> LessonPackage:
+    def create(
+        self,
+        child_id: int,
+        target_skill: str,
+        duration_minutes: int,
+        package_json: str,
+        goal_id: int | None = None,
+        selected_image_asset_ids: list[int] | None = None,
+    ) -> LessonPackage:
         lesson = LessonPackage(
             child_id=child_id,
+            goal_id=goal_id,
             target_skill=target_skill,
             duration_minutes=duration_minutes,
+            selected_image_asset_ids_json=json.dumps(selected_image_asset_ids or []),
             package_json=package_json,
         )
         self.db.add(lesson)
@@ -24,13 +36,16 @@ class SessionRecordRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def latest_for_skill(self, child_id: int, target_skill: str) -> SessionRecord | None:
-        return (
-            self.db.query(SessionRecord)
-            .filter(SessionRecord.child_id == child_id, SessionRecord.target_skill == target_skill)
-            .order_by(SessionRecord.id.desc())
-            .first()
+    def latest_for_skill(
+        self, child_id: int, target_skill: str, goal_id: int | None = None
+    ) -> SessionRecord | None:
+        query = self.db.query(SessionRecord).filter(
+            SessionRecord.child_id == child_id,
+            SessionRecord.target_skill == target_skill,
         )
+        if goal_id is not None:
+            query = query.filter(SessionRecord.goal_id == goal_id)
+        return query.order_by(SessionRecord.id.desc()).first()
 
     def create(
         self,
@@ -43,9 +58,11 @@ class SessionRecordRepository:
         mastery_level: int,
         progress_delta: int,
         confidence_score: int,
+        goal_id: int | None = None,
     ) -> SessionRecord:
         record = SessionRecord(
             child_id=child_id,
+            goal_id=goal_id,
             target_skill=target_skill,
             independent_count=independent_count,
             prompted_count=prompted_count,

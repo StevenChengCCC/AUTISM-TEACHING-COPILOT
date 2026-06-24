@@ -15,7 +15,7 @@ This is not a PowerPoint generator, generic lesson planner, or chatbot. The teac
 
 ```text
 backend/app/
-├── api/              # HTTP routes only
+├── api/              # thin domain routes
 ├── core/             # config, database, exceptions, logging
 ├── domain/           # SQLAlchemy models and deterministic engines
 ├── repositories/     # persistence access
@@ -28,7 +28,7 @@ frontend/src/
 ├── api/              # typed API client
 ├── components/       # reusable UI
 ├── hooks/            # reusable state helpers
-├── pages/            # product screens
+├── pages/            # child profiles, goals, image review, package preview, records
 └── types/            # shared TypeScript types
 ```
 
@@ -93,6 +93,15 @@ The primary artifact is a teaching package:
 - Data collection sheet
 - Session notes template
 
+## Core Workflow
+
+1. Create or select a child profile.
+2. Create or select a teaching goal.
+3. Run the image pipeline and let the teacher confirm assets.
+4. Generate and save the teaching package with selected image asset IDs.
+5. Add a session record after class.
+6. Update deterministic progress and goal mastery.
+
 ## Deterministic Engines
 
 - Attention engine: segments sessions from attention span.
@@ -136,9 +145,8 @@ Current status: backend tests pass and frontend production build passes.
 
 - Add migrations with Alembic before real production data.
 - Add user authentication, teacher/team boundaries, and privacy controls.
-- Persist selected candidate image IDs into teaching packages.
+- Add API endpoints to list historical lesson packages and session records.
 - Add file/blob storage for uploaded and generated image assets.
-- Expand frontend into separate pages for child profiles, teaching goals, image pipeline, lesson preview, and session records.
 - Add richer progress history views and goal-level trend summaries.
 
 ## Recommended Next Priorities
