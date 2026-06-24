@@ -44,7 +44,7 @@ export function MaterialsPage({ child }: Props) {
   return (
     <section className="grid two">
       <div className="card">
-        <h2>Materials / Uploaded资料</h2>
+        <h2>Uploaded Materials</h2>
         {error && <StatusMessage tone="error">{error}</StatusMessage>}
         {success && <StatusMessage tone="success">{success}</StatusMessage>}
         <label>Title</label>

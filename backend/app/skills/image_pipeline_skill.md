@@ -1,19 +1,19 @@
 # Image Pipeline Skill
 
-目标：为特教泛化训练准备图片卡片。
+Goal: prepare image cards for special education generalization practice.
 
-优先级：
+Priority order:
 
-1. 复用已有资源库图片
-2. 找公开授权/可使用图片
-3. 生成图片
+1. Reuse existing approved library assets
+2. Search for externally available assets
+3. Generate image prompts or assets
 
-筛选标准：
+Screening criteria:
 
-- 主体清晰
-- 背景低干扰
-- 无明显水印
-- 适合打印
-- 变式多样：颜色、角度、场景、类别
+- Clear main subject
+- Low-distraction background
+- No obvious watermark
+- Suitable for printing
+- Varied examples across color, angle, setting, and category
 
-输出候选图，不自动最终决定。老师必须确认。
+Output candidates only. The teacher must confirm final selections.

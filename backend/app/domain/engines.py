@@ -177,14 +177,14 @@ def build_image_search_queries(
     queries = []
     for variation in variations or ["general"]:
         lower = variation.lower()
-        if "visual" in lower or "颜色" in variation:
+        if "visual" in lower:
             queries += [
                 f"{concept} different colors {style}",
                 f"{concept} different sizes {style}",
             ]
-        elif "object" in lower or "媒介" in variation:
+        elif "object" in lower:
             queries += [f"{concept} real object toy photo card {style}"]
-        elif "environment" in lower or "场景" in variation:
+        elif "environment" in lower:
             queries += [f"{concept} classroom home community {style}"]
         else:
             queries += [f"{concept} clear isolated {style}"]

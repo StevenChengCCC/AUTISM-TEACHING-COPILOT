@@ -34,7 +34,7 @@ def complete_child(code: str) -> ChildProfile:
 
 @pytest.mark.parametrize(
     "target_skill",
-    ["request apple", "认识苹果", "imitate clapping"],
+    ["request apple", "identify apple", "imitate clapping"],
 )
 def test_acquisition_goals_pass(target_skill):
     verdict = classify_goal_safety(target_skill, None, None, None)
@@ -49,8 +49,8 @@ def test_acquisition_goals_pass(target_skill):
     [
         ("reduce self-injury", "self_injury"),
         ("stop hitting peers", "aggression"),
-        ("减少自伤行为", "self_injury"),
-        ("消除攻击行为", "aggression"),
+        ("decrease elopement", "elopement"),
+        ("eliminate property destruction", "property_destruction"),
     ],
 )
 def test_reduction_goals_defer(target_skill, expected_category):

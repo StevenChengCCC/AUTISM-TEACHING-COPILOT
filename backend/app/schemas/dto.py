@@ -85,7 +85,11 @@ class ImageNeedRequest(BaseModel):
     needed_count: int = 10
     prefer_real_photos: bool = True
     variation_requirements: list[str] = Field(
-        default_factory=lambda: ["颜色变式", "角度变式", "场景变式"]
+        default_factory=lambda: [
+            "visual variation",
+            "angle variation",
+            "environment variation",
+        ]
     )
 
 

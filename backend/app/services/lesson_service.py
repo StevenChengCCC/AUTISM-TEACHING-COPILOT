@@ -230,8 +230,16 @@ class LessonService:
         )
 
     def _infer_concept(self, target_skill: str) -> str:
-        # 简单规则，避免为“认识苹果”这类目标调用LLM。
-        for token in ["认识", "区分", "命名", "请求", "表达", "学习"]:
+        # Simple local cleanup keeps common acquisition goals off the LLM path.
+        for token in [
+            "recognize",
+            "identify",
+            "label",
+            "request",
+            "express",
+            "learn",
+            "imitate",
+        ]:
             target_skill = target_skill.replace(token, "")
         return target_skill.strip(" ：:，,。") or target_skill
 
@@ -240,33 +248,35 @@ class LessonService:
     ) -> list[str]:
         attention = profile.get("attention_span_minutes") or 5
         preferred = (
-            profile.get("reinforcers") or profile.get("interests") or ["短强化"]
+            profile.get("reinforcers")
+            or profile.get("interests")
+            or ["brief preferred activity"]
         )[0]
         return [
-            f"先把“{concept}”相关图片/实物放到孩子能看到的位置，等待孩子注意。",
-            f"用一句短指令开始：现在我们练习“{target_skill}”。",
-            "如果孩子没有反应，先给最轻提示，例如手势或指向；不要一开始就连续语言轰炸。",
-            "孩子做出接近目标的反应后，立即给予强化。",
-            f"本节课每 {attention} 分钟左右安排一次短强化或休息，推荐使用：{preferred}。",
-            "完成一轮后换图片、实物、人物或场景，避免只学会单一材料。",
+            f"Place the {concept} images or materials where the learner can see them, then wait for attention.",
+            f"Start with one concise instruction: Today we are practicing {target_skill}.",
+            "If the learner does not respond, use the lightest effective prompt first, such as a gesture or point.",
+            "After an independent or close response, deliver reinforcement immediately.",
+            f"About every {attention} minutes, offer a brief reinforcement or reset. Suggested option: {preferred}.",
+            "After one round, change the image, object, person, or setting so learning is not tied to one material.",
         ]
 
     def _build_data_recording_sheet(self, target_skill: str) -> dict:
         return {
             "target_skill": target_skill,
             "fields": [
-                {"key": "independent_count", "label": "独立完成次数", "type": "number"},
-                {"key": "prompted_count", "label": "提示后完成次数", "type": "number"},
-                {"key": "error_count", "label": "错误/无反应次数", "type": "number"},
+                {"key": "independent_count", "label": "Independent responses", "type": "number"},
+                {"key": "prompted_count", "label": "Prompted responses", "type": "number"},
+                {"key": "error_count", "label": "Errors or no responses", "type": "number"},
                 {
                     "key": "used_variations",
-                    "label": "本节使用的泛化变式",
+                    "label": "Generalization variations used",
                     "type": "text",
                 },
-                {"key": "reinforcer_effect", "label": "强化物效果", "type": "text"},
-                {"key": "notes", "label": "备注", "type": "text"},
+                {"key": "reinforcer_effect", "label": "Reinforcer effectiveness", "type": "text"},
+                {"key": "notes", "label": "Notes", "type": "text"},
             ],
-            "mastery_rule_hint": "连续多节课独立完成率达到80%以上，可考虑增加泛化或提高目标阶段。",
+            "mastery_rule_hint": "When independent responding is 80% or higher across multiple sessions, consider increasing generalization or moving to the next goal phase.",
         }
 
     def _build_session_notes_template(self, target_skill: str) -> dict:

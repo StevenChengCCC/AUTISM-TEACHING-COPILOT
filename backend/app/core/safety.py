@@ -11,18 +11,14 @@ class SafetyVerdict:
     matched_terms: list[str]
 
 
-# BCBA-reviewable deterministic deny-list. Keep conservative: these terms route
-# behavior-reduction goals out of automated lesson generation.
+# BCBA-reviewable deterministic English deny-list. Keep conservative: these terms
+# route behavior-reduction goals out of automated lesson generation.
 PROBLEM_BEHAVIOR_REDUCTION_PATTERNS: dict[str, list[str]] = {
     "self_injury": [
         r"\bself[-\s]?injur(?:y|ious)\b",
         r"\bhead\s*banging\b",
         r"\bskin\s*picking\b",
         r"\bself\s*harm\b",
-        r"自伤",
-        r"自残",
-        r"撞头",
-        r"伤害自己",
     ],
     "aggression": [
         r"\baggression\b",
@@ -34,55 +30,32 @@ PROBLEM_BEHAVIOR_REDUCTION_PATTERNS: dict[str, list[str]] = {
         r"\bkicking\b",
         r"\bscratching\b",
         r"\bpinching\b",
-        r"攻击",
-        r"打人",
-        r"咬人",
-        r"踢人",
-        r"抓人",
-        r"伤人",
     ],
     "elopement": [
         r"\belopement\b",
         r"\bbolting\b",
         r"\brun(?:ning)?\s*away\b",
         r"\bleav(?:e|ing)\s+(?:the\s+)?(?:classroom|room|area)\b",
-        r"逃跑",
-        r"跑离",
-        r"离开教室",
-        r"冲出",
-        r"走失",
     ],
     "property_destruction": [
         r"\bproperty\s+destruction\b",
         r"\bdestroy(?:ing)?\s+(?:property|materials|items)\b",
         r"\bthrow(?:ing)?\s+(?:objects|items|materials)\b",
         r"\bbreak(?:ing)?\s+(?:objects|items|materials|property)\b",
-        r"破坏财物",
-        r"破坏物品",
-        r"摔东西",
-        r"扔东西",
     ],
     "pica": [
         r"\bpica\b",
         r"\beingest(?:ing)?\s+non[-\s]?food\b",
         r"\beat(?:ing)?\s+non[-\s]?food\b",
-        r"异食",
-        r"乱吃",
-        r"吃非食物",
     ],
     "restraint": [
         r"\brestraint\b",
         r"\bphysical\s+hold\b",
         r"\bmanual\s+hold\b",
-        r"约束",
-        r"身体限制",
-        r"肢体限制",
     ],
     "behavior_reduction": [
         r"\b(?:reduce|eliminate|extinguish|decrease|stop)\b.{0,40}\bbehaviou?r\b",
         r"\bbehaviou?r\b.{0,40}\b(?:reduction|elimination|extinction)\b",
-        r"(?:减少|降低|消除|停止|灭除).{0,20}行为",
-        r"行为.{0,20}(?:减少|降低|消除|停止|灭除)",
     ],
 }
 

@@ -110,7 +110,7 @@ class ImagePipeline:
             prompt = self.ai.generate_image_prompt(req.concept, variation)
             candidates.append(
                 ImageCandidate(
-                    title=f"{req.concept} 生成候选 {i + 1}",
+                    title=f"{req.concept} generated candidate {i + 1}",
                     source_type="generated",
                     tags=[req.concept, req.target_skill, "generated_prompt"],
                     variation_type=variation,
@@ -200,7 +200,7 @@ class ImagePipeline:
         variations = req.variation_requirements or ["general"]
         return [
             ImageCandidate(
-                title=f"{req.concept} 找图占位 {i + 1}",
+                title=f"{req.concept} search placeholder {i + 1}",
                 source_type="searched",
                 source_url=f"https://example.com/search?q={req.concept}-{i+1}",
                 tags=[req.concept, req.target_skill, "placeholder"],
