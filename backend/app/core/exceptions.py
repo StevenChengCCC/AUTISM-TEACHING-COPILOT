@@ -24,3 +24,8 @@ class ValidationError(AppError):
     def __init__(self, message: str, payload: dict | None = None):
         self.payload = payload or {}
         super().__init__(message)
+
+
+class SafetyDeferralError(ValidationError):
+    def __init__(self, payload: dict):
+        super().__init__(payload["message"], payload)

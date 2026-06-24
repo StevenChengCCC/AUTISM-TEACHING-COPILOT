@@ -1,7 +1,8 @@
 import json
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import NotFoundError, SafetyDeferralError, ValidationError
+from app.core.safety import classify_goal_safety
 from app.repositories.audit import AuditLogRepository
 from app.repositories.children import ChildProfileRepository
 from app.repositories.goals import TeachingGoalRepository
@@ -55,6 +56,37 @@ class LessonService:
             raise NotFoundError("Teaching goal not found")
         if goal and goal.child_id != req.child_id:
             raise NotFoundError("Teaching goal does not belong to child profile")
+
+        target_skill = goal.target_skill if goal else req.target_skill
+        concept = (
+            goal.concept if goal and goal.concept else self._infer_concept(target_skill)
+        )
+        verdict = classify_goal_safety(
+            target_skill=target_skill,
+            concept=concept,
+            notes=goal.notes if goal else None,
+            behavior_notes=child.behavior_notes,
+        )
+        if verdict.requires_bcba:
+            payload = {
+                "requires_bcba": True,
+                "category": verdict.category,
+                "matched_terms": verdict.matched_terms,
+                "message": "This goal targets behavior reduction and must be planned by a BCBA.",
+            }
+            AuditLogRepository(self.db).write(
+                actor_teacher_id,
+                "safety_deferral",
+                "TeachingGoal",
+                goal.id if goal else None,
+                req.child_id,
+                {
+                    "category": verdict.category,
+                    "matched_terms": verdict.matched_terms,
+                },
+            )
+            raise SafetyDeferralError(payload)
+
         if not req.selected_image_asset_ids:
             raise ValidationError(
                 "Teacher-confirmed images are required before saving a teaching package.",
@@ -75,10 +107,6 @@ class LessonService:
         profile = child_to_dict(child)
         interests = profile["interests"]
         reinforcers = profile["preferred_reinforcers"] or profile["reinforcers"]
-        target_skill = goal.target_skill if goal else req.target_skill
-        concept = (
-            goal.concept if goal and goal.concept else self._infer_concept(target_skill)
-        )
 
         segments = build_attention_segments(
             target_skill, req.duration_minutes, profile["attention_span_minutes"]
