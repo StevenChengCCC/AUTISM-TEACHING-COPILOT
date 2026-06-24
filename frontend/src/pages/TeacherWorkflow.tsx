@@ -51,6 +51,7 @@ export function TeacherWorkflowPage({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [guidedQuestions, setGuidedQuestions] = useState<GuidedQuestion[]>([]);
+  const [quickFill, setQuickFill] = useState<Record<string, string>>({});
 
   const selectedChild = children.find((child) => child.id === selectedChildId);
   const selectedGoal = goals.find((goal) => goal.id === selectedGoalId);
@@ -64,6 +65,8 @@ export function TeacherWorkflowPage({
     setError("");
     try {
       onGoalsChange(await api.listGoals(childId));
+      const completeness = await api.checkChildCompleteness(childId);
+      setGuidedQuestions(completeness.guided_questions);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load goals");
     } finally {
@@ -92,6 +95,41 @@ export function TeacherWorkflowPage({
       setSuccess("Teaching goal created.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create goal");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveMissingFields() {
+    if (!selectedChild) return;
+    setLoading(true);
+    setError("");
+    try {
+      const payload: Record<string, unknown> = {};
+      for (const [field, value] of Object.entries(quickFill)) {
+        if (field === "attention_span_minutes") {
+          payload[field] = Number(value);
+        } else if (field === "preferred_reinforcers") {
+          payload[field] = value
+            .split(/[,\n，]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+        } else {
+          payload[field] = value;
+        }
+      }
+      await api.updateChild(selectedChild.id, payload);
+      const completeness = await api.checkChildCompleteness(selectedChild.id);
+      setGuidedQuestions(completeness.guided_questions);
+      setSuccess(
+        completeness.is_complete
+          ? "Profile completeness is ready."
+          : "Saved. Some fields still need details.",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to save missing fields",
+      );
     } finally {
       setLoading(false);
     }
@@ -209,8 +247,21 @@ export function TeacherWorkflowPage({
                 <br />
                 {item.question}
                 <small>{item.reason}</small>
+                <input
+                  value={quickFill[item.field] ?? ""}
+                  onChange={(event) =>
+                    setQuickFill({
+                      ...quickFill,
+                      [item.field]: event.target.value,
+                    })
+                  }
+                  placeholder="Answer here"
+                />
               </div>
             ))}
+            <button className="primary" onClick={saveMissingFields}>
+              Save Missing Profile Fields
+            </button>
           </div>
         )}
       </div>

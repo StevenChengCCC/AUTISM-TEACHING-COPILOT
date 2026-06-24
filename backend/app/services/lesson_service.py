@@ -2,6 +2,7 @@ import json
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import NotFoundError, ValidationError
+from app.repositories.audit import AuditLogRepository
 from app.repositories.children import ChildProfileRepository
 from app.repositories.goals import TeachingGoalRepository
 from app.repositories.images import ImageAssetRepository, asset_to_candidate
@@ -37,7 +38,9 @@ class LessonService:
         self.lessons = LessonPackageRepository(db)
         self.records = SessionRecordRepository(db)
 
-    def create_lesson(self, req: LessonPlanRequest) -> LessonPlanResponse:
+    def create_lesson(
+        self, req: LessonPlanRequest, actor_teacher_id: int | None = None
+    ) -> LessonPlanResponse:
         child = self.children.get(req.child_id)
         if not child:
             raise NotFoundError("Child profile not found")
@@ -130,11 +133,21 @@ class LessonService:
             formats=req.print_formats,
         )
         self.lessons.update_printable_links(lesson, printable_links)
+        AuditLogRepository(self.db).write(
+            actor_teacher_id,
+            "create",
+            "LessonPackage",
+            lesson.id,
+            req.child_id,
+            {"goal_id": lesson.goal_id, "image_count": len(selected_assets)},
+        )
         response.id = lesson.id
         response.downloadable_card_pdf_links = printable_links
         return response
 
-    def create_record(self, req: SessionRecordCreate) -> SessionRecordRead:
+    def create_record(
+        self, req: SessionRecordCreate, actor_teacher_id: int | None = None
+    ) -> SessionRecordRead:
         child = self.children.get(req.child_id)
         if not child:
             raise NotFoundError("Child profile not found")
@@ -165,6 +178,14 @@ class LessonService:
         )
         if goal:
             self.goals.update_mastery(goal, progress.mastery_level)
+        AuditLogRepository(self.db).write(
+            actor_teacher_id,
+            "create",
+            "SessionRecord",
+            record.id,
+            req.child_id,
+            {"goal_id": record.goal_id, "mastery_level": record.mastery_level},
+        )
         return SessionRecordRead(
             id=record.id,
             child_id=record.child_id,

@@ -1,4 +1,5 @@
 from app.domain.models import (
+    AuditLog,
     ChildProfile,
     CurriculumContent,
     ImageAsset,
@@ -24,4 +25,5 @@ __all__ = [
     "Teacher",
     "TeacherChildAccess",
     "CurriculumContent",
+    "AuditLog",
 ]

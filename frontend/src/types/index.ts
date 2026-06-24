@@ -89,3 +89,43 @@ export type SessionRecordRead = {
   progress_delta: number;
   confidence_score: number;
 };
+
+export type UploadedMaterial = {
+  id: number;
+  child_id: number;
+  title: string;
+  material_type: string;
+  source_path?: string | null;
+  extracted_text: string;
+  status: string;
+};
+
+export type Organization = {
+  id: number;
+  name: string;
+  external_ref?: string | null;
+};
+
+export type Teacher = {
+  id: number;
+  organization_id?: number | null;
+  display_name: string;
+  email?: string | null;
+  role: string;
+};
+
+export type TeacherChildAccess = {
+  id: number;
+  teacher_id: number;
+  child_id: number;
+  permission_level: string;
+};
+
+export type CurriculumContent = {
+  id: number;
+  organization_id?: number | null;
+  title: string;
+  content_type: string;
+  content_json: Record<string, unknown>;
+  status: string;
+};

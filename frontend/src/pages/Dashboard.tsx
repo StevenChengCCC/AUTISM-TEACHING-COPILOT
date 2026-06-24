@@ -3,9 +3,13 @@ import { ChildProfilesPage } from "./ChildProfiles";
 import { CreateLessonPackagePage } from "./CreateLessonPackage";
 import { ImagePipelineReviewPage } from "./ImagePipelineReview";
 import { LessonPackagePreviewPage } from "./LessonPackagePreview";
+import { MaterialsPage } from "./Materials";
+import { OrganizationManagementPage } from "./OrganizationManagement";
 import { SessionRecordsPage } from "./SessionRecords";
 import { TeachingGoalsPage } from "./TeachingGoals";
+import { TeacherAccessManagementPage } from "./TeacherAccessManagement";
 import { TeacherWorkflowPage } from "./TeacherWorkflow";
+import { CurriculumContentPage } from "./CurriculumContent";
 import { api } from "../api/client";
 import type {
   ChildProfile,
@@ -24,9 +28,15 @@ type PageKey =
   | "lesson"
   | "preview"
   | "records";
+type ManagementPageKey =
+  | "materials"
+  | "organizations"
+  | "access"
+  | "curriculum";
+type AnyPageKey = PageKey | ManagementPageKey;
 
 export function Dashboard() {
-  const [page, setPage] = useState<PageKey>("workflow");
+  const [page, setPage] = useState<AnyPageKey>("workflow");
   const [children, setChildren] = useState<ChildProfile[]>([]);
   const [goals, setGoals] = useState<TeachingGoal[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<number | null>(null);
@@ -94,11 +104,15 @@ export function Dashboard() {
               "workflow",
               "children",
               "goals",
+              "materials",
               "images",
               "lesson",
               "preview",
               "records",
-            ] as PageKey[]
+              "organizations",
+              "access",
+              "curriculum",
+            ] as AnyPageKey[]
           ).map((key) => (
             <button
               className={page === key ? "primary" : ""}
@@ -153,6 +167,7 @@ export function Dashboard() {
           onSelectGoal={setSelectedGoalId}
         />
       )}
+      {page === "materials" && <MaterialsPage child={selectedChild} />}
       {page === "images" && (
         <ImagePipelineReviewPage
           child={selectedChild}
@@ -179,18 +194,25 @@ export function Dashboard() {
           onGoalsRefresh={setGoals}
         />
       )}
+      {page === "organizations" && <OrganizationManagementPage />}
+      {page === "access" && <TeacherAccessManagementPage children={children} />}
+      {page === "curriculum" && <CurriculumContentPage />}
     </main>
   );
 }
 
-function pageLabel(page: PageKey): string {
+function pageLabel(page: AnyPageKey): string {
   return {
     children: "Child Profiles",
     workflow: "Workflow",
     goals: "Teaching Goals",
+    materials: "Materials",
     images: "Image Review",
     lesson: "Create Package",
     preview: "Preview",
     records: "Session Records",
+    organizations: "Organizations",
+    access: "Teacher Access",
+    curriculum: "Curriculum",
   }[page];
 }

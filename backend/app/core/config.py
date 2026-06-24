@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./autism_copilot.db"
     STORAGE_DIR: str = "./storage"
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    DEV_ALLOW_ANON_TEACHER: bool = True
+    DEV_ANON_TEACHER_ID: int = 1
 
     AI_PROVIDER: str = "mock"  # mock | azure_openai | openai
 

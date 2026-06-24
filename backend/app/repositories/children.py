@@ -3,7 +3,7 @@ import json
 from sqlalchemy.orm import Session
 
 from app.domain.models import ChildProfile
-from app.schemas.dto import ChildProfileCreate, ChildProfileRead
+from app.schemas.dto import ChildProfileCreate, ChildProfileRead, ChildProfileUpdate
 
 
 def child_to_read(child: ChildProfile) -> ChildProfileRead:
@@ -41,6 +41,20 @@ class ChildProfileRepository:
     def list(self) -> list[ChildProfile]:
         return self.db.query(ChildProfile).order_by(ChildProfile.id.desc()).all()
 
+    def list_for_teacher(
+        self, teacher_id: int, organization_id: int | None, is_admin: bool
+    ) -> list[ChildProfile]:
+        query = self.db.query(ChildProfile)
+        if is_admin and organization_id is not None:
+            query = query.filter(ChildProfile.organization_id == organization_id)
+        elif not is_admin:
+            from app.domain.models import TeacherChildAccess
+
+            query = query.join(
+                TeacherChildAccess, TeacherChildAccess.child_id == ChildProfile.id
+            ).filter(TeacherChildAccess.teacher_id == teacher_id)
+        return query.order_by(ChildProfile.id.desc()).all()
+
     def create(self, payload: ChildProfileCreate) -> ChildProfile:
         child = ChildProfile(
             code=payload.code,
@@ -64,6 +78,21 @@ class ChildProfileRepository:
             notes=payload.notes,
         )
         self.db.add(child)
+        self.db.commit()
+        self.db.refresh(child)
+        return child
+
+    def update(self, child: ChildProfile, payload: ChildProfileUpdate) -> ChildProfile:
+        changes = payload.model_dump(exclude_unset=True)
+        for key, value in changes.items():
+            if key == "interests" and value is not None:
+                child.interests_json = json.dumps(value, ensure_ascii=False)
+            elif key == "reinforcers" and value is not None:
+                child.reinforcers_json = json.dumps(value, ensure_ascii=False)
+            elif key == "preferred_reinforcers" and value is not None:
+                child.preferred_reinforcers_json = json.dumps(value, ensure_ascii=False)
+            else:
+                setattr(child, key, value)
         self.db.commit()
         self.db.refresh(child)
         return child

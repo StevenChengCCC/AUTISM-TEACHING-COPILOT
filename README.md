@@ -59,6 +59,8 @@ Backend:
 ```text
 AI_PROVIDER=mock
 DATABASE_URL=sqlite:///./autism_copilot.db
+DEV_ALLOW_ANON_TEACHER=true
+DEV_ANON_TEACHER_ID=1
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
 AZURE_OPENAI_API_KEY=
@@ -74,6 +76,17 @@ Frontend:
 ```text
 VITE_API_BASE=http://localhost:8000/api
 ```
+
+## Secrets And Dev Permissions
+
+Backend secrets are read only from environment variables or `backend/.env`.
+The frontend must not receive OpenAI, Azure OpenAI, Pexels, Pixabay, or storage
+secrets; it only uses `VITE_API_BASE`.
+
+MVP permission checks use the `X-Teacher-Id` header. For local development,
+`DEV_ALLOW_ANON_TEACHER=true` enables an anonymous admin-like teacher so the app
+can run without a login system. Production should set this to `false` and replace
+the header dependency with real authentication.
 
 ## Mock Mode
 

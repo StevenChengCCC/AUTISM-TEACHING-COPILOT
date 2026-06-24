@@ -2,6 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChildProfileCreate(BaseModel):
+    organization_id: int | None = None
     code: str = Field(..., examples=["C-001"])
     age: int | None = None
     diagnosis_level: str | None = None
@@ -22,6 +23,23 @@ class ChildProfileRead(ChildProfileCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class ChildProfileUpdate(BaseModel):
+    organization_id: int | None = None
+    age: int | None = None
+    diagnosis_level: str | None = None
+    attention_span_minutes: int | None = None
+    communication_mode: str | None = None
+    communication_level: str | None = None
+    current_level: str | None = None
+    interests: list[str] | None = None
+    reinforcers: list[str] | None = None
+    preferred_reinforcers: list[str] | None = None
+    prompting_that_works: str | None = None
+    avoid_notes: str | None = None
+    behavior_notes: str | None = None
+    notes: str | None = None
 
 
 class ProfileQuestion(BaseModel):
@@ -159,13 +177,21 @@ class UploadedMaterialCreate(BaseModel):
     material_type: str = "document"
     source_path: str | None = None
     extracted_text: str = ""
+    status: str = "uploaded"
+
+
+class UploadedMaterialUpdate(BaseModel):
+    title: str | None = None
+    material_type: str | None = None
+    source_path: str | None = None
+    extracted_text: str | None = None
+    status: str | None = None
 
 
 class UploadedMaterialRead(UploadedMaterialCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    status: str = "uploaded"
 
 
 class OrganizationCreate(BaseModel):
@@ -177,6 +203,11 @@ class OrganizationRead(OrganizationCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class OrganizationUpdate(BaseModel):
+    name: str | None = None
+    external_ref: str | None = None
 
 
 class TeacherCreate(BaseModel):
@@ -192,6 +223,13 @@ class TeacherRead(TeacherCreate):
     id: int
 
 
+class TeacherUpdate(BaseModel):
+    organization_id: int | None = None
+    display_name: str | None = None
+    email: str | None = None
+    role: str | None = None
+
+
 class TeacherChildAccessCreate(BaseModel):
     teacher_id: int
     child_id: int
@@ -202,6 +240,10 @@ class TeacherChildAccessRead(TeacherChildAccessCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class TeacherChildAccessUpdate(BaseModel):
+    permission_level: str | None = None
 
 
 class CurriculumContentCreate(BaseModel):
@@ -216,3 +258,23 @@ class CurriculumContentRead(CurriculumContentCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class CurriculumContentUpdate(BaseModel):
+    organization_id: int | None = None
+    title: str | None = None
+    content_type: str | None = None
+    content_json: dict | None = None
+    status: str | None = None
+
+
+class AuditLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    actor_teacher_id: int | None = None
+    action: str
+    entity_type: str
+    entity_id: int | None = None
+    child_id: int | None = None
+    metadata_json: str = "{}"

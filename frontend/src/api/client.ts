@@ -3,8 +3,13 @@ import type {
   ImageCandidate,
   ImagePipelineResult,
   LessonPlanResponse,
+  CurriculumContent,
+  Organization,
   SessionRecordRead,
   TeachingGoal,
+  Teacher,
+  TeacherChildAccess,
+  UploadedMaterial,
 } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000/api";
@@ -45,6 +50,18 @@ export const api = {
   createChild: (payload: Omit<ChildProfile, "id">) =>
     request<ChildProfile>("/children", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  checkChildCompleteness: (childId: number) =>
+    request<{
+      child_id: number;
+      is_complete: boolean;
+      missing_fields: string[];
+      guided_questions: { field: string; question: string; reason: string }[];
+    }>(`/children/${childId}/completeness`),
+  updateChild: (childId: number, payload: Partial<Omit<ChildProfile, "id">>) =>
+    request<ChildProfile>(`/children/${childId}`, {
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
   listGoals: (childId?: number) =>
@@ -109,5 +126,63 @@ export const api = {
     request<SessionRecordRead>("/records", {
       method: "POST",
       body: JSON.stringify(payload),
+    }),
+  listMaterials: (childId?: number) =>
+    request<UploadedMaterial[]>(
+      childId ? `/materials?child_id=${childId}` : "/materials",
+    ),
+  createMaterial: (payload: Omit<UploadedMaterial, "id">) =>
+    request<UploadedMaterial>("/materials", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateMaterial: (materialId: number, payload: Partial<UploadedMaterial>) =>
+    request<UploadedMaterial>(`/materials/${materialId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteMaterial: (materialId: number) =>
+    request<{ deleted: boolean; id: number }>(`/materials/${materialId}`, {
+      method: "DELETE",
+    }),
+  listOrganizations: () => request<Organization[]>("/organizations"),
+  createOrganization: (payload: Omit<Organization, "id">) =>
+    request<Organization>("/organizations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listTeachers: () => request<Teacher[]>("/teachers"),
+  createTeacher: (payload: Omit<Teacher, "id">) =>
+    request<Teacher>("/teachers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  listAccess: () => request<TeacherChildAccess[]>("/access"),
+  createAccess: (payload: Omit<TeacherChildAccess, "id">) =>
+    request<TeacherChildAccess>("/access", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteAccess: (accessId: number) =>
+    request<{ deleted: boolean; id: number }>(`/access/${accessId}`, {
+      method: "DELETE",
+    }),
+  listCurriculum: () => request<CurriculumContent[]>("/curriculum"),
+  createCurriculum: (payload: Omit<CurriculumContent, "id">) =>
+    request<CurriculumContent>("/curriculum", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateCurriculum: (
+    contentId: number,
+    payload: Partial<Omit<CurriculumContent, "id">>,
+  ) =>
+    request<CurriculumContent>(`/curriculum/${contentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteCurriculum: (contentId: number) =>
+    request<{ deleted: boolean; id: number }>(`/curriculum/${contentId}`, {
+      method: "DELETE",
     }),
 };

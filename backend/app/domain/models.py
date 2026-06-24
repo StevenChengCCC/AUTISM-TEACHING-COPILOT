@@ -9,6 +9,7 @@ class ChildProfile(Base):
     __tablename__ = "child_profiles"
 
     id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     code = Column(String(50), unique=True, index=True, nullable=False)
     age = Column(Integer, nullable=True)
     diagnosis_level = Column(String(100), nullable=True)
@@ -161,6 +162,7 @@ class TeacherChildAccess(Base):
     child_id = Column(Integer, ForeignKey("child_profiles.id"), nullable=False)
     permission_level = Column(String(100), default="editor")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
 class CurriculumContent(Base):
@@ -174,3 +176,16 @@ class CurriculumContent(Base):
     status = Column(String(50), default="draft")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    actor_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
+    action = Column(String(100), nullable=False)
+    entity_type = Column(String(100), nullable=False)
+    entity_id = Column(Integer, nullable=True)
+    child_id = Column(Integer, ForeignKey("child_profiles.id"), nullable=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    metadata_json = Column(Text, default="{}")
