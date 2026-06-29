@@ -34,7 +34,7 @@ class ChildProfileService:
         return child_to_read(child)
 
     def list_child_profiles(self) -> list[ChildProfileRead]:
-        return [child_to_read(child) for child in self.children.list()]
+        return [child_to_read(child) for child in self.children.list_all()]
 
     def list_for_teacher(
         self, teacher_id: int, organization_id: int | None, is_admin: bool

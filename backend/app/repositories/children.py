@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 from sqlalchemy.orm import Session
@@ -38,7 +40,7 @@ class ChildProfileRepository:
     def get_by_code(self, code: str) -> ChildProfile | None:
         return self.db.query(ChildProfile).filter(ChildProfile.code == code).first()
 
-    def list(self) -> list[ChildProfile]:
+    def list_all(self) -> list[ChildProfile]:
         return self.db.query(ChildProfile).order_by(ChildProfile.id.desc()).all()
 
     def list_for_teacher(

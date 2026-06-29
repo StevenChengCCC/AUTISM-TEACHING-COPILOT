@@ -3,12 +3,46 @@ from pathlib import Path
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, letter
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from app.core.config import settings
 from app.domain.models import ImageAsset, LessonPackage
 
 PAGE_SIZES = {"a4": A4, "letter": letter}
+
+
+def _resolve_local_image_path(value: str | None) -> Path | None:
+    """Resolve an asset path/URL to an on-disk file if one exists.
+
+    Handles direct filesystem paths and local-storage web paths such as
+    ``/storage/...`` that map under ``settings.STORAGE_DIR``. Returns None for
+    remote URLs or paths that do not resolve on disk.
+    """
+    if not value:
+        return None
+    candidate = Path(value)
+    if candidate.is_file():
+        return candidate
+    storage_root = Path(settings.STORAGE_DIR)
+    normalized = value.replace("\\", "/")
+    if normalized.startswith("/storage/"):
+        mapped = storage_root / normalized[len("/storage/") :]
+        if mapped.is_file():
+            return mapped
+    if normalized.startswith("storage/"):
+        mapped = storage_root / normalized[len("storage/") :]
+        if mapped.is_file():
+            return mapped
+    return None
+
+
+def _asset_image_path(asset: ImageAsset) -> Path | None:
+    for value in (asset.local_path, asset.thumbnail_url, asset.source_url):
+        resolved = _resolve_local_image_path(value)
+        if resolved is not None:
+            return resolved
+    return None
 
 
 class PrintableCardService:
@@ -91,13 +125,31 @@ class PrintableCardService:
         pdf.drawString(
             x + 8 * mm, y + height - 29 * mm, f"Goal: {lesson.target_skill[:34]}"
         )
-        pdf.setFillColor(colors.whitesmoke)
-        pdf.rect(
-            x + 8 * mm, y + 28 * mm, width - 16 * mm, height - 68 * mm, stroke=0, fill=1
-        )
-        pdf.setFillColor(colors.darkgray)
-        pdf.setFont("Helvetica-Bold", 28)
-        pdf.drawCentredString(x + width / 2, y + height / 2, "IMAGE")
+        img_x = x + 8 * mm
+        img_y = y + 28 * mm
+        img_w = width - 16 * mm
+        img_h = height - 68 * mm
+        image_path = _asset_image_path(asset)
+        if image_path is not None:
+            try:
+                pdf.drawImage(
+                    ImageReader(str(image_path)),
+                    img_x,
+                    img_y,
+                    width=img_w,
+                    height=img_h,
+                    preserveAspectRatio=True,
+                    mask="auto",
+                )
+            except Exception:
+                # Corrupt/unsupported image: fall back to the placeholder box.
+                image_path = None
+        if image_path is None:
+            pdf.setFillColor(colors.whitesmoke)
+            pdf.rect(img_x, img_y, img_w, img_h, stroke=0, fill=1)
+            pdf.setFillColor(colors.darkgray)
+            pdf.setFont("Helvetica-Bold", 28)
+            pdf.drawCentredString(x + width / 2, y + height / 2, "IMAGE")
         pdf.setFillColor(colors.black)
         pdf.setFont("Helvetica", 8)
         pdf.drawString(

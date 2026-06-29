@@ -155,6 +155,53 @@ class LessonPlanResponse(BaseModel):
     cost_saving_notes: list[str] = Field(default_factory=list)
 
 
+ARTIFACT_TYPES = {
+    "teacher_script",
+    "generalization_plan",
+    "reinforcement_plan",
+    "data_recording_sheet",
+    "session_notes_template",
+    "image_cards",
+}
+
+DISPOSITIONS = {"used_as_is", "edited", "not_used"}
+
+
+class ArtifactFeedbackItem(BaseModel):
+    artifact_type: str
+    disposition: str
+    edit_note: str | None = None
+
+
+class ArtifactFeedbackSubmit(BaseModel):
+    items: list[ArtifactFeedbackItem] = Field(default_factory=list)
+
+
+class ArtifactFeedbackRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    lesson_id: int
+    child_id: int | None = None
+    teacher_id: int | None = None
+    artifact_type: str
+    disposition: str
+    edit_note: str | None = None
+
+
+class DispositionCounts(BaseModel):
+    used_as_is: int = 0
+    edited: int = 0
+    not_used: int = 0
+
+
+class DirectUseMetrics(BaseModel):
+    direct_use_rate: float = 0.0
+    total_rated: int = 0
+    by_disposition: DispositionCounts = Field(default_factory=DispositionCounts)
+    by_artifact_type: dict[str, DispositionCounts] = Field(default_factory=dict)
+
+
 class SessionRecordCreate(BaseModel):
     child_id: int
     goal_id: int | None = None

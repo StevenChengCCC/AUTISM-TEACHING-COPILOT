@@ -1,5 +1,8 @@
 import type {
+  ArtifactFeedbackItem,
+  ArtifactFeedbackRead,
   ChildProfile,
+  DirectUseMetrics,
   ImageCandidate,
   ImagePipelineResult,
   LessonPlanResponse,
@@ -127,6 +130,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  submitLessonFeedback: (lessonId: number, items: ArtifactFeedbackItem[]) =>
+    request<ArtifactFeedbackRead[]>(`/lessons/${lessonId}/feedback`, {
+      method: "POST",
+      body: JSON.stringify({ items }),
+    }),
+  getLessonFeedback: (lessonId: number) =>
+    request<ArtifactFeedbackRead[]>(`/lessons/${lessonId}/feedback`),
+  getDirectUseMetrics: (params?: {
+    child_id?: number;
+    goal_id?: number;
+    since?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.child_id != null) query.set("child_id", String(params.child_id));
+    if (params?.goal_id != null) query.set("goal_id", String(params.goal_id));
+    if (params?.since) query.set("since", params.since);
+    const qs = query.toString();
+    return request<DirectUseMetrics>(`/metrics/direct-use${qs ? `?${qs}` : ""}`);
+  },
   listMaterials: (childId?: number) =>
     request<UploadedMaterial[]>(
       childId ? `/materials?child_id=${childId}` : "/materials",

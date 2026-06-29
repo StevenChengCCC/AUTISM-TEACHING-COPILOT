@@ -75,6 +75,42 @@ export type LessonPlanResponse = {
   cost_saving_notes: string[];
 };
 
+export type ArtifactType =
+  | "teacher_script"
+  | "generalization_plan"
+  | "reinforcement_plan"
+  | "data_recording_sheet"
+  | "session_notes_template"
+  | "image_cards";
+
+export type Disposition = "used_as_is" | "edited" | "not_used";
+
+export type ArtifactFeedbackItem = {
+  artifact_type: ArtifactType;
+  disposition: Disposition;
+  edit_note?: string | null;
+};
+
+export type ArtifactFeedbackRead = ArtifactFeedbackItem & {
+  id: number;
+  lesson_id: number;
+  child_id?: number | null;
+  teacher_id?: number | null;
+};
+
+export type DispositionCounts = {
+  used_as_is: number;
+  edited: number;
+  not_used: number;
+};
+
+export type DirectUseMetrics = {
+  direct_use_rate: number;
+  total_rated: number;
+  by_disposition: DispositionCounts;
+  by_artifact_type: Record<string, DispositionCounts>;
+};
+
 export type SessionRecordRead = {
   id: number;
   child_id: number;

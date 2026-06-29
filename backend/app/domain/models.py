@@ -178,6 +178,19 @@ class CurriculumContent(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
+class LessonArtifactFeedback(Base):
+    __tablename__ = "lesson_artifact_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lesson_id = Column(Integer, ForeignKey("lesson_packages.id"), nullable=False)
+    child_id = Column(Integer, ForeignKey("child_profiles.id"), nullable=True)
+    teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
+    artifact_type = Column(String(100), nullable=False)
+    disposition = Column(String(50), nullable=False)  # used_as_is/edited/not_used
+    edit_note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
