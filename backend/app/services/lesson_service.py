@@ -229,19 +229,36 @@ class LessonService:
             confidence_score=record.confidence_score,
         )
 
+    # Action/qualifier words removed when inferring a concept from a skill
+    # string. Whole-word, case-insensitive removal keeps common acquisition
+    # goals off the LLM path without mangling the remaining concept text.
+    _CONCEPT_STOP_WORDS = {
+        "recognize",
+        "identify",
+        "label",
+        "request",
+        "express",
+        "learn",
+        "imitate",
+        "receptively",
+        "expressively",
+        "match",
+        "point",
+        "to",
+        "the",
+        "a",
+        "an",
+    }
+
     def _infer_concept(self, target_skill: str) -> str:
         # Simple local cleanup keeps common acquisition goals off the LLM path.
-        for token in [
-            "recognize",
-            "identify",
-            "label",
-            "request",
-            "express",
-            "learn",
-            "imitate",
-        ]:
-            target_skill = target_skill.replace(token, "")
-        return target_skill.strip(" ：:，,。") or target_skill
+        kept = [
+            word
+            for word in target_skill.split()
+            if word.strip(" ：:，,。.!?").lower() not in self._CONCEPT_STOP_WORDS
+        ]
+        concept = " ".join(kept).strip(" ：:，,。.!?")
+        return concept or target_skill
 
     def _build_teacher_script(
         self, target_skill: str, concept: str, profile: dict

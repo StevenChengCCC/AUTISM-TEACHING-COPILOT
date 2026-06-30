@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 from pathlib import Path
 
@@ -18,14 +20,14 @@ class UploadedMaterialService:
         self.children = ChildProfileRepository(db)
         self.materials = UploadedMaterialRepository(db)
 
-    def list(self, child_id: int | None = None) -> list[UploadedMaterialRead]:
+    def list_all(self, child_id: int | None = None) -> list[UploadedMaterialRead]:
         materials = self.materials.list(child_id)
         return [UploadedMaterialRead.model_validate(material) for material in materials]
 
     def list_for_child(self, child_id: int) -> list[UploadedMaterialRead]:
         if not self.children.get(child_id):
             raise NotFoundError("Child profile not found")
-        return self.list(child_id)
+        return self.list_all(child_id)
 
     def get(self, material_id: int) -> UploadedMaterialRead:
         material = self.materials.get(material_id)

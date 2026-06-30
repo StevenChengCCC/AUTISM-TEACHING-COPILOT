@@ -101,6 +101,28 @@ def test_lesson_generation_returns_guided_questions_for_incomplete_profile():
         raise AssertionError("Expected incomplete profile to block generation")
 
 
+def test_infer_concept_uses_whole_word_removal():
+    service = LessonService(make_session())
+
+    assert service._infer_concept("Receptively identify apple") == "apple"
+    assert service._infer_concept("Expressively label dog") == "dog"
+    assert service._infer_concept("match the apple to the apple") == "apple apple"
+
+    for sample in [
+        "Receptively identify apple",
+        "Expressively label dog",
+        "point to the cup",
+    ]:
+        result = service._infer_concept(sample)
+        assert "  " not in result
+        assert result == result.strip()
+
+
+def test_infer_concept_falls_back_when_only_stop_words():
+    service = LessonService(make_session())
+    assert service._infer_concept("identify the") == "identify the"
+
+
 def test_session_record_uses_progress_engine():
     session = make_session()
     session.add(complete_child("C-3"))

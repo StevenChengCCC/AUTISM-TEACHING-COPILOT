@@ -1,9 +1,12 @@
 from pathlib import Path
 
+from reportlab.pdfgen import canvas
+
 from app.domain.models import ImageAsset, LessonPackage
 from app.services.printable_card_service import (
     PrintableCardService,
     _asset_image_path,
+    _wrap_title,
 )
 
 FIXTURE_PNG = Path(__file__).parent / "fixtures" / "sample_card.png"
@@ -80,3 +83,63 @@ def test_pdf_falls_back_to_placeholder_without_crash(tmp_path):
         "apple",
     )
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_generate_pdfs_both_formats_with_real_image(tmp_path, monkeypatch):
+    from app.core import config
+
+    monkeypatch.setattr(config.settings, "STORAGE_DIR", str(tmp_path))
+    service = PrintableCardService()
+
+    links = service.generate_pdfs(
+        lesson=_lesson(),
+        assets=[
+            _asset(
+                title="Apple (real photo-style card) for receptive identification",
+                local_path=str(FIXTURE_PNG),
+            )
+        ],
+        concept="apple",
+        formats=["a4", "letter"],
+    )
+
+    assert set(links) == {"a4", "letter"}
+    for fmt in ("a4", "letter"):
+        pdf_path = tmp_path / "cards" / f"lesson_42_cards_{fmt}.pdf"
+        assert pdf_path.exists() and pdf_path.stat().st_size > 0
+
+
+def _page_count(pdf_bytes: bytes) -> int:
+    # reportlab writes uncompressed page dictionaries; count the page objects.
+    return pdf_bytes.count(b"/Type /Page\n") + pdf_bytes.count(b"/Type /Page ")
+
+
+def test_one_large_card_per_page(tmp_path):
+    service = PrintableCardService()
+    out = tmp_path / "multi.pdf"
+    service._write_pdf(
+        out,
+        (595.27, 841.89),
+        _lesson(),
+        [
+            _asset(id=1, title="Apple", local_path=str(FIXTURE_PNG)),
+            _asset(id=2, title="Dog", local_path=str(FIXTURE_PNG)),
+            _asset(id=3, title="Cup", local_path=str(FIXTURE_PNG)),
+        ],
+        "apple",
+    )
+    assert _page_count(out.read_bytes()) == 3
+
+
+def test_long_title_wraps_without_clipping(tmp_path):
+    pdf = canvas.Canvas(str(tmp_path / "measure.pdf"))
+    long_title = "Apple (real photo-style card) for receptive identification practice"
+    max_width = 400
+    lines, size = _wrap_title(pdf, long_title, max_width)
+
+    assert 1 <= len(lines) <= 2
+    # Every wrapped line fits within the available width at the chosen size.
+    for line in lines:
+        assert pdf.stringWidth(line, "Helvetica-Bold", size) <= max_width
+    # The closing paren is preserved, not clipped off mid-word.
+    assert "card)" in " ".join(lines)

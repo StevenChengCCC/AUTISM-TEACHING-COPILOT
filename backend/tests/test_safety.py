@@ -61,6 +61,47 @@ def test_reduction_goals_defer(target_skill, expected_category):
     assert verdict.matched_terms
 
 
+@pytest.mark.parametrize(
+    "behavior_notes",
+    [
+        "no behavior-reduction targets; occasional task refusal",
+        "no self-injury, no aggression",
+    ],
+)
+def test_negated_behavior_notes_do_not_block_acquisition_goal(behavior_notes):
+    verdict = classify_goal_safety(
+        target_skill="Receptively identify apple",
+        concept="apple",
+        notes="",
+        behavior_notes=behavior_notes,
+    )
+
+    assert verdict.requires_bcba is False
+    assert verdict.category is None
+    assert verdict.matched_terms == []
+
+
+@pytest.mark.parametrize(
+    ("target_skill", "expected_category"),
+    [
+        ("reduce hitting peers", "aggression"),
+        ("decrease elopement", "elopement"),
+    ],
+)
+def test_real_reduction_goals_still_block_despite_clean_notes(
+    target_skill, expected_category
+):
+    verdict = classify_goal_safety(
+        target_skill=target_skill,
+        concept="",
+        notes="",
+        behavior_notes="no self-injury, no aggression",
+    )
+
+    assert verdict.requires_bcba is True
+    assert verdict.category == expected_category
+
+
 def test_deferral_carries_category_and_matched_terms():
     verdict = classify_goal_safety(
         target_skill="eliminate behavior",

@@ -29,7 +29,7 @@ def test_materials_crud_and_audit():
         actor_teacher_id=1,
     )
     assert created.id == 1
-    assert service.list(child_id=1)[0].title == "Notes"
+    assert service.list_all(child_id=1)[0].title == "Notes"
 
     updated = service.update(
         1, UploadedMaterialUpdate(status="reviewed"), actor_teacher_id=1

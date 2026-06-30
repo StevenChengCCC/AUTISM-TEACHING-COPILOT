@@ -21,7 +21,7 @@ def list_materials(
 ):
     if child_id is not None:
         require_child_access(db, child_id, current, "viewer")
-    return UploadedMaterialService(db).list(child_id)
+    return UploadedMaterialService(db).list_all(child_id)
 
 
 @router.get("/{material_id}", response_model=UploadedMaterialRead)

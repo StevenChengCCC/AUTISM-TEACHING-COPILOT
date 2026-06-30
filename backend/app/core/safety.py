@@ -64,11 +64,17 @@ def classify_goal_safety(
     target_skill: str | None,
     concept: str | None,
     notes: str | None,
-    behavior_notes: str | None,
+    behavior_notes: str | None = None,
 ) -> SafetyVerdict:
+    # The hard BCBA block is scoped to the goal's own definition
+    # (target_skill + concept + notes). ``behavior_notes`` is descriptive
+    # background about the child and is intentionally excluded from the
+    # deny-list scan: phrases like "no self-injury, no aggression" must not
+    # block a benign acquisition goal. A real reduction goal (e.g.
+    # "reduce hitting peers") still lives in target_skill/notes and blocks.
     text = " ".join(
         value.strip()
-        for value in [target_skill, concept, notes, behavior_notes]
+        for value in [target_skill, concept, notes]
         if value and value.strip()
     )
     if not text:
