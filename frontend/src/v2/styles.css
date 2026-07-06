@@ -91,6 +91,7 @@ html,body,#root { min-height:100%; margin:0; }
 .v2-composer { display:grid; grid-template-columns:1fr auto; gap:8px; }.v2-composer .v2-button { min-height:42px; padding:0 16px; }
 .v2-ai-note { margin-top:20px; padding:13px; color:#284c80; border:1px solid #bfd5f5; border-radius:var(--radius-sm); background:#f8fbff; font-size:13px; line-height:1.5; }
 .v2-draft>div { grid-template-columns:1.25fr .55fr 1.4fr .45fr; }.v2-draft-tags { display:flex; flex-wrap:wrap; flex-direction:row!important; gap:5px; }.v2-draft-tags .v2-tag { padding:4px 7px; font-size:11px; }
+.v2-draft--waiting { color:#475569; border-color:var(--color-border); background:var(--color-bg); }.v2-draft--waiting em { color:var(--color-muted); }
 
 /* Students */
 .v2-students-layout { display:grid; grid-template-columns:1.1fr 1fr; gap:24px; }.v2-toolbar .v2-search { width:min(470px,70%); }

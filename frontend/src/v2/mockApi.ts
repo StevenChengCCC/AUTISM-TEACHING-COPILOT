@@ -1,5 +1,5 @@
 import { mockLearners } from "./data/mockLearners";
-import { createInitialChat } from "./data/mockLessonDraft";
+import { createEmptyChat,createQuestionsFromTeacherRequest } from "./data/mockLessonDraft";
 import { createMockPackage } from "./data/mockLessonPackage";
 import { mockMaterials } from "./data/mockMaterials";
 import { mockRecentLessons } from "./data/mockRecentLessons";
@@ -40,8 +40,29 @@ export const lessonKitMockApi = {
   },
   getInitialLessonChat: async (learnerId:string) => {
     const key=`conversation-${learnerId}`;
-    if (!chats.has(key)) chats.set(key,createInitialChat(learnerId));
-    return pause(chats.get(key)!);
+    const chat=createEmptyChat(learnerId);
+    chats.set(key,chat);
+    return pause(chat);
+  },
+  /** Future backend equivalent: POST /api/v2/lesson-chat returning AIChatState. */
+  submitLessonRequest: async (conversationId:string,content:string) => {
+    const chat=chats.get(conversationId);
+    if(!chat) throw new Error("Conversation not found");
+    const cleanContent=content.trim();
+    if(!cleanContent) return pause(chat);
+    const sequence=chat.messages.length+1;
+    chat.messages.push({id:`message-${sequence}`,role:"teacher",content:cleanContent,createdAt:"Just now"});
+    if(chat.questions.length===0) {
+      const generated=createQuestionsFromTeacherRequest(chat.learnerId,cleanContent);
+      chat.questions=generated.questions;
+      chat.draft=generated.draft;
+      chat.messages.push({id:`message-${sequence+1}`,role:"assistant",content:"Great. I’ll ask a few quick questions so we can generate the right teaching materials.",createdAt:"Just now"});
+    } else {
+      chat.draft.customNotes=[chat.draft.customNotes,cleanContent].filter(Boolean).join(" ");
+      chat.messages.push({id:`message-${sequence+1}`,role:"assistant",content:"Thanks. I’ve kept your lesson choices and added that note to the draft.",createdAt:"Just now"});
+    }
+    chat.canGenerate=chat.questions.length>0&&chat.questions.every(isAnswered);
+    return pause(chat);
   },
   updateAIQuestionAnswer: async (conversationId:string,questionId:string,selectedOptionIds:string[],customAnswer="") => {
     const chat=chats.get(conversationId);
@@ -59,17 +80,6 @@ export const lessonKitMockApi = {
     }
     applyQuestionToDraft(chat,question);
     chat.canGenerate=chat.questions.every(isAnswered);
-    return pause(chat);
-  },
-  sendChatMessage: async (conversationId:string,content:string) => {
-    const chat=chats.get(conversationId);
-    if(!chat) throw new Error("Conversation not found");
-    const sequence=chat.messages.length+1;
-    chat.messages.push(
-      {id:`message-${sequence}`,role:"teacher",content,createdAt:"Just now"},
-      {id:`message-${sequence+1}`,role:"assistant",content:"Got it. I’ve added that guidance to the lesson conversation.",createdAt:"Just now"},
-    );
-    chat.draft.customNotes=[chat.draft.customNotes,content].filter(Boolean).join(" ");
     return pause(chat);
   },
   clearLessonChat: async (conversationId:string) => {

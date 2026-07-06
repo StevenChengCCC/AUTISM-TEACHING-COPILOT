@@ -35,7 +35,8 @@ export function LessonKitStudioApp() {
   async function resumeSession(session:LessonSession) {
     setLearnerId(session.learnerId);
     if(session.status==="draft") { navigateTo("planWithAIChat"); return; }
-    const chat=await lessonKitMockApi.getInitialLessonChat(session.learnerId);
+    const emptyChat=await lessonKitMockApi.getInitialLessonChat(session.learnerId);
+    const chat=await lessonKitMockApi.submitLessonRequest(emptyChat.conversationId,`I want to teach ${session.goal.toLowerCase()}.`);
     const generated=await lessonKitMockApi.generateLessonPackageFromDraft(chat.draft);
     setLessonPackage(generated);
     navigateTo(session.status==="in_progress"?"reviewPrintableContent":"lessonPackageReady");
