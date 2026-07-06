@@ -61,9 +61,10 @@ class OpenAIProvider(AIProvider):
     def __init__(self):
         from openai import OpenAI
 
-        if not settings.OPENAI_API_KEY:
+        api_key = settings.reveal(settings.OPENAI_API_KEY)
+        if not api_key:
             raise RuntimeError("OPENAI_API_KEY is missing")
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = OpenAI(api_key=api_key)
         self.model = settings.OPENAI_MODEL
 
     def _complete(self, system_prompt: str, user_prompt: str) -> str:
@@ -106,15 +107,16 @@ class AzureOpenAIProvider(OpenAIProvider):
     def __init__(self):
         from openai import AzureOpenAI
 
+        api_key = settings.reveal(settings.AZURE_OPENAI_API_KEY)
         if (
             not settings.AZURE_OPENAI_ENDPOINT
-            or not settings.AZURE_OPENAI_API_KEY
+            or not api_key
             or not settings.AZURE_OPENAI_DEPLOYMENT
         ):
             raise RuntimeError("Azure OpenAI credentials are missing")
         self.client = AzureOpenAI(
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
-            api_key=settings.AZURE_OPENAI_API_KEY,
+            api_key=api_key,
             api_version=settings.AZURE_OPENAI_API_VERSION,
         )
         self.model = settings.AZURE_OPENAI_DEPLOYMENT
@@ -127,6 +129,8 @@ def get_ai_provider() -> AIProvider:
             return OpenAIProvider()
         if provider == "azure_openai":
             return AzureOpenAIProvider()
-    except Exception as exc:
-        logger.info("Falling back to MockProvider: %s", exc)
+    except Exception:
+        # Provider exceptions can contain request metadata. Never log credentials,
+        # prompts, learner records, or raw provider responses here.
+        logger.warning("Configured AI provider unavailable; using mock provider")
     return MockProvider()

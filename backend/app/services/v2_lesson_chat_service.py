@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from app.core.exceptions import NotFoundError, ValidationError
-from app.integrations.ai_provider import V2AIProvider
-from app.integrations.mock_ai_provider import MockV2AIProvider
+from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
 from app.schemas.v2_dto import (
     AIChatState,
     AIChatStateDto,
@@ -22,7 +21,7 @@ class V2LessonChatService:
     def __init__(self, repos: V2Repositories = repositories, ai: V2AIProvider | None = None):
         self.repos = repos
         self.learners = V2LearnerService(repos)
-        self.ai = ai or MockV2AIProvider()
+        self.ai = ai or get_v2_ai_provider()
 
     def start(self, learner_id: str) -> AIChatState:
         self.learners.get(learner_id)

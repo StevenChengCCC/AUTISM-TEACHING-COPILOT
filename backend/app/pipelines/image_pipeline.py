@@ -126,7 +126,8 @@ class ImagePipeline:
     def _search_pexels(
         self, query: str, req: ImageNeedRequest, count: int
     ) -> list[ImageCandidate]:
-        if not settings.PEXELS_API_KEY or count <= 0:
+        api_key = settings.reveal(settings.PEXELS_API_KEY)
+        if not api_key or count <= 0:
             return []
         try:
             res = requests.get(
@@ -136,7 +137,7 @@ class ImagePipeline:
                     "per_page": min(count, 10),
                     "orientation": "landscape",
                 },
-                headers={"Authorization": settings.PEXELS_API_KEY},
+                headers={"Authorization": api_key},
                 timeout=8,
             )
             res.raise_for_status()
@@ -162,13 +163,14 @@ class ImagePipeline:
     def _search_pixabay(
         self, query: str, req: ImageNeedRequest, count: int
     ) -> list[ImageCandidate]:
-        if not settings.PIXABAY_API_KEY or count <= 0:
+        api_key = settings.reveal(settings.PIXABAY_API_KEY)
+        if not api_key or count <= 0:
             return []
         try:
             res = requests.get(
                 "https://pixabay.com/api/",
                 params={
-                    "key": settings.PIXABAY_API_KEY,
+                    "key": api_key,
                     "q": query,
                     "per_page": min(count, 10),
                     "image_type": "photo",

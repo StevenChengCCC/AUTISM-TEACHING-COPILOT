@@ -1,42 +1,68 @@
 from functools import lru_cache
-from pydantic_settings import BaseSettings
-from pydantic_settings import SettingsConfigDict
+from typing import Literal
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     APP_NAME: str = "Autism Teaching Copilot"
-    ENV: str = "development"
+    APP_ENV: Literal["development", "test", "staging", "production"] = "development"
     DATABASE_URL: str = "sqlite:///./autism_copilot.db"
     STORAGE_DIR: str = "./storage"
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    ALLOWED_ORIGINS: str = "http://localhost:5173"
     DEV_ALLOW_ANON_TEACHER: bool = True
     DEV_ANON_TEACHER_ID: int = 1
 
-    AI_PROVIDER: str = "mock"  # mock | azure_openai | openai
+    AI_PROVIDER: Literal["mock", "azure_openai", "openai"] = "mock"
 
     AZURE_OPENAI_ENDPOINT: str | None = None
-    AZURE_OPENAI_API_KEY: str | None = None
+    AZURE_OPENAI_API_KEY: SecretStr | None = None
     AZURE_OPENAI_API_VERSION: str = "2025-01-01-preview"
     AZURE_OPENAI_DEPLOYMENT: str | None = None
     AZURE_OPENAI_TEXT_DEPLOYMENT: str | None = None
     AZURE_OPENAI_IMAGE_DEPLOYMENT: str | None = None
 
-    OPENAI_API_KEY: str | None = None
+    OPENAI_API_KEY: SecretStr | None = None
     OPENAI_MODEL: str = "gpt-4.1-mini"
     OPENAI_TEXT_MODEL: str = "gpt-4.1-mini"
     OPENAI_IMAGE_MODEL: str = "gpt-image-1"
 
-    PEXELS_API_KEY: str | None = None
-    PIXABAY_API_KEY: str | None = None
-    UNSPLASH_ACCESS_KEY: str | None = None
+    PEXELS_API_KEY: SecretStr | None = None
+    PIXABAY_API_KEY: SecretStr | None = None
+    UNSPLASH_ACCESS_KEY: SecretStr | None = None
+    KEY_VAULT_URL: str | None = None
+
+    @property
+    def allowed_origin_list(self) -> list[str]:
+        configured = {
+            origin.strip()
+            for origin in self.ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        }
+        if self.APP_ENV == "development":
+            configured.update({"http://localhost:5173", "http://127.0.0.1:5173"})
+        return sorted(configured)
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [
-            origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()
-        ]
+        """Compatibility alias for the existing FastAPI bootstrap."""
+
+        return self.allowed_origin_list
+
+    @property
+    def ENV(self) -> str:
+        """Compatibility alias while v1 backend code is retired."""
+
+        return self.APP_ENV
+
+    @staticmethod
+    def reveal(secret: SecretStr | None) -> str | None:
+        """Reveal a secret only at the provider SDK boundary."""
+
+        return secret.get_secret_value() if secret else None
 
     def model_post_init(self, __context) -> None:
         if self.AZURE_OPENAI_TEXT_DEPLOYMENT and not self.AZURE_OPENAI_DEPLOYMENT:

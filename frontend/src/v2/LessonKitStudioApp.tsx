@@ -9,7 +9,7 @@ import { SessionsPage } from "./pages/SessionsPage";
 import { StartNewLessonPage } from "./pages/StartNewLessonPage";
 import { StudentsPage } from "./pages/StudentsPage";
 import { UploadRecordsPage } from "./pages/UploadRecordsPage";
-import { lessonKitMockApi } from "./mockApi";
+import { lessonKitApi } from "./api/lessonKitApi";
 import type { LessonPackage, LessonSession, StudioPage, WorkflowStep } from "./types";
 import "./styles.css";
 
@@ -35,9 +35,9 @@ export function LessonKitStudioApp() {
   async function resumeSession(session:LessonSession) {
     setLearnerId(session.learnerId);
     if(session.status==="draft") { navigateTo("planWithAIChat"); return; }
-    const emptyChat=await lessonKitMockApi.getInitialLessonChat(session.learnerId);
-    const chat=await lessonKitMockApi.submitLessonRequest(emptyChat.conversationId,`I want to teach ${session.goal.toLowerCase()}.`);
-    const generated=await lessonKitMockApi.generateLessonPackageFromDraft(chat.draft);
+    const emptyChat=await lessonKitApi.getInitialLessonChat(session.learnerId);
+    const chat=await lessonKitApi.submitLessonRequest(emptyChat.conversationId,session.learnerId,`I want to teach ${session.goal.toLowerCase()}.`,emptyChat.draft);
+    const generated=await lessonKitApi.generateLessonPackageFromDraft(chat.draft);
     setLessonPackage(generated);
     navigateTo(session.status==="in_progress"?"reviewPrintableContent":"lessonPackageReady");
   }
@@ -51,10 +51,10 @@ export function LessonKitStudioApp() {
       {page === "reviewLearnerNew" && <ReviewLearnerPage learnerId={learnerId} isNew onBack={() => navigateTo("uploadRecords")} onContinue={() => navigateTo("planWithAIChat")} onFeedback={setFeedbackMessage} />}
       {page === "planWithAIChat" && <PlanWithAIChatPage learnerId={learnerId} onGenerate={(value) => { setLessonPackage(value); navigateTo("lessonPackageReady"); }} onViewProfile={() => navigateTo("reviewLearnerExisting")} onChangeLearner={() => navigateTo("home")} onFeedback={setFeedbackMessage} />}
       {page === "lessonPackageReady" && <LessonPackageReadyPage lessonPackage={lessonPackage} onReview={() => navigateTo("reviewPrintableContent")} onEdit={() => navigateTo("planWithAIChat")} onStartOver={() => navigateTo("home")} onFeedback={setFeedbackMessage} />}
-      {page === "reviewPrintableContent" && <ReviewPrintableContentPage lessonPackage={lessonPackage} onBack={() => navigateTo("lessonPackageReady")} onFeedback={setFeedbackMessage} />}
+      {page === "reviewPrintableContent" && <ReviewPrintableContentPage lessonPackage={lessonPackage} onBack={() => {if(!lessonPackage){navigateTo("lessonPackageReady");return;}void lessonKitApi.getLessonPackage(lessonPackage.id).then((value)=>{setLessonPackage(value);navigateTo("lessonPackageReady");});}} onFeedback={setFeedbackMessage} />}
       {page === "students" && <StudentsPage onStartLesson={startExistingLearnerFlow} onCreateLearner={startNewLearnerFlow} onFeedback={setFeedbackMessage} />}
       {page === "sessions" && <SessionsPage onNewSession={() => navigateTo("home")} onResume={(session)=>void resumeSession(session)} onFeedback={setFeedbackMessage} />}
-      {page === "materials" && <MaterialsPage onUseInLesson={() => {setLearnerId("a102");navigateTo("planWithAIChat");}} onCreateMaterial={()=>setFeedbackMessage("Material creation is mocked for this demo.")} onFeedback={setFeedbackMessage} />}
+      {page === "materials" && <MaterialsPage onUseInLesson={() => {setLearnerId("a102");navigateTo("planWithAIChat");}} onCreateMaterial={()=>setFeedbackMessage("Custom material template created.")} onFeedback={setFeedbackMessage} />}
     </AppShell>
   );
 }

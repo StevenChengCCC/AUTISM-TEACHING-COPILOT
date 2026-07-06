@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from app.core.exceptions import NotFoundError, SafetyDeferralError, ValidationError
-from app.integrations.ai_provider import V2AIProvider
-from app.integrations.mock_ai_provider import MockV2AIProvider
+from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
 from app.schemas.v2_dto import (
     GeneratedMaterial,
     GeneratedMaterialDto,
@@ -22,7 +21,7 @@ from app.services.v2_standards_skill_service import V2StandardsSkillService
 class V2LessonPackageService:
     def __init__(self, repos: V2Repositories = repositories, ai: V2AIProvider | None = None, safety: V2SafetyHarnessService | None = None, standards: V2StandardsSkillService | None = None):
         self.repos = repos
-        self.ai = ai or MockV2AIProvider()
+        self.ai = ai or get_v2_ai_provider()
         self.safety = safety or V2SafetyHarnessService()
         self.standards = standards or V2StandardsSkillService()
 

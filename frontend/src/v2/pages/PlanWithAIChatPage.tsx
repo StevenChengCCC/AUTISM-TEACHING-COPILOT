@@ -4,7 +4,7 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { LearnerContextBar } from "../components/LearnerContextBar";
 import { Tag } from "../components/Tag";
-import { lessonKitMockApi } from "../mockApi";
+import { lessonKitApi } from "../api/lessonKitApi";
 import type { AIChatState,LearnerProfile,LessonPackage } from "../types";
 
 export function PlanWithAIChatPage({ learnerId,onGenerate,onViewProfile,onChangeLearner,onFeedback }:{ learnerId:string;onGenerate:(value:LessonPackage)=>void;onViewProfile:()=>void;onChangeLearner:()=>void;onFeedback:(message:string)=>void }) {
@@ -12,11 +12,11 @@ export function PlanWithAIChatPage({ learnerId,onGenerate,onViewProfile,onChange
   const [chat,setChat]=useState<AIChatState|null>(null);
   const [generating,setGenerating]=useState(false);
   const [composer,setComposer]=useState("");
-  useEffect(()=>{ void Promise.all([lessonKitMockApi.getLearnerById(learnerId),lessonKitMockApi.getInitialLessonChat(learnerId)]).then(([profile,state])=>{setLearner(profile);setChat(state);}); },[learnerId]);
-  async function answer(questionId:string,ids:string[],customAnswer="") { if(!chat)return; setChat(await lessonKitMockApi.updateAIQuestionAnswer(chat.conversationId,questionId,ids,customAnswer)); }
-  async function generate(){if(!chat?.canGenerate)return;setGenerating(true);const value=await lessonKitMockApi.generateLessonPackageFromDraft(chat.draft);onGenerate(value);}
-  async function sendMessage(){const content=composer.trim();if(!chat||!content)return;const firstRequest=chat.questions.length===0;setChat(await lessonKitMockApi.submitLessonRequest(chat.conversationId,content));setComposer("");onFeedback(firstRequest?"Lesson questions generated from your request.":"Follow-up note added to the lesson draft.");}
-  async function clearChat(){if(!chat)return;setChat(await lessonKitMockApi.clearLessonChat(chat.conversationId));onFeedback("Conversation messages cleared; lesson answers were kept.");}
+  useEffect(()=>{ void Promise.all([lessonKitApi.getLearnerById(learnerId),lessonKitApi.getInitialLessonChat(learnerId)]).then(([profile,state])=>{setLearner(profile);setChat(state);}); },[learnerId]);
+  async function answer(questionId:string,ids:string[],customAnswer="") { if(!chat)return; setChat(await lessonKitApi.updateAIQuestionAnswer(chat.conversationId,questionId,ids,customAnswer)); }
+  async function generate(){if(!chat?.canGenerate)return;setGenerating(true);try{const value=await lessonKitApi.generateLessonPackageFromDraft(chat.draft);onGenerate(value);}finally{setGenerating(false);}}
+  async function sendMessage(){const content=composer.trim();if(!chat||!content)return;const firstRequest=chat.questions.length===0;setChat(await lessonKitApi.submitLessonRequest(chat.conversationId,learnerId,content,chat.draft));setComposer("");onFeedback(firstRequest?"Lesson questions generated from your request.":"Follow-up note added to the lesson draft.");}
+  async function clearChat(){if(!chat)return;setChat(await lessonKitApi.clearLessonChat(chat.conversationId));onFeedback("Conversation messages cleared; lesson answers were kept.");}
   if(!learner||!chat)return <div className="v2-loading">Preparing lesson conversation…</div>;
   const hasQuestions=chat.questions.length>0;
   return <><div className="v2-page-heading"><h1>Plan with AI Chat</h1><p>Describe the lesson you want to teach and confirm each detail before generating materials.</p></div><LearnerContextBar learner={learner} onViewProfile={onViewProfile} onChangeLearner={onChangeLearner}/>

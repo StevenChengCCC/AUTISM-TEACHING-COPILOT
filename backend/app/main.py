@@ -22,7 +22,7 @@ app = FastAPI(title=settings.APP_NAME)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
+    allow_origins=settings.allowed_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,7 +54,7 @@ def health_check():
     return {
         "status": "ok",
         "service": settings.APP_NAME,
-        "env": settings.ENV,
+        "env": settings.APP_ENV,
         "ai_provider": settings.AI_PROVIDER,
         "mode": "mock" if settings.AI_PROVIDER == "mock" else "external_optional",
     }

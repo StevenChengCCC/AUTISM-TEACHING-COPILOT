@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from app.core.config import Settings, settings
 from app.schemas.v2_dto import (
     AIQuestion,
     LearnerProfile,
@@ -45,3 +46,23 @@ class V2AIProvider(ABC):
         """Return provider-authored content; orchestration stays in the service."""
 
         raise NotImplementedError
+
+
+def get_v2_ai_provider(config: Settings = settings) -> V2AIProvider:
+    """Resolve the configured provider without exposing secret values.
+
+    Mock is the safe default. Non-mock providers fail closed rather than silently
+    sending learner data through an unintended provider.
+    """
+
+    if config.AI_PROVIDER == "mock":
+        from app.integrations.mock_ai_provider import MockV2AIProvider
+
+        return MockV2AIProvider()
+    if config.AI_PROVIDER == "azure_openai":
+        from app.integrations.azure_openai_provider import AzureOpenAIV2Provider
+
+        return AzureOpenAIV2Provider(config)
+    raise RuntimeError(
+        "Backend v2 OpenAI provider is not enabled; use mock until the safeguarded adapter is implemented"
+    )
