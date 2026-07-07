@@ -117,6 +117,24 @@ export interface LessonPackage {
   teachingFlow: TeachingStep[];
   materials: GeneratedMaterial[];
   summaryTemplate: string;
+  safetyReview?: SafetyReview | null;
+  standardsChecks?: StandardsCheck[];
+}
+export interface SafetyReview {
+  status: "pass" | "needs_review" | "blocked";
+  riskLevel: "low" | "medium" | "high";
+  issues: string[];
+  recommendedEdits: string[];
+  appliedEdits: string[];
+}
+export interface StandardsCheck {
+  id: string;
+  skillId: string;
+  label: string;
+  description: string;
+  severity: "low" | "medium" | "high";
+  status: "pass" | "needs_review" | "not_applicable";
+  recommendation: string;
 }
 export interface LessonSession {
   id: string;
@@ -130,6 +148,11 @@ export interface LessonSessionStat {
   label: string;
   count: number;
   helperText: string;
+}
+export interface LessonSessionSummary extends LessonSession {
+  overview: string;
+  highlights: string[];
+  nextSteps: string[];
 }
 export interface RecentLesson {
   id: string;
@@ -146,3 +169,39 @@ export interface MaterialLibraryItem {
   reusable: boolean;
   createdAt: string;
 }
+export interface LearnerProgressSummary {
+  learnerId: string;
+  currentGoal: string;
+  accuracyPercent: number;
+  independencePercent: number;
+  sessionsPracticed: number;
+  currentPromptLevel: string;
+  trend: string;
+  message: string;
+}
+export interface ProgressSignal {
+  id: string;
+  type: string;
+  label: string;
+  description: string;
+  status: "improving" | "stable" | "emerging" | "needs_support";
+}
+export interface ProgressDataPoint {
+  id: string;
+  learnerId: string;
+  sessionDate: string;
+  goal: string;
+  opportunities: number;
+  accuracyPercent: number;
+  independencePercent: number;
+  promptLevel: string;
+  signalsHighlighted: string[];
+  teacherNotes: string;
+}
+export interface ExportJob {
+  exportId: string;
+  status: "ready";
+  format: "pdf" | "docx" | "pptx";
+  downloadUrl: string;
+}
+export type MaterialQuickEditAction = "simplify_wording" | "regenerate_artwork" | "adjust_reward";

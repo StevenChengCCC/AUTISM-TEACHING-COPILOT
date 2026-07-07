@@ -1,12 +1,12 @@
 import { useEffect,useState } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
-import { lessonKitMockApi } from "../mockApi";
+import { lessonKitApi } from "../api/lessonKitApi";
 import type { LearnerProfile,LessonPackage } from "../types";
 
 export function LessonPackageReadyPage({ lessonPackage,onReview,onEdit,onStartOver,onFeedback }:{ lessonPackage:LessonPackage|null;onReview:()=>void;onEdit:()=>void;onStartOver:()=>void;onFeedback:(message:string)=>void }) {
   const [learner,setLearner]=useState<LearnerProfile|null>(null);const [exports,setExports]=useState<Record<string,boolean>>({pdf:true});
-  useEffect(()=>{if(lessonPackage)void lessonKitMockApi.getLearnerById(lessonPackage.learnerId).then(setLearner);},[lessonPackage]);
+  useEffect(()=>{if(lessonPackage)void lessonKitApi.getLearnerById(lessonPackage.learnerId).then(setLearner);},[lessonPackage]);
   if(!lessonPackage)return <section className="v2-empty"><h2>No lesson package yet</h2><Button onClick={onStartOver}>Start a New Lesson</Button></section>;
   const goalTitle=lessonPackage.goal.toLowerCase().includes("ask for help")?"Asking for Help":lessonPackage.goal;
   const toggle=(id:string)=>{setExports((current)=>({...current,[id]:current[id]===false}));onFeedback("Export selection updated.");};

@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
-import { lessonKitMockApi } from "../mockApi";
+import { lessonKitApi } from "../api/lessonKitApi";
 import type { LearnerProfile } from "../types";
 
 export function StartNewLessonPage({ onSelectExisting,onCreateNew,onFeedback }: { onSelectExisting:(id:string)=>void;onCreateNew:()=>void;onFeedback:(message:string)=>void }) {
   const [allLearners,setAllLearners]=useState<LearnerProfile[]>([]);
   const [query,setQuery]=useState("");
   const [selectedId,setSelectedId]=useState("a102");
-  useEffect(()=>{ void lessonKitMockApi.getLearners().then(setAllLearners); },[]);
+  useEffect(()=>{ void lessonKitApi.getLearners().then(setAllLearners); },[]);
   const learners=useMemo(()=>allLearners.filter((learner)=>["a102","b214","c087"].includes(learner.id)&&learner.code.toLowerCase().includes(query.toLowerCase())),[allLearners,query]);
   return <>
     <div className="v2-page-heading"><h1>Start a New Lesson</h1><p>Choose an existing learner or create a new learner profile before planning the lesson.</p></div>

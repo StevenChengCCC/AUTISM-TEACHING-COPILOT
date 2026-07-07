@@ -12,6 +12,7 @@ from app.api.metrics_routes import router as metrics_router
 from app.api.organizations_routes import router as organizations_router
 from app.api.records_routes import router as records_router
 from app.api.teachers_routes import router as teachers_router
+from app.api.v2_routes import router as v2_router
 
 router = APIRouter()
 
@@ -27,3 +28,4 @@ router.include_router(materials_router)
 router.include_router(records_router)
 router.include_router(management_router)
 router.include_router(metrics_router)
+router.include_router(v2_router)
