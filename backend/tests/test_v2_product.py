@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.api.v2_routes import health
+from app.core.config import settings as app_settings
 from app.main import app
 from app.schemas.v2_dto import AIChatState, LessonDesignDraft, QuestionAnswerUpdate
 from app.services.v2_lesson_chat_service import V2LessonChatService
@@ -15,6 +16,104 @@ def test_v2_health_contract():
     }
 
 
+def test_v2_development_ai_endpoints_are_safe_and_work_in_mock_mode():
+    client = TestClient(app)
+
+    status = client.get("/api/v2/dev/ai-status")
+    assert status.status_code == 200
+    assert status.json() == {
+        "provider": "mock",
+        "textModel": "gpt-5.5",
+        "imageModel": "gpt-image-2",
+        "hasApiKey": False,
+    }
+
+    questions = client.post(
+        "/api/v2/dev/test-ai-lesson-questions",
+        json={
+            "learnerId": "a102",
+            "message": "I want to teach asking for help.",
+        },
+    )
+    assert questions.status_code == 200
+    assert questions.json()["provider"] == "mock"
+    assert questions.json()["fallbackUsed"] is False
+    assert len(questions.json()["questions"]) == 5
+
+    package = client.post(
+        "/api/v2/dev/test-ai-lesson-package",
+        json={
+            "learnerId": "a102",
+            "goalText": "Learner will ask for help using a short phrase.",
+            "responseLevel": "Short phrase",
+            "scenarios": ["Toy car stuck", "Closed box"],
+            "selectedMaterials": [
+                "Visual Cards",
+                "Help Card",
+                "Token Board",
+                "Data Sheet",
+                "Summary Template",
+            ],
+            "theme": "Vehicles",
+            "duration": "10–12 min",
+            "customNotes": "Use visual prompt first and token board reinforcement.",
+        },
+    )
+    assert package.status_code == 200
+    assert package.json()["fallbackUsed"] is False
+    assert package.json()["generatedContent"]["lessonBrief"]
+
+    image = client.post(
+        "/api/v2/dev/test-image-generation",
+        json={
+            "learnerId": "a102",
+            "materialType": "visual_card",
+            "prompt": (
+                "A simple classroom visual card showing a toy car stuck and a "
+                "child asking for help."
+            ),
+            "style": "clean printable educational illustration",
+            "size": "1024x1024",
+        },
+    )
+    assert image.status_code == 200
+    assert image.json()["status"] == "mock"
+    assert image.json()["provider"] == "mock"
+    assert image.json()["model"] == "gpt-image-2"
+    assert image.json()["fallbackUsed"] is False
+    assert "promptUsed" in image.json()
+    assert "apiKey" not in image.text
+
+
+def test_main_chat_http_flow_returns_clear_503_when_openai_key_is_missing(
+    monkeypatch,
+):
+    monkeypatch.setattr(app_settings, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(app_settings, "OPENAI_API_KEY", None)
+    client = TestClient(app)
+    initial = client.post(
+        "/api/v2/lesson-chat/start", json={"learnerId": "a102"}
+    )
+
+    response = client.post(
+        "/api/v2/lesson-chat/message",
+        json={
+            "conversationId": initial.json()["conversationId"],
+            "learnerId": "a102",
+            "message": "I want to teach asking for help.",
+            "currentDraft": initial.json()["draft"],
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": (
+            "OPENAI_API_KEY is not configured. Add it to backend/.env.local "
+            "or your backend environment."
+        )
+    }
+
+
 def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
     repos = V2Repositories()
     service = V2LessonChatService(repos)
@@ -26,12 +125,14 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
     chat = service.submit_request(
         initial.conversation_id, "I want to teach Learner A-102 to ask for help."
     )
-    assert len(chat.questions) == 3
+    assert len(chat.questions) == 5
     assert chat.can_generate is True
     assert chat.draft.selected_materials == [
         "Visual Cards",
+        "Help Card",
         "Token Board",
         "Data Sheet",
+        "Summary Template",
     ]
     payload = chat.model_dump(mode="json", by_alias=True)
     assert "conversationId" in payload
@@ -69,8 +170,8 @@ def test_v2_repository_seed_is_deterministic_and_multidimensional():
 
     learner = repos.learners.get("a102")
     assert learner is not None
-    assert learner.tags == ["Visual support", "Short attention span", "Vehicles"]
-    assert learner.reinforcement_preferences == ["Praise", "Token board"]
+    assert learner.tags == ["Visual support", "Short attention span", "Asking for Help"]
+    assert learner.reinforcement_preferences == ["Token board", "Car play", "Praise"]
     assert len(repos.materials_library.list()) == 7
     assert {session.status for session in repos.sessions.list()} == {
         "planned",
@@ -80,7 +181,7 @@ def test_v2_repository_seed_is_deterministic_and_multidimensional():
     }
 
     points = repos.progress_data.list()
-    assert [point.accuracyPercent for point in points] == [50, 57, 56, 58]
+    assert [point.accuracyPercent for point in points] == [52, 55, 53, 56, 54, 58]
     assert points[0].promptLevel == "Level 3"
     assert points[-1].promptLevel == "Level 2"
     assert {
@@ -118,7 +219,7 @@ def test_v2_learner_record_and_extraction_http_contracts():
     assert learner.json()["tags"] == [
         "Visual support",
         "Short attention span",
-        "Vehicles",
+        "Asking for Help",
     ]
     assert "supportNeeds" in learner.json()
     assert "support_needs" not in learner.json()
@@ -167,7 +268,7 @@ def test_v2_learner_record_and_extraction_http_contracts():
         "Keep activities short",
         "Add multiple examples",
     ]
-    assert extraction.json()["analyzedRecordCount"] == 3
+    assert extraction.json()["analyzedRecordCount"] == 5
     assert extraction.json()["status"] == "complete"
 
 
@@ -199,11 +300,20 @@ def test_v2_lesson_chat_product_http_flow():
         "responseLevel",
         "scenarios",
         "selectedMaterials",
+        "customNotes",
+        "customNotes",
     ]
     assert state["draft"]["goalText"] == (
         "Learner will ask for help using a short phrase."
     )
     assert state["draft"]["theme"] == "Vehicles"
+    assert state["draft"]["scenarios"] == [
+        "Toy car stuck",
+        "Closed box",
+        "Backpack zipper",
+    ]
+    assert "Car play" in state["draft"]["customNotes"]
+    assert "Visual prompt first" in state["draft"]["customNotes"]
 
     custom = client.patch(
         f"/api/v2/lesson-chat/{state['conversationId']}/answers",
@@ -220,6 +330,18 @@ def test_v2_lesson_chat_product_http_flow():
     )
     assert scenario_question["options"][-1]["source"] == "teacher_custom"
     assert updated["draft"]["scenarios"] == ["Toy car stuck", "Snack container"]
+
+    prompting = client.patch(
+        f"/api/v2/lesson-chat/{state['conversationId']}/answers",
+        json={
+            "questionId": "prompting-strategy",
+            "selectedOptionIds": ["wait-time", "fade-verbal"],
+            "customAnswer": "Pause for five seconds",
+        },
+    )
+    assert prompting.status_code == 200
+    assert "Wait time before prompt" in prompting.json()["draft"]["customNotes"]
+    assert "Pause for five seconds" in prompting.json()["draft"]["customNotes"]
 
     cleared = client.post(
         f"/api/v2/lesson-chat/{state['conversationId']}/clear"
@@ -255,7 +377,8 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         "appliedEdits": [
             "Confirmed the goal is observable.",
             "Kept instructions short and teacher-actionable.",
-            "Included prompt, reinforcement, and data collection supports.",
+            "Avoided punitive or stigmatizing language.",
+            "Included prompt fading, reinforcement, and data collection supports.",
         ],
     }
     assert len(package["standardsChecks"]) == 5
@@ -264,9 +387,9 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         package["standardsChecks"][-1]["recommendation"]
     )
     assert [step["title"] for step in package["teachingFlow"]] == [
-        "Warm-up",
-        "Model the request",
-        "Guided practice",
+        "Warm-up and motivation",
+        "Model asking for help",
+        "Guided practice with prompts",
         "Independent opportunity",
         "Reinforcement and data note",
     ]
@@ -277,6 +400,13 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         "Data Sheet",
         "Summary Template",
     ]
+    token_board = next(
+        material for material in package["materials"] if material["type"] == "token_board"
+    )
+    assert token_board["content"]["artwork"] == "Friendly vehicle artwork"
+    assert token_board["content"]["teacherNote"] == (
+        "Praise effort and reinforce each appropriate request."
+    )
 
     package_id = package["id"]
     stored = client.get(f"/api/v2/lesson-packages/{package_id}")
@@ -408,13 +538,16 @@ def test_v2_sessions_and_nonlinear_progress_http_contracts():
         "Generalization Attempts",
         "Regulation / Recovery",
         "Participation",
+        "Independence",
     ]
     data = client.get("/api/v2/learners/a102/progress-data")
-    assert [point["accuracyPercent"] for point in data.json()] == [50, 57, 56, 58]
+    assert [point["accuracyPercent"] for point in data.json()] == [52, 55, 53, 56, 54, 58]
     assert [point["independencePercent"] for point in data.json()] == [
-        25,
-        29,
+        28,
+        31,
         33,
+        35,
+        38,
         42,
     ]
     assert data.json()[0]["promptLevel"] == "Level 3"
@@ -437,8 +570,8 @@ def test_v2_sessions_and_nonlinear_progress_http_contracts():
     assert recorded.status_code == 201
     assert recorded.json()["accuracyPercent"] == 60
     assert recorded.json()["independencePercent"] == 50
-    assert recorded.json()["sessionsPracticed"] == 5
-    assert len(client.get("/api/v2/learners/a102/progress-data").json()) == 5
+    assert recorded.json()["sessionsPracticed"] == 18
+    assert len(client.get("/api/v2/learners/a102/progress-data").json()) == 7
 
 
 def test_v2_material_library_browse_create_duplicate_and_attach():

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { LessonPackageReadyPage } from "./pages/LessonPackageReadyPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
+import { DeveloperAISettingsPage } from "./pages/DeveloperAISettingsPage";
 import { PlanWithAIChatPage } from "./pages/PlanWithAIChatPage";
 import { ReviewLearnerPage } from "./pages/ReviewLearnerPage";
 import { ReviewPrintableContentPage } from "./pages/ReviewPrintableContentPage";
@@ -55,6 +56,7 @@ export function LessonKitStudioApp() {
       {page === "students" && <StudentsPage onStartLesson={startExistingLearnerFlow} onCreateLearner={startNewLearnerFlow} onFeedback={setFeedbackMessage} />}
       {page === "sessions" && <SessionsPage onNewSession={() => navigateTo("home")} onResume={(session)=>void resumeSession(session)} onFeedback={setFeedbackMessage} />}
       {page === "materials" && <MaterialsPage onUseInLesson={() => {setLearnerId("a102");navigateTo("planWithAIChat");}} onCreateMaterial={()=>setFeedbackMessage("Custom material template created.")} onFeedback={setFeedbackMessage} />}
+      {page === "developerAI" && import.meta.env.DEV && <DeveloperAISettingsPage />}
     </AppShell>
   );
 }

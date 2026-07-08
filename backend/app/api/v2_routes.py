@@ -1,11 +1,29 @@
-from fastapi import APIRouter
+import logging
+from base64 import b64decode
+from binascii import Error as Base64Error
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.core.config import settings
+from app.integrations.ai_provider import get_v2_ai_provider
+from app.integrations.mock_ai_provider import MockV2AIProvider
+from app.integrations.openai_provider import OpenAIV2AIProvider
 
 from app.schemas.v2_dto import (
     AIChatState,
     AIChatStateDto,
+    DevAILessonPackageRequest,
+    DevAILessonPackageResponse,
+    DevAILessonQuestionsRequest,
+    DevAILessonQuestionsResponse,
+    DevAIStatusDto,
     GeneratedMaterial,
     GeneratedMaterialDto,
     HealthResponse,
+    ImageGenerationRequest,
+    ImageGenerationResponse,
     LearnerCreate,
     LearnerProfileDto,
     LearnerProfileExtractionDto,
@@ -54,11 +72,189 @@ from app.services.v2_record_service import V2RecordService
 from app.services.v2_session_service import V2SessionService
 
 router = APIRouter(prefix="/v2", tags=["v2-product"])
+logger = logging.getLogger(__name__)
+
+
+def _require_development() -> None:
+    if settings.APP_ENV != "development":
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+def _provider_with_dev_fallback():
+    try:
+        return get_v2_ai_provider(settings), False
+    except RuntimeError:
+        logger.warning(
+            "Configured development AI provider is unavailable; using mock fallback"
+        )
+        return MockV2AIProvider(), True
+
+
+def _save_development_image(image_base64: str) -> str:
+    try:
+        image_bytes = b64decode(image_base64, validate=True)
+    except (Base64Error, ValueError) as exc:
+        raise ValueError("Generated image data was invalid") from exc
+    if not image_bytes or len(image_bytes) > 25 * 1024 * 1024:
+        raise ValueError("Generated image data exceeded the development storage limit")
+    output_dir = Path(settings.STORAGE_DIR) / "generated-images"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    file_name = f"{uuid4().hex}.png"
+    (output_dir / file_name).write_bytes(image_bytes)
+    return f"/storage/generated-images/{file_name}"
 
 
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+@router.get(
+    "/dev/ai-status",
+    response_model=DevAIStatusDto,
+    dependencies=[Depends(_require_development)],
+)
+def development_ai_status() -> DevAIStatusDto:
+    return DevAIStatusDto(
+        provider=settings.AI_PROVIDER,
+        textModel=settings.OPENAI_TEXT_MODEL,
+        imageModel=settings.OPENAI_IMAGE_MODEL,
+        hasApiKey=bool(settings.reveal(settings.OPENAI_API_KEY)),
+    )
+
+
+@router.post(
+    "/dev/test-ai-lesson-questions",
+    response_model=DevAILessonQuestionsResponse,
+    dependencies=[Depends(_require_development)],
+)
+def development_test_ai_lesson_questions(
+    payload: DevAILessonQuestionsRequest,
+) -> DevAILessonQuestionsResponse:
+    learner = V2LearnerService().get(payload.learnerId)
+    provider, fallback_used = _provider_with_dev_fallback()
+    try:
+        questions, draft = provider.generate_lesson_questions(
+            learner, payload.message
+        )
+    except RuntimeError:
+        logger.warning(
+            "Development OpenAI lesson question request failed; using mock fallback"
+        )
+        provider = MockV2AIProvider()
+        questions, draft = provider.generate_lesson_questions(learner, payload.message)
+        fallback_used = True
+    if isinstance(provider, OpenAIV2AIProvider):
+        fallback_used = fallback_used or provider.last_fallback_used
+    return DevAILessonQuestionsResponse(
+        provider=settings.AI_PROVIDER,
+        model=settings.OPENAI_TEXT_MODEL,
+        fallbackUsed=fallback_used,
+        questions=questions,
+        draft=draft,
+    )
+
+
+@router.post(
+    "/dev/test-ai-lesson-package",
+    response_model=DevAILessonPackageResponse,
+    dependencies=[Depends(_require_development)],
+)
+def development_test_ai_lesson_package(
+    payload: DevAILessonPackageRequest,
+) -> DevAILessonPackageResponse:
+    V2LearnerService().get(payload.learnerId)
+    draft = LessonDesignDraftDto(
+        id=f"dev-draft-{payload.learnerId}",
+        learnerId=payload.learnerId,
+        goalText=payload.goalText,
+        responseLevel=payload.responseLevel,
+        scenarios=payload.scenarios,
+        selectedMaterials=payload.selectedMaterials,
+        theme=payload.theme,
+        duration=payload.duration,
+        customNotes=payload.customNotes,
+    )
+    provider, fallback_used = _provider_with_dev_fallback()
+    try:
+        generated = provider.generate_lesson_package(draft)
+    except RuntimeError:
+        logger.warning(
+            "Development OpenAI lesson package request failed; using mock fallback"
+        )
+        provider = MockV2AIProvider()
+        generated = provider.generate_lesson_package(draft)
+        fallback_used = True
+    if isinstance(provider, OpenAIV2AIProvider):
+        fallback_used = fallback_used or provider.last_fallback_used
+    return DevAILessonPackageResponse(
+        provider=settings.AI_PROVIDER,
+        model=settings.OPENAI_TEXT_MODEL,
+        fallbackUsed=fallback_used,
+        generatedContent=generated,
+    )
+
+
+@router.post(
+    "/dev/test-image-generation",
+    response_model=ImageGenerationResponse,
+    dependencies=[Depends(_require_development)],
+)
+def development_test_image_generation(
+    payload: ImageGenerationRequest,
+) -> ImageGenerationResponse:
+    learner = V2LearnerService().get(payload.learnerId)
+    provider, fallback_used = _provider_with_dev_fallback()
+    try:
+        generated = provider.generate_material_image(
+            learner,
+            payload.materialType,
+            payload.prompt,
+            payload.style,
+            payload.size,
+        )
+    except RuntimeError:
+        logger.warning(
+            "Development OpenAI image request failed; using mock fallback"
+        )
+        provider = MockV2AIProvider()
+        generated = provider.generate_material_image(
+            learner,
+            payload.materialType,
+            payload.prompt,
+            payload.style,
+            payload.size,
+        )
+        fallback_used = True
+    if isinstance(provider, OpenAIV2AIProvider):
+        fallback_used = fallback_used or provider.last_fallback_used
+    image_base64 = generated.get("imageBase64")
+    if image_base64:
+        try:
+            generated["imageUrl"] = _save_development_image(image_base64)
+            generated["imageBase64"] = None
+        except ValueError:
+            logger.warning(
+                "Generated image could not be stored; using mock fallback"
+            )
+            generated = MockV2AIProvider().generate_material_image(
+                learner,
+                payload.materialType,
+                payload.prompt,
+                payload.style,
+                payload.size,
+            )
+            fallback_used = True
+    configured_provider = "openai" if settings.AI_PROVIDER == "openai" else "mock"
+    return ImageGenerationResponse.model_validate(
+        {
+            **generated,
+            "provider": configured_provider,
+            "model": settings.OPENAI_IMAGE_MODEL,
+            "fallbackUsed": fallback_used
+            or bool(generated.get("fallbackUsed")),
+        }
+    )
 
 
 @router.get("/learners", response_model=list[LearnerProfileDto])

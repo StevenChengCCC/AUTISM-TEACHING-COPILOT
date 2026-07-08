@@ -84,6 +84,8 @@ class V2LessonChatService:
             selected = [custom_id] if question.input_type == "single_select" else [*selected, custom_id]
         question.selected_option_ids = selected
         self._apply_answer(chat.draft, question)
+        if question.field == "customNotes":
+            self._apply_custom_notes(chat.draft, chat.questions)
         chat.can_generate = all(self._answered(item) for item in chat.questions)
         return self.repos.chats.save(chat)
 
@@ -142,5 +144,26 @@ class V2LessonChatService:
             draft.scenarios = values
         elif question.field == "selectedMaterials":
             draft.selected_materials = values
-        else:
-            draft.custom_notes = question.custom_answer
+
+    @staticmethod
+    def _apply_custom_notes(
+        draft: LessonDesignDraft, questions: list[AIQuestion]
+    ) -> None:
+        note_groups: list[str] = []
+        labels = {
+            "reinforcer": "Reinforcers",
+            "prompting-strategy": "Prompting",
+        }
+        for question in questions:
+            if question.field != "customNotes":
+                continue
+            values = [
+                option.value
+                for option in question.options
+                if option.id in question.selected_option_ids
+            ]
+            if values:
+                note_groups.append(
+                    f"{labels.get(question.id, 'Teacher notes')}: {', '.join(values)}."
+                )
+        draft.custom_notes = " ".join(note_groups)

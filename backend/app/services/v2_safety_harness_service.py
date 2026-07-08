@@ -55,6 +55,7 @@ class V2SafetyHarnessService:
             appliedEdits=[
                 "Confirmed the goal is observable.",
                 "Kept instructions short and teacher-actionable.",
-                "Included prompt, reinforcement, and data collection supports.",
+                "Avoided punitive or stigmatizing language.",
+                "Included prompt fading, reinforcement, and data collection supports.",
             ],
         )

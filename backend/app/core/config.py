@@ -4,9 +4,16 @@ from typing import Literal
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.exceptions import AIProviderConfigurationError
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        # Supports running from either the repository root or backend/.
+        # Real environment variables still take precedence over local files.
+        env_file=(".env", "backend/.env.local", ".env.local"),
+        extra="ignore",
+    )
 
     APP_NAME: str = "Autism Teaching Copilot"
     APP_ENV: Literal["development", "test", "staging", "production"] = "development"
@@ -26,9 +33,10 @@ class Settings(BaseSettings):
     AZURE_OPENAI_IMAGE_DEPLOYMENT: str | None = None
 
     OPENAI_API_KEY: SecretStr | None = None
-    OPENAI_MODEL: str = "gpt-4.1-mini"
-    OPENAI_TEXT_MODEL: str = "gpt-4.1-mini"
-    OPENAI_IMAGE_MODEL: str = "gpt-image-1"
+    OPENAI_MODEL: str = "gpt-5.5"  # Compatibility alias for the legacy adapter.
+    OPENAI_TEXT_MODEL: str = "gpt-5.5"
+    OPENAI_IMAGE_MODEL: str = "gpt-image-2"
+    OPENAI_TIMEOUT_SECONDS: int = 60
 
     PEXELS_API_KEY: SecretStr | None = None
     PIXABAY_API_KEY: SecretStr | None = None
@@ -63,6 +71,16 @@ class Settings(BaseSettings):
         """Reveal a secret only at the provider SDK boundary."""
 
         return secret.get_secret_value() if secret else None
+
+    def require_openai_api_key(self) -> str:
+        """Return the key only at a backend provider boundary, or fail safely."""
+
+        api_key = self.reveal(self.OPENAI_API_KEY)
+        if not api_key:
+            raise AIProviderConfigurationError(
+                "OPENAI_API_KEY is not configured. Add it to backend/.env.local or your backend environment."
+            )
+        return api_key
 
     def model_post_init(self, __context) -> None:
         if self.AZURE_OPENAI_TEXT_DEPLOYMENT and not self.AZURE_OPENAI_DEPLOYMENT:
