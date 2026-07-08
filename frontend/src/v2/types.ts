@@ -3,7 +3,7 @@ export type WorkflowPage =
   | "planWithAIChat" | "lessonPackageReady" | "reviewPrintableContent"
   | "students" | "sessions" | "materials";
 
-export type StudioPage = WorkflowPage;
+export type StudioPage = WorkflowPage | "developerAI";
 export type WorkflowStep = "learner" | "records" | "profile" | "lesson" | "outputs";
 
 export interface LearnerProfile {
@@ -205,3 +205,37 @@ export interface ExportJob {
   downloadUrl: string;
 }
 export type MaterialQuickEditAction = "simplify_wording" | "regenerate_artwork" | "adjust_reward";
+
+export interface AIProviderStatus {
+  provider: string;
+  textModel: string;
+  imageModel: string;
+  hasApiKey: boolean;
+}
+
+export interface AILessonQuestionsTestResult {
+  provider: string;
+  model: string;
+  fallbackUsed: boolean;
+  questions: AIQuestion[];
+  draft: LessonDesignDraft;
+}
+
+export interface AIImageGenerationInput {
+  learnerId: string;
+  materialType: string;
+  prompt: string;
+  style?: string;
+  size?: string;
+}
+
+export interface AIImageGenerationResult {
+  imageId: string;
+  status: "ready" | "mock";
+  provider: "mock" | "openai";
+  model: string;
+  imageUrl?: string | null;
+  imageBase64?: string | null;
+  promptUsed: string;
+  fallbackUsed: boolean;
+}

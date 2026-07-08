@@ -1,6 +1,7 @@
 import { lessonKitMockApi } from "../mockApi";
 import type {
-  AIChatState, ExportJob, GeneratedMaterial, LearnerProfile,
+  AIChatState, AIImageGenerationInput, AIImageGenerationResult,
+  AILessonQuestionsTestResult, AIProviderStatus, ExportJob, GeneratedMaterial, LearnerProfile,
   LearnerProfileExtraction, LearnerProgressSummary, LearnerRecord,
   LessonDesignDraft, LessonPackage, LessonSession, LessonSessionStat,
   LessonSessionSummary, MaterialLibraryItem, MaterialQuickEditAction,
@@ -16,6 +17,10 @@ export interface MaterialCreateInput { title: string; type: string; thumbnailLab
 export interface SessionDataRecordInput { learnerId:string;lessonPackageId:string;goal:string;opportunities:number;correct:number;independent:number;promptLevel:string;signalsHighlighted:string[];teacherNotes:string }
 
 export const lessonKitApi = {
+  getAIStatus: ():Promise<AIProviderStatus> => backendClient.get("/v2/dev/ai-status"),
+  testAILessonQuestions: (message:string):Promise<AILessonQuestionsTestResult> => backendClient.post("/v2/dev/test-ai-lesson-questions",{learnerId:"a102",message}),
+  testAIImageGeneration: (payload:AIImageGenerationInput):Promise<AIImageGenerationResult> => backendClient.post("/v2/dev/test-image-generation",payload),
+
   getLearners: ():Promise<LearnerProfile[]> => useLocalMock ? lessonKitMockApi.getLearners() : backendClient.get("/v2/learners"),
   getLearnerById: async (id:string):Promise<LearnerProfile> => {
     if (!useLocalMock) return backendClient.get(`/v2/learners/${id}`);

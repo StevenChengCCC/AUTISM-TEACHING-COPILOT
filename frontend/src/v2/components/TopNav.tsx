@@ -13,7 +13,7 @@ const items: { page: StudioPage; label: string; icon: string }[] = [
 ];
 
 export function TopNav({ page, onNavigate }: Props) {
-  const activePage = ["students", "sessions", "materials"].includes(page) ? page : "home";
+  const activePage = page === "developerAI" ? null : ["students", "sessions", "materials"].includes(page) ? page : "home";
   return (
     <header className="v2-topnav">
       <button className="v2-brand" onClick={() => onNavigate("home")} aria-label="Lesson Kit Studio home">
@@ -31,9 +31,12 @@ export function TopNav({ page, onNavigate }: Props) {
           </button>
         ))}
       </nav>
-      <button className="v2-profile" aria-label="Teacher profile is not available in this demo" title="Profile menu is not available in this demo" disabled>
-        <span className="v2-avatar">👩🏻</span><span aria-hidden="true">⌄</span>
-      </button>
+      <div className="v2-nav-tools">
+        {import.meta.env.DEV&&<button className={`v2-dev-link ${page==="developerAI"?"is-active":""}`} onClick={()=>onNavigate("developerAI")} title="Backend AI development checks">AI dev</button>}
+        <button className="v2-profile" aria-label="Teacher profile is not available in this demo" title="Profile menu is not available in this demo" disabled>
+          <span className="v2-avatar">👩🏻</span><span aria-hidden="true">⌄</span>
+        </button>
+      </div>
     </header>
   );
 }

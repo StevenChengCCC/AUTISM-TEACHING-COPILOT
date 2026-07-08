@@ -76,6 +76,7 @@ class V2ProgressService:
             "generalization",
             "regulation_recovery",
             "participation",
+            "independence",
         }
         return [
             signal
@@ -123,12 +124,16 @@ class V2ProgressService:
             if independence_change > 0
             else "Variable progress; continue observing small changes"
         )
+        previous_summary = self.repos.progress_summaries.get(payload.learnerId)
         summary = LearnerProgressSummaryDto(
             learnerId=payload.learnerId,
             currentGoal=payload.goal,
             accuracyPercent=latest.accuracyPercent,
             independencePercent=latest.independencePercent,
-            sessionsPracticed=len(points),
+            sessionsPracticed=max(
+                len(points),
+                (previous_summary.sessionsPracticed + 1) if previous_summary else 1,
+            ),
             currentPromptLevel=latest.promptLevel,
             trend=trend,
             message="Plateau does not mean no progress.",

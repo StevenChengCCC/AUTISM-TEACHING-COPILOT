@@ -38,7 +38,7 @@ Backend:
 ```bash
 cd backend
 python -m pip install -r requirements.txt
-cp .env.example .env
+cp .env.example .env.local
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
@@ -65,7 +65,9 @@ DATABASE_URL=sqlite:///./autism_copilot.db
 DEV_ALLOW_ANON_TEACHER=true
 DEV_ANON_TEACHER_ID=1
 OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_TEXT_MODEL=gpt-5.5
+OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_TIMEOUT_SECONDS=60
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_DEPLOYMENT=
@@ -88,7 +90,7 @@ provider selection, credentials, safety checks, and learner-data handling.
 ## Secrets And Dev Permissions
 
 Backend secrets are read only from environment variables or an ignored
-`backend/.env`. Never commit `.env`, paste credentials into source code, bake
+`backend/.env.local`. Never commit `.env`, paste credentials into source code, bake
 them into a Dockerfile, or print them in logs. Only `.env.example` files with
 empty placeholders belong in GitHub.
 
@@ -105,6 +107,69 @@ MVP permission checks use the `X-Teacher-Id` header. For local development,
 `DEV_ALLOW_ANON_TEACHER=true` enables an anonymous admin-like teacher so the app
 can run without a login system. Production should set this to `false` and replace
 the header dependency with real authentication.
+
+### Using local OpenAI keys safely
+
+OpenAI calls are isolated behind the Backend v2 provider boundary. Development
+test endpoints can exercise text generation without exposing the key to the
+browser or GitHub; the main product flow remains mock-first.
+
+Step 1:
+
+```bash
+cp backend/.env.example backend/.env.local
+```
+
+Step 2: edit `backend/.env.local`:
+
+```text
+AI_PROVIDER=openai
+OPENAI_API_KEY=your_key_here
+OPENAI_TEXT_MODEL=gpt-5.5
+OPENAI_IMAGE_MODEL=gpt-image-2
+```
+
+Step 3: restart the backend.
+
+Never put `OPENAI_API_KEY` in frontend environment files or create a
+`VITE_OPENAI_API_KEY`; Vite variables are public browser code. Never commit
+`backend/.env.local`. In production, use a managed secret store such as Azure
+Key Vault with Managed Identity instead of a checked-in key.
+
+### Development AI text checks
+
+These endpoints are available only when `APP_ENV=development`. They return a
+boolean indicating whether a key exists, never the key itself.
+
+AI status:
+
+```bash
+curl http://localhost:8000/api/v2/dev/ai-status
+```
+
+Test lesson questions:
+
+```bash
+curl -X POST http://localhost:8000/api/v2/dev/test-ai-lesson-questions \
+  -H "Content-Type: application/json" \
+  -d '{"learnerId":"a102","message":"I want to teach asking for help."}'
+```
+
+Test lesson package:
+
+```bash
+curl -X POST http://localhost:8000/api/v2/dev/test-ai-lesson-package \
+  -H "Content-Type: application/json" \
+  -d '{"learnerId":"a102","goalText":"Learner will ask for help using a short phrase.","responseLevel":"Short phrase","scenarios":["Toy car stuck","Closed box"],"selectedMaterials":["Visual Cards","Help Card","Token Board","Data Sheet","Summary Template"],"theme":"Vehicles","duration":"10–12 min","customNotes":"Use visual prompt first and token board reinforcement."}'
+```
+
+Test image generation (backend development only):
+
+```bash
+curl -X POST http://localhost:8000/api/v2/dev/test-image-generation \
+  -H "Content-Type: application/json" \
+  -d '{"learnerId":"a102","materialType":"visual_card","prompt":"A simple classroom visual card showing a toy car stuck and a child asking for help.","style":"clean printable educational illustration","size":"1024x1024"}'
+```
 
 ## Mock Mode
 

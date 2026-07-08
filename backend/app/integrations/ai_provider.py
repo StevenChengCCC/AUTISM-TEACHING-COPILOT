@@ -47,6 +47,19 @@ class V2AIProvider(ABC):
 
         raise NotImplementedError
 
+    @abstractmethod
+    def generate_material_image(
+        self,
+        learner: LearnerProfile,
+        material_type: str,
+        prompt: str,
+        style: str | None = None,
+        size: str | None = None,
+    ) -> dict[str, Any]:
+        """Generate dev-test image output behind the same provider boundary."""
+
+        raise NotImplementedError
+
 
 def get_v2_ai_provider(config: Settings = settings) -> V2AIProvider:
     """Resolve the configured provider without exposing secret values.
@@ -63,6 +76,8 @@ def get_v2_ai_provider(config: Settings = settings) -> V2AIProvider:
         from app.integrations.azure_openai_provider import AzureOpenAIV2Provider
 
         return AzureOpenAIV2Provider(config)
-    raise RuntimeError(
-        "Backend v2 OpenAI provider is not enabled; use mock until the safeguarded adapter is implemented"
-    )
+    if config.AI_PROVIDER == "openai":
+        from app.integrations.openai_provider import OpenAIV2AIProvider
+
+        return OpenAIV2AIProvider(config)
+    raise RuntimeError(f"Unsupported AI_PROVIDER: {config.AI_PROVIDER}")

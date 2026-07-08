@@ -106,22 +106,22 @@ class V2LessonPackageService:
     @staticmethod
     def _build_product_flow() -> list[TeachingStepDto]:
         return [
-            TeachingStepDto(id="warm-up", title="Warm-up", description="Preview the goal and visual supports.", duration="2 min", teacherAction="Show the target visual and briefly name the goal.", learnerAction="Attend to or explore the visual."),
-            TeachingStepDto(id="model-request", title="Model the request", description="Demonstrate the target response in a familiar situation.", duration="2 min", teacherAction="Model the short phrase and point to the help card.", learnerAction="Observe and respond in their preferred communication mode."),
-            TeachingStepDto(id="guided-practice", title="Guided practice", description="Practice across the teacher-confirmed scenarios.", duration="4 min", teacherAction="Create an opportunity, wait, then use the least support needed.", learnerAction="Practice requesting help with available supports."),
-            TeachingStepDto(id="independent-opportunity", title="Independent opportunity", description="Offer time to respond before prompting.", duration="2 min", teacherAction="Pause and allow an independent attempt.", learnerAction="Attempt the target response with reduced prompting."),
-            TeachingStepDto(id="reinforcement-data", title="Reinforcement and data note", description="Acknowledge participation and record the support used.", duration="2 min", teacherAction="Provide reinforcement and note prompt level, regulation, and participation.", learnerAction="Receive feedback and transition at a comfortable pace."),
+            TeachingStepDto(id="warm-up", title="Warm-up and motivation", description="Pair the lesson goal with a familiar, motivating activity.", duration="2 min", teacherAction="Show the visual support and offer the preferred vehicle activity.", learnerAction="Attends to the material or explores the preferred item."),
+            TeachingStepDto(id="model-request", title="Model asking for help", description="Demonstrate the target phrase during a small, familiar problem.", duration="2 min", teacherAction="Create a small problem, model “help please,” and point to the help card.", learnerAction="Watches, points, approximates, or says the target phrase."),
+            TeachingStepDto(id="guided-practice", title="Guided practice with prompts", description="Practice the request across selected scenarios with planned prompt fading.", duration="4 min", teacherAction="Use least-to-most prompting and provide wait time before verbal help.", learnerAction="Practices asking for help with the selected support level."),
+            TeachingStepDto(id="independent-opportunity", title="Independent opportunity", description="Create a familiar opportunity and pause before offering support.", duration="2 min", teacherAction="Pause before prompting and create a familiar help-needed moment.", learnerAction="Attempts to request help independently or with a lighter prompt."),
+            TeachingStepDto(id="reinforcement-data", title="Reinforcement and data note", description="Reinforce effort and capture small, multidimensional progress signals.", duration="2 min", teacherAction="Reinforce participation, add a token, and record prompt level, independence, and engagement.", learnerAction="Receives reinforcement and transitions with support."),
         ]
 
     def _build_product_materials(
         self, package_id: str
     ) -> list[GeneratedMaterialDto]:
         definitions = [
-            ("visual_card", "Visual Card", {"phrase": "I need help", "visual": "help request"}),
-            ("help_card", "Help Card", {"phrase": "Can you help me?", "prompt": "Point or say the phrase"}),
-            ("token_board", "Token Board", {"instruction": "Earn 5 stars, then choose a reward.", "tokens": 5}),
-            ("data_sheet", "Data Sheet", {"columns": ["Scenario", "Independent", "Prompt level", "Participation", "Notes"]}),
-            ("summary_template", "Summary Template", {"prompts": ["What worked?", "What support was needed?", "What is the next small step?"]}),
+            ("visual_card", "Visual Card", {"phrase": "I need help", "visual": "child pointing to a stuck toy car", "instruction": "Show this card before and during practice opportunities."}),
+            ("help_card", "Help Card", {"phrase": "Help please", "prompt": "Point, say, or hand the card to ask for help.", "example": "My car is stuck. Help please."}),
+            ("token_board", "Token Board", {"instruction": "Earn 5 stars, then choose a reward.", "reward": "Car", "artwork": "Friendly vehicle artwork", "tokens": 5, "teacherNote": "Praise effort and reinforce each appropriate request."}),
+            ("data_sheet", "Data Sheet", {"columns": ["Scenario", "Independent", "Prompt level", "Participation", "Regulation", "Notes"], "promptLevels": ["Level 3 full prompt", "Level 2 partial prompt", "Level 1 gesture/visual prompt", "Independent"], "progressSignals": ["Engagement", "Prompt fading", "Generalization attempt", "Participation"]}),
+            ("summary_template", "Summary Template", {"prompts": ["What worked?", "What support was needed?", "What small win was observed?", "What is the next small step?"], "parentSummaryFrame": "Today we practiced asking for help. Progress may be small and uneven, but we are watching for independence, prompt fading, participation, and generalization."}),
         ]
         return [
             GeneratedMaterialDto(

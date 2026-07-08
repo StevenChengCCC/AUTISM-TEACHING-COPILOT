@@ -587,3 +587,60 @@ class LessonPackageExportJobDto(V2Model):
     status: Literal["ready"] = "ready"
     format: Literal["pdf", "docx", "pptx"]
     downloadUrl: str
+
+
+class DevAILessonQuestionsRequest(V2Model):
+    learnerId: str
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class DevAILessonPackageRequest(V2Model):
+    learnerId: str
+    goalText: str
+    responseLevel: str
+    scenarios: list[str] = Field(default_factory=list)
+    selectedMaterials: list[str] = Field(default_factory=list)
+    theme: str
+    duration: str
+    customNotes: str
+
+
+class DevAIStatusDto(V2Model):
+    provider: str
+    textModel: str
+    imageModel: str
+    hasApiKey: bool
+
+
+class DevAILessonQuestionsResponse(V2Model):
+    provider: str
+    model: str
+    fallbackUsed: bool
+    questions: list[AIQuestion] = Field(default_factory=list)
+    draft: LessonDesignDraft
+
+
+class DevAILessonPackageResponse(V2Model):
+    provider: str
+    model: str
+    fallbackUsed: bool
+    generatedContent: dict[str, Any]
+
+
+class ImageGenerationRequest(V2Model):
+    learnerId: str
+    materialType: str
+    prompt: str = Field(min_length=1, max_length=4000)
+    style: str | None = None
+    size: str | None = None
+
+
+class ImageGenerationResponse(V2Model):
+    imageId: str
+    status: Literal["ready", "mock"]
+    provider: Literal["mock", "openai"]
+    model: str
+    imageUrl: str | None = None
+    imageBase64: str | None = None
+    promptUsed: str
+    fallbackUsed: bool

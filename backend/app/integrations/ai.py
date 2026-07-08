@@ -61,9 +61,7 @@ class OpenAIProvider(AIProvider):
     def __init__(self):
         from openai import OpenAI
 
-        api_key = settings.reveal(settings.OPENAI_API_KEY)
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is missing")
+        api_key = settings.require_openai_api_key()
         self.client = OpenAI(api_key=api_key)
         self.model = settings.OPENAI_MODEL
 

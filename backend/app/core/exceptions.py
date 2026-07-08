@@ -18,6 +18,12 @@ class ForbiddenError(AppError):
     status_code = 403
 
 
+class AIProviderConfigurationError(AppError, RuntimeError):
+    """Safe provider setup failure that may be returned to the frontend."""
+
+    status_code = 503
+
+
 class ValidationError(AppError):
     status_code = 422
 

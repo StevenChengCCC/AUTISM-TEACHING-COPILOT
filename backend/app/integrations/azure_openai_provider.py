@@ -51,3 +51,13 @@ class AzureOpenAIV2Provider(V2AIProvider):
         self, draft: LessonDesignDraftDto
     ) -> dict[str, Any]:
         return self._not_enabled()
+
+    def generate_material_image(
+        self,
+        learner: LearnerProfile,
+        material_type: str,
+        prompt: str,
+        style: str | None = None,
+        size: str | None = None,
+    ) -> dict[str, Any]:
+        return self._not_enabled()

@@ -8,7 +8,14 @@ env/
 
 .env
 .env.*
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
 !.env.example
+!backend/.env.example
+!backend/.env.local.example
+!frontend/.env.example
 *.db
 *.sqlite
 *.sqlite3
