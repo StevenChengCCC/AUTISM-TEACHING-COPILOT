@@ -9,6 +9,7 @@ from typing import Generic, TypeVar
 from app.schemas.v2_dto import (
     AIChatState,
     GeneratedMaterial,
+    ImageAssetDto,
     LearnerProfile,
     LearnerRecord,
     LessonPackage,
@@ -100,6 +101,49 @@ def _now() -> datetime:
     return datetime(2025, 5, 12, 10, 21, tzinfo=timezone.utc)
 
 
+def _seed_image_assets() -> list[ImageAssetDto]:
+    created_at = "2025-05-12T10:21:00Z"
+
+    def asset(
+        asset_id: str,
+        title: str,
+        concept: str,
+        alt_text: str,
+        tags: list[str],
+        source_type: str = "internal",
+    ) -> ImageAssetDto:
+        slug = asset_id.removeprefix("asset-")
+        return ImageAssetDto(
+            id=asset_id,
+            sourceType=source_type,
+            title=title,
+            concept=concept,
+            imageUrl=f"/storage/demo-assets/{slug}.svg",
+            thumbnailUrl=f"/storage/demo-assets/{slug}-thumb.svg",
+            altText=alt_text,
+            tags=tags,
+            licenseInfo="Internal demo asset",
+            attribution=None,
+            providerAssetId=None,
+            approved=True,
+            safetyStatus="ready",
+            createdAt=created_at,
+        )
+
+    return [
+        asset("asset-toy-car", "Blue Toy Car", "toy car", "A simple blue toy car viewed from the side.", ["vehicle", "car", "toy", "visual card"]),
+        asset("asset-toy-car-stuck", "Toy Car Stuck", "toy car stuck", "A toy car gently stuck beside a small block.", ["vehicle", "car", "stuck", "asking for help", "scenario"]),
+        asset("asset-closed-box", "Closed Box", "closed box", "A closed classroom storage box with a visible lid.", ["box", "container", "closed", "asking for help", "scenario"]),
+        asset("asset-backpack-zipper", "Backpack Zipper", "backpack zipper", "A backpack with its zipper partly closed.", ["backpack", "zipper", "school", "asking for help", "scenario"]),
+        asset("asset-snack-container", "Snack Container", "snack container", "A closed reusable snack container on a plain background.", ["snack", "container", "closed", "classroom", "scenario"]),
+        asset("asset-puzzle-piece-missing", "Missing Puzzle Piece", "puzzle piece missing", "A simple puzzle with one clearly empty piece space.", ["puzzle", "missing", "problem solving", "asking for help", "scenario"]),
+        asset("asset-help-card-icon", "Help Card Icon", "help card icon", "A speech bubble with the word help represented as a simple symbol.", ["help", "communication", "request", "help card", "icon"], "mock"),
+        asset("asset-token-board-star", "Token Board Star", "token board star", "A friendly five-point star token with a clear outline.", ["star", "token", "reinforcement", "token board", "icon"], "mock"),
+        asset("asset-visual-prompt-card", "Visual Prompt Card", "visual prompt card", "A clean blank visual prompt card with a blue border.", ["visual support", "prompt", "card", "template"], "mock"),
+        asset("asset-classroom-table", "Classroom Table", "classroom table", "A simple classroom table with two chairs and no people.", ["classroom", "table", "school", "environment"]),
+    ]
+
+
 class V2Repositories:
     """Application repository registry; production wiring can inject persistent adapters."""
 
@@ -189,6 +233,7 @@ class V2Repositories:
         self.generated_materials = self.materials
         self.materials_library = InMemoryV2Repository[MaterialLibraryItem](library)
         self.library = self.materials_library
+        self.image_assets = InMemoryV2Repository[ImageAssetDto](_seed_image_assets())
         self.sessions = InMemoryV2Repository[LessonSession](sessions)
         self.recent_lessons = InMemoryV2Repository[RecentLessonDto](recent_lessons)
         self.progress_summaries = InMemoryV2Repository[LearnerProgressSummaryDto](progress_summaries, key_field="learnerId")

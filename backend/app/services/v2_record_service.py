@@ -7,14 +7,23 @@ from app.schemas.v2_dto import (
 )
 from app.services.v2_learner_service import V2LearnerService
 from app.services.v2_repositories import V2Repositories, repositories
+from app.services.v2_upload_security_service import (
+    V2UploadSecurityService,
+    upload_security_service,
+)
 
 
 class V2RecordService:
     """Metadata-only record service; blob storage and parsers will replace fake extraction."""
 
-    def __init__(self, repos: V2Repositories = repositories):
+    def __init__(
+        self,
+        repos: V2Repositories = repositories,
+        upload_security: V2UploadSecurityService = upload_security_service,
+    ):
         self.repos = repos
         self.learners = V2LearnerService(repos)
+        self.upload_security = upload_security
 
     def list_for_learner(self, learner_id: str) -> list[LearnerRecord]:
         self.learners.get(learner_id)
@@ -25,7 +34,26 @@ class V2RecordService:
 
     def create(self, learner_id: str, payload: RecordCreate) -> LearnerRecord:
         self.learners.get(learner_id)
-        record = LearnerRecord(id=self.repos.next_id("record"), learner_id=learner_id, file_name=payload.file_name, file_type=payload.file_type, status="ready", uploaded_at=utc_now(), extracted_text=payload.pasted_text or "Mock extraction pending real parser integration.")
+        file_name = payload.file_name.strip()
+        extracted_text = self.upload_security.sanitize_untrusted_record_text(
+            payload.pasted_text
+        )
+        estimated_size = len((payload.pasted_text or "").encode("utf-8", errors="ignore"))
+        self.upload_security.validate_upload_metadata(
+            file_name=file_name,
+            content_type=self._content_type_from_file_type(payload.file_type),
+            size_bytes=estimated_size,
+        )
+        record = LearnerRecord(
+            id=self.repos.next_id("record"),
+            learner_id=learner_id,
+            file_name=file_name,
+            file_type=self._normalized_file_type(file_name, payload.file_type),
+            status="ready",
+            uploaded_at=utc_now(),
+            extracted_text=extracted_text
+            or "Mock extraction pending real parser integration.",
+        )
         return self.repos.records.save(record)
 
     def create_dto(
@@ -52,3 +80,23 @@ class V2RecordService:
             uploadedAt=record.uploaded_at.isoformat(),
             extractedText=record.extracted_text,
         )
+
+    @staticmethod
+    def _normalized_file_type(file_name: str, provided_file_type: str) -> str:
+        extension = file_name.rsplit(".", 1)[-1].upper()
+        return extension or provided_file_type.strip().upper()
+
+    @staticmethod
+    def _content_type_from_file_type(file_type: str) -> str | None:
+        normalized = (file_type or "").strip().upper()
+        return {
+            "TXT": "text/plain",
+            "PDF": "application/pdf",
+            "DOCX": (
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
+            "PNG": "image/png",
+            "JPG": "image/jpeg",
+            "JPEG": "image/jpeg",
+        }.get(normalized)
