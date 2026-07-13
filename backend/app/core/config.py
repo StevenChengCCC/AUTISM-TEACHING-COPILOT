@@ -37,6 +37,21 @@ class Settings(BaseSettings):
     OPENAI_TEXT_MODEL: str = "gpt-5.5"
     OPENAI_IMAGE_MODEL: str = "gpt-image-2"
     OPENAI_TIMEOUT_SECONDS: int = 60
+    IMAGE_SEARCH_TIMEOUT_SECONDS: int = 10
+    IMAGE_ASSET_STRATEGY: Literal[
+        "generate_first", "reuse_search_generate"
+    ] = "generate_first"
+
+    MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024
+    ALLOWED_UPLOAD_EXTENSIONS: str = ".txt,.pdf,.docx,.png,.jpg,.jpeg"
+    ALLOWED_UPLOAD_MIME_TYPES: str = (
+        "text/plain,application/pdf,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "image/png,image/jpeg"
+    )
+    UPLOAD_QUARANTINE_DIR: str = "./storage/quarantine"
+    ENABLE_UPLOAD_ANTIVIRUS_SCAN: bool = False
+    MAX_UNTRUSTED_RECORD_TEXT_CHARS: int = 50_000
 
     PEXELS_API_KEY: SecretStr | None = None
     PIXABAY_API_KEY: SecretStr | None = None
@@ -59,6 +74,22 @@ class Settings(BaseSettings):
         """Compatibility alias for the existing FastAPI bootstrap."""
 
         return self.allowed_origin_list
+
+    @property
+    def allowed_upload_extension_set(self) -> set[str]:
+        return {
+            extension.strip().lower()
+            for extension in self.ALLOWED_UPLOAD_EXTENSIONS.split(",")
+            if extension.strip()
+        }
+
+    @property
+    def allowed_upload_mime_type_set(self) -> set[str]:
+        return {
+            mime.strip().lower()
+            for mime in self.ALLOWED_UPLOAD_MIME_TYPES.split(",")
+            if mime.strip()
+        }
 
     @property
     def ENV(self) -> str:

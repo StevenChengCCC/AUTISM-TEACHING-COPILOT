@@ -5,7 +5,7 @@ import { mockMaterials } from "./data/mockMaterials";
 import { mockRecentLessons } from "./data/mockRecentLessons";
 import { mockRecords } from "./data/mockRecords";
 import { mockSessions,mockSessionStats } from "./data/mockSessions";
-import type { AIChatState, AIQuestion, ExportJob, GeneratedMaterial, LearnerProfile, LearnerProfileExtraction, LearnerProgressSummary, LessonDesignDraft, LessonPackage, LessonSession, LessonSessionSummary, MaterialLibraryItem, MaterialQuickEditAction, ProgressDataPoint, ProgressSignal } from "./types";
+import type { AIChatState, AIQuestion, ExportJob, GeneratedMaterial, LearnerProfile, LearnerProfileExtraction, LearnerProgressSummary, LessonDesignDraft, LessonPackage, LessonPackageUpdateInput, LessonSession, LessonSessionSummary, MaterialLibraryItem, MaterialQuickEditAction, ProgressDataPoint, ProgressSignal } from "./types";
 
 const chats = new Map<string, AIChatState>();
 const packages = new Map<string, LessonPackage>();
@@ -98,6 +98,7 @@ export const lessonKitMockApi = {
     return pause(lessonPackage);
   },
   getLessonPackage: async (packageId:string) => {const value=packages.get(packageId);if(!value)throw new Error("Package not found");return pause(value);},
+  updateLessonPackage: async (packageId:string,payload:LessonPackageUpdateInput) => {const value=packages.get(packageId);if(!value)throw new Error("Package not found");const updated={...value,...payload,materials:value.materials,safetyReview:value.safetyReview,standardsChecks:value.standardsChecks};packages.set(packageId,updated);return pause(updated);},
   getGeneratedMaterials: async (packageId:string) => pause(packages.get(packageId)?.materials ?? []),
   updateGeneratedMaterial: async (materialId:string,payload:{title:string;content:GeneratedMaterial["content"];printLayout:GeneratedMaterial["printLayout"]}) => updateLocalMaterial(materialId,(item)=>({...item,...payload})),
   approveGeneratedMaterial: async (materialId:string) => updateLocalMaterial(materialId,(item)=>({...item,status:"approved"})),

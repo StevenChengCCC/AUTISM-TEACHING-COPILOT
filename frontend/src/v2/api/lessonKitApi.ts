@@ -3,7 +3,7 @@ import type {
   AIChatState, AIImageGenerationInput, AIImageGenerationResult,
   AILessonQuestionsTestResult, AIProviderStatus, ExportJob, GeneratedMaterial, LearnerProfile,
   LearnerProfileExtraction, LearnerProgressSummary, LearnerRecord,
-  LessonDesignDraft, LessonPackage, LessonSession, LessonSessionStat,
+  LessonDesignDraft, LessonPackage, LessonPackageUpdateInput, LessonSession, LessonSessionStat,
   LessonSessionSummary, MaterialLibraryItem, MaterialQuickEditAction,
   ProgressDataPoint, ProgressSignal, RecentLesson,
 } from "../types";
@@ -42,6 +42,7 @@ export const lessonKitApi = {
 
   generateLessonPackageFromDraft: (draft:LessonDesignDraft):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.generateLessonPackageFromDraft(draft) : backendClient.post("/v2/lesson-packages/generate",draft),
   getLessonPackage: (id:string):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.getLessonPackage(id) : backendClient.get(`/v2/lesson-packages/${id}`),
+  updateLessonPackage: (id:string,payload:LessonPackageUpdateInput):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.updateLessonPackage(id,payload) : backendClient.patch(`/v2/lesson-packages/${id}`,payload),
   getGeneratedMaterials: (id:string):Promise<GeneratedMaterial[]> => useLocalMock ? lessonKitMockApi.getGeneratedMaterials(id) : backendClient.get(`/v2/lesson-packages/${id}/materials`),
   updateGeneratedMaterial: (id:string,payload:MaterialUpdateInput):Promise<GeneratedMaterial> => useLocalMock ? lessonKitMockApi.updateGeneratedMaterial(id,payload) : backendClient.patch(`/v2/generated-materials/${id}`,payload),
   approveGeneratedMaterial: (id:string):Promise<GeneratedMaterial> => useLocalMock ? lessonKitMockApi.approveGeneratedMaterial(id) : backendClient.post(`/v2/generated-materials/${id}/approve`),

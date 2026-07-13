@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { LessonPackageReadyPage } from "./pages/LessonPackageReadyPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
+import { ModifyLessonContentPage } from "./pages/ModifyLessonContentPage";
 import { DeveloperAISettingsPage } from "./pages/DeveloperAISettingsPage";
 import { PlanWithAIChatPage } from "./pages/PlanWithAIChatPage";
 import { ReviewLearnerPage } from "./pages/ReviewLearnerPage";
@@ -21,6 +22,7 @@ const workflowSteps: Partial<Record<StudioPage, WorkflowStep>> = {
   reviewLearnerNew: "profile",
   planWithAIChat: "lesson",
   lessonPackageReady: "outputs",
+  modifyLessonContent: "outputs",
   reviewPrintableContent: "outputs",
 };
 
@@ -51,7 +53,8 @@ export function LessonKitStudioApp() {
       {page === "reviewLearnerExisting" && <ReviewLearnerPage learnerId={learnerId} isNew={false} onContinue={() => navigateTo("planWithAIChat")} onFeedback={setFeedbackMessage} />}
       {page === "reviewLearnerNew" && <ReviewLearnerPage learnerId={learnerId} isNew onBack={() => navigateTo("uploadRecords")} onContinue={() => navigateTo("planWithAIChat")} onFeedback={setFeedbackMessage} />}
       {page === "planWithAIChat" && <PlanWithAIChatPage learnerId={learnerId} onGenerate={(value) => { setLessonPackage(value); navigateTo("lessonPackageReady"); }} onViewProfile={() => navigateTo("reviewLearnerExisting")} onChangeLearner={() => navigateTo("home")} onFeedback={setFeedbackMessage} />}
-      {page === "lessonPackageReady" && <LessonPackageReadyPage lessonPackage={lessonPackage} onReview={() => navigateTo("reviewPrintableContent")} onEdit={() => navigateTo("planWithAIChat")} onStartOver={() => navigateTo("home")} onFeedback={setFeedbackMessage} />}
+      {page === "lessonPackageReady" && <LessonPackageReadyPage lessonPackage={lessonPackage} onModify={() => navigateTo("modifyLessonContent")} onReview={() => navigateTo("reviewPrintableContent")} onEdit={() => navigateTo("planWithAIChat")} onStartOver={() => navigateTo("home")} onFeedback={setFeedbackMessage} />}
+      {page === "modifyLessonContent" && <ModifyLessonContentPage lessonPackage={lessonPackage} onBack={() => navigateTo("lessonPackageReady")} onContinue={() => navigateTo("reviewPrintableContent")} onSave={setLessonPackage} onFeedback={setFeedbackMessage} />}
       {page === "reviewPrintableContent" && <ReviewPrintableContentPage lessonPackage={lessonPackage} onBack={() => {if(!lessonPackage){navigateTo("lessonPackageReady");return;}void lessonKitApi.getLessonPackage(lessonPackage.id).then((value)=>{setLessonPackage(value);navigateTo("lessonPackageReady");});}} onFeedback={setFeedbackMessage} />}
       {page === "students" && <StudentsPage onStartLesson={startExistingLearnerFlow} onCreateLearner={startNewLearnerFlow} onFeedback={setFeedbackMessage} />}
       {page === "sessions" && <SessionsPage onNewSession={() => navigateTo("home")} onResume={(session)=>void resumeSession(session)} onFeedback={setFeedbackMessage} />}

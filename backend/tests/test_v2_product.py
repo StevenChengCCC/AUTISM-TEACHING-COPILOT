@@ -3,7 +3,13 @@ from fastapi.testclient import TestClient
 from app.api.v2_routes import health
 from app.core.config import settings as app_settings
 from app.main import app
-from app.schemas.v2_dto import AIChatState, LessonDesignDraft, QuestionAnswerUpdate
+from app.schemas.v2_dto import (
+    AIChatState,
+    LessonDesignDraft,
+    LessonDesignDraftDto,
+    LessonPackageUpdateRequest,
+    QuestionAnswerUpdate,
+)
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_repositories import V2Repositories
@@ -163,6 +169,53 @@ def test_v2_package_runs_safety_and_standards_before_persistence():
     assert package.standards_report.checks
     assert repos.packages.get(package.id) is not None
     assert repos.materials.for_package(package.id)
+
+
+def test_lesson_package_document_update_preserves_materials_and_quality_data():
+    repos = V2Repositories()
+    chat_service = V2LessonChatService(repos)
+    chat = chat_service.start("a102")
+    chat = chat_service.submit_request(chat.conversation_id, "Practice asking for help")
+    service = V2LessonPackageService(repos)
+    package = service.generate_product(
+        LessonDesignDraftDto.model_validate(
+            chat.draft.model_dump(mode="json", by_alias=True)
+        )
+    )
+    original_materials = [
+        material.model_dump(mode="json", by_alias=True)
+        for material in package.materials
+    ]
+    updated_flow = [
+        package.teachingFlow[0].model_copy(
+            update={"description": "Teacher-edited warm-up description."}
+        ),
+        *package.teachingFlow[1:],
+    ]
+
+    updated = service.update_product(
+        package.id,
+        LessonPackageUpdateRequest(
+            lessonBrief="Teacher-edited lesson brief.",
+            summaryTemplate="Teacher-edited summary template.",
+            teachingFlow=updated_flow,
+            documentContent={
+                "title": "Asking for Help Lesson Kit",
+                "promptingPlan": "Wait five seconds before adding a prompt.",
+            },
+        ),
+    )
+
+    assert updated.lessonBrief == "Teacher-edited lesson brief."
+    assert updated.summaryTemplate == "Teacher-edited summary template."
+    assert updated.teachingFlow[0].description == "Teacher-edited warm-up description."
+    assert updated.documentContent["promptingPlan"].startswith("Wait five")
+    assert [
+        material.model_dump(mode="json", by_alias=True)
+        for material in updated.materials
+    ] == original_materials
+    assert updated.safetyReview == package.safetyReview
+    assert updated.standardsChecks == package.standardsChecks
 
 
 def test_v2_repository_seed_is_deterministic_and_multidimensional():
@@ -415,6 +468,19 @@ def test_v2_product_lesson_package_pipeline_http_contract():
     materials = client.get(f"/api/v2/lesson-packages/{package_id}/materials")
     assert materials.status_code == 200
     assert materials.json() == package["materials"]
+    updated = client.patch(
+        f"/api/v2/lesson-packages/{package_id}",
+        json={
+            "lessonBrief": "Teacher-edited package brief.",
+            "documentContent": {"reinforcementPlan": "Praise and five tokens."},
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["lessonBrief"] == "Teacher-edited package brief."
+    assert updated.json()["documentContent"]["reinforcementPlan"] == (
+        "Praise and five tokens."
+    )
+    assert updated.json()["materials"] == package["materials"]
     assert client.get("/api/v2/lesson-packages/not-found").status_code == 404
 
 

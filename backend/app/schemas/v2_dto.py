@@ -436,6 +436,14 @@ class LessonPackageDto(V2Model):
     summaryTemplate: str
     safetyReview: SafetyReviewDto | None = None
     standardsChecks: list[StandardsCheckDto] = Field(default_factory=list)
+    documentContent: dict[str, Any] = Field(default_factory=dict)
+
+
+class LessonPackageUpdateRequest(V2Model):
+    lessonBrief: str | None = None
+    summaryTemplate: str | None = None
+    teachingFlow: list[TeachingStepDto] | None = None
+    documentContent: dict[str, Any] | None = None
 
 
 class LessonSessionDto(V2Model):
@@ -644,3 +652,58 @@ class ImageGenerationResponse(V2Model):
     imageBase64: str | None = None
     promptUsed: str
     fallbackUsed: bool
+
+
+class ImageAssetDto(V2Model):
+    id: str
+    sourceType: Literal[
+        "internal", "pexels", "pixabay", "unsplash", "generated", "mock"
+    ]
+    title: str
+    concept: str
+    imageUrl: str | None = None
+    imageBase64: str | None = None
+    thumbnailUrl: str | None = None
+    altText: str
+    tags: list[str] = Field(default_factory=list)
+    licenseInfo: str
+    attribution: str | None = None
+    providerAssetId: str | None = None
+    approved: bool
+    safetyStatus: Literal["ready", "needs_review", "blocked"]
+    createdAt: str
+
+
+class ImageSearchRequest(V2Model):
+    concept: str = Field(min_length=1, max_length=200)
+    materialType: str = Field(min_length=1, max_length=100)
+    learnerId: str | None = None
+    maxResults: int = Field(default=6, ge=1, le=24)
+    allowExternalSearch: bool = True
+    allowGeneration: bool = False
+    preferredStyle: str | None = None
+
+
+class ImageCandidateResponse(V2Model):
+    concept: str
+    materialType: str
+    sourceOrder: list[str] = Field(default_factory=list)
+    candidates: list[ImageAssetDto] = Field(default_factory=list)
+    generationAvailable: bool
+    fallbackUsed: bool
+    message: str
+
+
+class ApproveImageAssetRequest(V2Model):
+    assetId: str
+    materialId: str | None = None
+    concept: str | None = None
+
+
+class GenerateImageCandidateRequest(V2Model):
+    learnerId: str
+    materialType: str
+    concept: str
+    prompt: str
+    style: str | None = None
+    size: str | None = None

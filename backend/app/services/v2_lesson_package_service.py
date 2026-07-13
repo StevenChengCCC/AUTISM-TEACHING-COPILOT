@@ -9,21 +9,24 @@ from app.schemas.v2_dto import (
     LessonDesignDraftDto,
     LessonPackage,
     LessonPackageDto,
+    LessonPackageUpdateRequest,
     PrintLayout,
     TeachingStep,
     TeachingStepDto,
 )
 from app.services.v2_repositories import V2Repositories, repositories
+from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_safety_harness_service import V2SafetyHarnessService
 from app.services.v2_standards_skill_service import V2StandardsSkillService
 
 
 class V2LessonPackageService:
-    def __init__(self, repos: V2Repositories = repositories, ai: V2AIProvider | None = None, safety: V2SafetyHarnessService | None = None, standards: V2StandardsSkillService | None = None):
+    def __init__(self, repos: V2Repositories = repositories, ai: V2AIProvider | None = None, safety: V2SafetyHarnessService | None = None, standards: V2StandardsSkillService | None = None, images: V2ImageAssetService | None = None):
         self.repos = repos
         self.ai = ai or get_v2_ai_provider()
         self.safety = safety or V2SafetyHarnessService()
         self.standards = standards or V2StandardsSkillService()
+        self.images = images or V2ImageAssetService(repos, ai=self.ai)
 
     def get(self, package_id: str) -> LessonPackage:
         package = self.repos.packages.get(package_id)
@@ -72,6 +75,7 @@ class V2LessonPackageService:
         generated_content = self.ai.generate_lesson_package(draft)
         teaching_flow = self._build_product_flow()
         materials = self._build_product_materials(package_id)
+        self._prepare_product_material_images(draft.learnerId, materials)
         safety_review = self.safety.review_product(draft, generated_content)
         standards_checks = self.standards.evaluate_product(draft, materials)
 
@@ -99,6 +103,22 @@ class V2LessonPackageService:
         if not package or not isinstance(package, LessonPackageDto):
             raise NotFoundError("Lesson package not found")
         return package
+
+    def update_product(
+        self, package_id: str, payload: LessonPackageUpdateRequest
+    ) -> LessonPackageDto:
+        package = self.get_product(package_id)
+        updates = {}
+        if payload.lessonBrief is not None:
+            updates["lessonBrief"] = payload.lessonBrief
+        if payload.summaryTemplate is not None:
+            updates["summaryTemplate"] = payload.summaryTemplate
+        if payload.teachingFlow is not None:
+            updates["teachingFlow"] = payload.teachingFlow
+        if payload.documentContent is not None:
+            updates["documentContent"] = payload.documentContent
+        updated = package.model_copy(update=updates)
+        return self.repos.lesson_packages.save(updated)
 
     def get_product_materials(self, package_id: str) -> list[GeneratedMaterialDto]:
         return self.get_product(package_id).materials
@@ -139,6 +159,51 @@ class V2LessonPackageService:
             )
             for material_type, title, content in definitions
         ]
+
+    def _prepare_product_material_images(
+        self, learner_id: str, materials: list[GeneratedMaterialDto]
+    ) -> None:
+        image_specs = {
+            "visual_card": {
+                "concept": "toy car stuck",
+                "prompt": "A clean printable educational illustration showing a toy car stuck and a child using a help card to ask for help. Simple classroom visual card style. No text in the image.",
+            },
+            "help_card": {
+                "concept": "asking for help",
+                "prompt": "A clean printable educational illustration of a child asking a teacher for help using a small help card. Simple supportive classroom scene. No text in the image.",
+            },
+            "token_board": {
+                "concept": "vehicle token board",
+                "prompt": "A clean printable educational token board with five star spaces and a friendly toy car reward theme. Simple classroom material style. No text in the image.",
+            },
+        }
+        for material in materials:
+            spec = image_specs.get(material.type)
+            if not spec:
+                continue
+            asset = self.images.prepare_generated_image_for_material(
+                learner_id=learner_id,
+                material_id=material.id,
+                material_type=material.type,
+                concept=spec["concept"],
+                prompt=spec["prompt"],
+                style="clean printable educational illustration",
+                size="1024x1024",
+            )
+            content = dict(material.content)
+            content.update(
+                {
+                    "imageConcept": asset.concept,
+                    "imageAssetId": asset.id,
+                    "imageUrl": asset.imageUrl or asset.thumbnailUrl,
+                    "imageBase64": None if asset.imageUrl else asset.imageBase64,
+                    "imageAltText": asset.altText,
+                    "imageSourceType": asset.sourceType,
+                    "imageLicenseInfo": asset.licenseInfo,
+                    "imageSafetyStatus": asset.safetyStatus,
+                }
+            )
+            material.content = content
 
     @staticmethod
     def _build_flow() -> list[TeachingStep]:

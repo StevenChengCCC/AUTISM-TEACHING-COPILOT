@@ -32,6 +32,13 @@ app.include_router(router, prefix="/api")
 app.mount("/storage", StaticFiles(directory=settings.STORAGE_DIR), name="storage")
 
 
+@app.middleware("http")
+async def block_quarantine_storage(request: Request, call_next):
+    if request.url.path.startswith("/storage/quarantine"):
+        return JSONResponse(status_code=404, content={"detail": "Not found"})
+    return await call_next(request)
+
+
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError):
     logger.info("Application error on %s: %s", request.url.path, exc.message)

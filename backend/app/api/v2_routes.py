@@ -22,8 +22,13 @@ from app.schemas.v2_dto import (
     GeneratedMaterial,
     GeneratedMaterialDto,
     HealthResponse,
+    ApproveImageAssetRequest,
+    ImageAssetDto,
+    ImageCandidateResponse,
     ImageGenerationRequest,
     ImageGenerationResponse,
+    ImageSearchRequest,
+    GenerateImageCandidateRequest,
     LearnerCreate,
     LearnerProfileDto,
     LearnerProfileExtractionDto,
@@ -36,6 +41,7 @@ from app.schemas.v2_dto import (
     LessonDesignDraftDto,
     LessonPackage,
     LessonPackageDto,
+    LessonPackageUpdateRequest,
     LessonPackageExportJobDto,
     LessonPackageExportRequest,
     LessonRequestSubmit,
@@ -65,6 +71,7 @@ from app.schemas.v2_dto import (
 from app.services.v2_learner_service import V2LearnerService
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
+from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_material_service import V2MaterialService
 from app.services.v2_profile_extraction_service import V2ProfileExtractionService
 from app.services.v2_progress_service import V2ProgressService
@@ -257,6 +264,40 @@ def development_test_image_generation(
     )
 
 
+@router.post(
+    "/image-assets/candidates", response_model=ImageCandidateResponse
+)
+def get_image_asset_candidates(
+    payload: ImageSearchRequest,
+) -> ImageCandidateResponse:
+    return V2ImageAssetService().get_image_candidates(payload)
+
+
+@router.post(
+    "/image-assets/generate-candidate", response_model=ImageAssetDto
+)
+def generate_image_asset_candidate(
+    payload: GenerateImageCandidateRequest,
+) -> ImageAssetDto:
+    return V2ImageAssetService().generate_candidate(payload)
+
+
+@router.get("/image-assets", response_model=list[ImageAssetDto])
+def list_image_assets(
+    concept: str | None = None, approved: bool | None = None
+) -> list[ImageAssetDto]:
+    return V2ImageAssetService().list_assets(concept, approved)
+
+
+@router.post(
+    "/image-assets/{asset_id}/approve", response_model=ImageAssetDto
+)
+def approve_image_asset(
+    asset_id: str, payload: ApproveImageAssetRequest
+) -> ImageAssetDto:
+    return V2ImageAssetService().approve_asset(asset_id, payload)
+
+
 @router.get("/learners", response_model=list[LearnerProfileDto])
 def list_learners() -> list[LearnerProfileDto]:
     return V2LearnerService().list_dtos()
@@ -380,6 +421,13 @@ def generate_lesson_package(draft: LessonDesignDraftDto) -> LessonPackageDto:
 @router.get("/lesson-packages/{package_id}", response_model=LessonPackageDto)
 def get_lesson_package(package_id: str) -> LessonPackageDto:
     return V2LessonPackageService().get_product(package_id)
+
+
+@router.patch("/lesson-packages/{package_id}", response_model=LessonPackageDto)
+def update_lesson_package(
+    package_id: str, payload: LessonPackageUpdateRequest
+) -> LessonPackageDto:
+    return V2LessonPackageService().update_product(package_id, payload)
 
 
 @router.get(

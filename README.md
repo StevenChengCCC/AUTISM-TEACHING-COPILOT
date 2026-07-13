@@ -75,6 +75,7 @@ AZURE_OPENAI_API_VERSION=2025-01-01-preview
 KEY_VAULT_URL=
 PEXELS_API_KEY=
 PIXABAY_API_KEY=
+UNSPLASH_ACCESS_KEY=
 ```
 
 Frontend:
@@ -86,6 +87,19 @@ VITE_USE_LOCAL_MOCK=false
 
 The browser calls Backend v2 through `VITE_API_BASE`; the backend owns AI
 provider selection, credentials, safety checks, and learner-data handling.
+
+External image search is optional and follows internal approved asset lookup.
+`PEXELS_API_KEY` enables the Pexels photo search adapter; `PIXABAY_API_KEY` and
+`UNSPLASH_ACCESS_KEY` are reserved for placeholder adapters. Missing keys return
+no external results and never prevent the backend from starting. These keys stay
+in backend environment variables and are never returned to the frontend.
+
+`IMAGE_ASSET_STRATEGY=generate_first` is the demo default: reusable generated
+or approved assets are checked first, then key visual materials request a new
+teacher-reviewable image, with external and internal assets as safe fallbacks.
+Set `IMAGE_ASSET_STRATEGY=reuse_search_generate` for a lower-cost mode that
+prefers reusable and external candidates before generation. Package generation
+never creates images for data sheets or summary templates.
 
 ## Secrets And Dev Permissions
 
@@ -102,6 +116,32 @@ and the non-secret local-mock flag.
 Do not log full learner records, prompts containing learner records, raw AI
 responses, or provider exceptions that may contain request metadata. Log only
 request IDs, operation names, status, latency, and sanitized error categories.
+
+### Upload security for demo
+
+All learner records and frontend-submitted content are treated as untrusted.
+Frontend checks are only convenience; Backend v2 enforces file-name, extension,
+content-type, and size validation before creating learner records.
+
+Current demo upload safety:
+
+- Allowed learner record types are TXT, PDF, DOCX, PNG, JPG/JPEG.
+- Upload metadata is limited to 10 MB by default.
+- Dangerous double extensions, archives, scripts/executables, SVG/HTML, and
+  macro-enabled Office files are rejected.
+- Quarantine storage is not public; `/storage/quarantine` is blocked even though
+  generated demo assets are served from `/storage`.
+- Uploaded files are never executed, imported as code, or served directly.
+- Record text is stripped of unsafe control characters and truncated before AI
+  extraction.
+- AI extraction treats record text as untrusted and is instructed not to follow
+  instructions embedded inside uploaded records.
+
+Production should add private malware scanning before parsing or marking files
+clean, such as ClamAV, cloud malware scanning, or an internal scanning service.
+Do not send private learner records to public scanning APIs by default. Future
+storage should use a quarantine bucket/container separate from public generated
+assets, then promote only reviewed derived content.
 
 MVP permission checks use the `X-Teacher-Id` header. For local development,
 `DEV_ALLOW_ANON_TEACHER=true` enables an anonymous admin-like teacher so the app
@@ -169,6 +209,20 @@ Test image generation (backend development only):
 curl -X POST http://localhost:8000/api/v2/dev/test-image-generation \
   -H "Content-Type: application/json" \
   -d '{"learnerId":"a102","materialType":"visual_card","prompt":"A simple classroom visual card showing a toy car stuck and a child asking for help.","style":"clean printable educational illustration","size":"1024x1024"}'
+```
+
+Get internal approved image candidates:
+
+```bash
+curl -X POST http://localhost:8000/api/v2/image-assets/candidates \
+  -H "Content-Type: application/json" \
+  -d '{"concept":"toy car stuck","materialType":"visual_card","learnerId":"a102","maxResults":6,"allowExternalSearch":false,"allowGeneration":false}'
+```
+
+List internal image assets:
+
+```bash
+curl "http://localhost:8000/api/v2/image-assets?concept=toy%20car"
 ```
 
 ## Mock Mode

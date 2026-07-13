@@ -1,6 +1,7 @@
 export type WorkflowPage =
   | "home" | "uploadRecords" | "reviewLearnerExisting" | "reviewLearnerNew"
   | "planWithAIChat" | "lessonPackageReady" | "reviewPrintableContent"
+  | "modifyLessonContent"
   | "students" | "sessions" | "materials";
 
 export type StudioPage = WorkflowPage | "developerAI";
@@ -103,7 +104,7 @@ export interface GeneratedMaterial {
   type: "visual_card" | "help_card" | "token_board" | "data_sheet" | "summary_template";
   title: string;
   status: "ready" | "approved";
-  content: Record<string, string | number | string[]>;
+  content: Record<string, unknown>;
   printLayout: { pageSize: "Letter" | "A4"; orientation: "portrait" | "landscape"; color: string };
 }
 export interface LessonPackage {
@@ -119,6 +120,13 @@ export interface LessonPackage {
   summaryTemplate: string;
   safetyReview?: SafetyReview | null;
   standardsChecks?: StandardsCheck[];
+  documentContent?: Record<string, unknown>;
+}
+export interface LessonPackageUpdateInput {
+  lessonBrief?: string;
+  summaryTemplate?: string;
+  teachingFlow?: TeachingStep[];
+  documentContent?: Record<string, unknown>;
 }
 export interface SafetyReview {
   status: "pass" | "needs_review" | "blocked";

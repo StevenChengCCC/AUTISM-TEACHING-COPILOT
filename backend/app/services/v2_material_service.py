@@ -2,6 +2,7 @@ from app.core.exceptions import NotFoundError, ValidationError
 from app.schemas.v2_dto import (
     GeneratedMaterial,
     GeneratedMaterialDto,
+    ImageAssetDto,
     LessonPackageDto,
     LessonPackageExportJobDto,
     LessonPackageExportRequest,
@@ -128,6 +129,37 @@ class V2MaterialService:
         else:
             content["reward"] = "Choice activity"
         return self._save_generated(material.model_copy(update={"content": content}))
+
+    def attach_image_asset_if_exists(
+        self, material_id: str, asset: ImageAssetDto
+    ) -> bool:
+        material = self.repos.generated_materials.get(material_id)
+        if not material:
+            return False
+        content = dict(material.content)
+        content.update(
+            {
+                "imageConcept": asset.concept,
+                "imageAssetId": asset.id,
+                "imageUrl": asset.imageUrl or asset.thumbnailUrl,
+                "imageBase64": None if asset.imageUrl else asset.imageBase64,
+                "imageAltText": asset.altText,
+                "imageSourceType": asset.sourceType,
+                "imageLicenseInfo": asset.licenseInfo,
+                "imageSafetyStatus": asset.safetyStatus,
+            }
+        )
+        updated = material.model_copy(update={"content": content})
+        if isinstance(updated, GeneratedMaterialDto):
+            try:
+                self._save_generated(updated)
+            except NotFoundError:
+                # Asset approval must remain successful even for an orphaned
+                # in-memory material created during development.
+                self.repos.generated_materials.save(updated)
+        else:
+            self.repos.generated_materials.save(updated)
+        return True
 
     def create_export_job(
         self, package_id: str, payload: LessonPackageExportRequest
