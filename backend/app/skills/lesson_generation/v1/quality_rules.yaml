@@ -1,0 +1,22 @@
+rules:
+  - id: confirmed-input
+    instruction: Use only teacher-confirmed draft choices and minimized learner context.
+    severity: high
+  - id: actionable
+    instruction: Make teacher and learner actions concrete and observable.
+    severity: high
+  - id: no-compliance-claim
+    instruction: Describe checks as instructional guidance and never as legal compliance.
+    severity: high
+  - id: goal-flow-data
+    instruction: Align every practice opportunity and data field to the teacher-confirmed observable response.
+    severity: high
+  - id: prompt-fading
+    instruction: Include wait time, permitted prompts, fading intention, reduction criteria, and teacher override.
+    severity: high
+  - id: neutral-errors
+    instruction: Use neutral error correction, another opportunity, support after repeated errors, and accurate data recording.
+    severity: high
+  - id: adaptation
+    instruction: State signs to pause, difficulty adjustments, challenge adjustments, and issues requiring team review.
+    severity: high

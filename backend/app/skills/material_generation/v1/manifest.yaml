@@ -1,0 +1,12 @@
+skillId: material_generation
+version: v1
+status: active
+intendedUse: [Draft printable material copy from a confirmed lesson design]
+prohibitedUse: [Identifying student content, unsafe instructions, unapproved publication]
+inputSchemaVersion: material-generation-input-v1
+outputSchemaVersion: material-generation-output-v1
+promptTemplateVersion: material-generation-prompt-v1
+evaluatorVersion: material-generation-evaluator-v1
+teacherReviewRequired: true
+sourceReviewStatus: pending
+promptComponents: [system.md, quality_rules.yaml, examples.json]

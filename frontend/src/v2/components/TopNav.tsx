@@ -1,4 +1,6 @@
 import type { StudioPage } from "../types";
+import { useEffect,useState } from "react";
+import { useAuth } from "../auth/AuthProvider";
 
 type Props = {
   page: StudioPage;
@@ -13,6 +15,11 @@ const items: { page: StudioPage; label: string; icon: string }[] = [
 ];
 
 export function TopNav({ page, onNavigate }: Props) {
+  const { user, signOut } = useAuth();
+  const [menuOpen,setMenuOpen]=useState(false);
+  const [teachingMode,setTeachingMode]=useState(()=>sessionStorage.getItem("lesson-kit-studio.teaching-mode")==="true");
+  useEffect(()=>{document.body.classList.toggle("lesson-kit-teaching-mode",teachingMode);sessionStorage.setItem("lesson-kit-studio.teaching-mode",String(teachingMode));return()=>document.body.classList.remove("lesson-kit-teaching-mode");},[teachingMode]);
+  useEffect(()=>{if(!menuOpen)return;const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setMenuOpen(false);};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[menuOpen]);
   const activePage = page === "developerAI" ? null : ["students", "sessions", "materials"].includes(page) ? page : "home";
   return (
     <header className="v2-topnav">
@@ -32,10 +39,16 @@ export function TopNav({ page, onNavigate }: Props) {
         ))}
       </nav>
       <div className="v2-nav-tools">
-        {import.meta.env.DEV&&<button className={`v2-dev-link ${page==="developerAI"?"is-active":""}`} onClick={()=>onNavigate("developerAI")} title="Backend AI development checks">AI dev</button>}
-        <button className="v2-profile" aria-label="Teacher profile is not available in this demo" title="Profile menu is not available in this demo" disabled>
-          <span className="v2-avatar">👩🏻</span><span aria-hidden="true">⌄</span>
+        <button className="v2-dev-link" aria-pressed={teachingMode} onClick={()=>setTeachingMode((value)=>!value)}>{teachingMode?"Exit teaching mode":"Teaching mode"}</button>
+        {import.meta.env.DEV&&<button className={`v2-dev-link v2-ai-dev-link ${page==="developerAI"?"is-active":""}`} onClick={()=>onNavigate("developerAI")} title="Backend AI development checks">AI dev</button>}
+        <button className="v2-profile" aria-label="Open teacher account menu" aria-expanded={menuOpen} aria-controls="teacher-account-menu" onClick={()=>setMenuOpen((value)=>!value)}>
+          <span className="v2-avatar" aria-hidden="true">👩🏻</span><span className="v2-profile-name">{user?.displayName ?? "Teacher"}</span><span aria-hidden="true">⌄</span>
         </button>
+        {menuOpen&&<div className="v2-account-menu" id="teacher-account-menu" role="menu">
+          <strong>{user?.displayName ?? "Teacher"}</strong>
+          {user?.email&&<span>{user.email}</span>}
+          <button role="menuitem" onClick={signOut}>Sign out</button>
+        </div>}
       </div>
     </header>
   );

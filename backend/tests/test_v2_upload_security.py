@@ -1,4 +1,6 @@
 from fastapi.testclient import TestClient
+from io import BytesIO
+from zipfile import ZipFile
 import pytest
 
 from app.core.config import Settings
@@ -42,15 +44,27 @@ def test_safe_storage_name_uses_uuid_and_preserves_safe_extension():
 
 def test_file_signature_validation_rejects_extension_mismatch():
     service = V2UploadSecurityService(Settings(_env_file=None))
+    docx = BytesIO()
+    with ZipFile(docx, "w") as archive:
+        archive.writestr("word/document.xml", "<w:document />")
 
     service.validate_file_signature("card.png", b"\x89PNG\r\n\x1a\nimage")
     service.validate_file_signature("summary.pdf", b"%PDF-1.7")
-    service.validate_file_signature("profile.docx", b"PK\x03\x04docx")
+    service.validate_file_signature("profile.docx", docx.getvalue())
 
     with pytest.raises(ValidationError):
         service.validate_file_signature("summary.pdf", b"<html>not a pdf</html>")
     with pytest.raises(ValidationError):
         service.validate_file_signature("card.jpg", b"\x89PNG\r\n\x1a\nimage")
+    with pytest.raises(ValidationError):
+        service.validate_file_signature("profile.docx", b"PK\x03\x04not-a-docx")
+
+    macro_docx = BytesIO()
+    with ZipFile(macro_docx, "w") as archive:
+        archive.writestr("word/document.xml", "<w:document />")
+        archive.writestr("word/vbaProject.bin", b"macro")
+    with pytest.raises(ValidationError, match="Macro-enabled"):
+        service.validate_file_signature("profile.docx", macro_docx.getvalue())
 
 
 def test_record_endpoint_rejects_unsafe_json_uploads_and_sanitizes_text():

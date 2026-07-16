@@ -1,0 +1,16 @@
+rules:
+  - id: no-identifiers
+    instruction: Never place learner names, codes, diagnoses, or record text in materials.
+    severity: high
+  - id: readable
+    instruction: Use brief plain-language directions and print-friendly labels.
+    severity: medium
+  - id: typed-specification
+    instruction: Define purpose, audience, page size, orientation, margins, text limit, image need, contrast, print preparation, editable fields, and alt text when applicable.
+    severity: high
+  - id: age-respectful
+    instruction: Use age-neutral, dignity-preserving visuals and wording unless a teacher confirms a specific preference.
+    severity: high
+  - id: communication-access
+    instruction: Represent all teacher-confirmed response formats without privileging speech over AAC, gesture, sign, or pictures.
+    severity: high

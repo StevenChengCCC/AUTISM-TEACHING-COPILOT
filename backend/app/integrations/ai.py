@@ -1,3 +1,9 @@
+"""Deprecated compatibility adapter for the legacy image pipeline.
+
+Backend v2 product generation must use ``get_v2_ai_provider`` and the versioned
+skill registry. This module remains only until the legacy pipeline is retired.
+"""
+
 from __future__ import annotations
 
 import json
@@ -5,6 +11,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from app.core.config import settings
+from app.core.exceptions import AIProviderUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -130,5 +137,10 @@ def get_ai_provider() -> AIProvider:
     except Exception:
         # Provider exceptions can contain request metadata. Never log credentials,
         # prompts, learner records, or raw provider responses here.
+        if settings.AI_FAILURE_MODE == "fail_closed":
+            logger.error("Configured AI provider unavailable")
+            raise AIProviderUnavailableError(
+                "AI generation is temporarily unavailable. Please try again later."
+            )
         logger.warning("Configured AI provider unavailable; using mock provider")
     return MockProvider()

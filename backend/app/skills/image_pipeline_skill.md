@@ -1,4 +1,7 @@
-# Image Pipeline Skill
+# Deprecated legacy image pipeline reference
+
+This file is not loaded by Backend v2. Runtime instructions live in the
+explicitly versioned `image_generation/v1` skill.
 
 Goal: prepare image cards for special education generalization practice.
 

@@ -18,7 +18,8 @@ from app.services.v2_repositories import V2Repositories
 def test_v2_health_contract():
     assert health().model_dump(by_alias=True) == {
         "status": "ok",
-        "version": "v2-product-mock",
+        "version": "v2-product",
+        "environment": "development",
     }
 
 
@@ -44,7 +45,15 @@ def test_v2_development_ai_endpoints_are_safe_and_work_in_mock_mode():
     assert questions.status_code == 200
     assert questions.json()["provider"] == "mock"
     assert questions.json()["fallbackUsed"] is False
-    assert len(questions.json()["questions"]) == 5
+    assert len(questions.json()["questions"]) > 5
+    assert {item["field"] for item in questions.json()["questions"]} >= {
+        "goalText",
+        "baseline",
+        "responseLevel",
+        "scenarios",
+        "selectedMaterials",
+        "dataCollection",
+    }
 
     package = client.post(
         "/api/v2/dev/test-ai-lesson-package",
@@ -97,9 +106,7 @@ def test_main_chat_http_flow_returns_clear_503_when_openai_key_is_missing(
     monkeypatch.setattr(app_settings, "AI_PROVIDER", "openai")
     monkeypatch.setattr(app_settings, "OPENAI_API_KEY", None)
     client = TestClient(app)
-    initial = client.post(
-        "/api/v2/lesson-chat/start", json={"learnerId": "a102"}
-    )
+    initial = client.post("/api/v2/lesson-chat/start", json={"learnerId": "a102"})
 
     response = client.post(
         "/api/v2/lesson-chat/message",
@@ -112,12 +119,13 @@ def test_main_chat_http_flow_returns_clear_503_when_openai_key_is_missing(
     )
 
     assert response.status_code == 503
-    assert response.json() == {
-        "detail": (
-            "OPENAI_API_KEY is not configured. Add it to backend/.env.local "
-            "or your backend environment."
-        )
-    }
+    assert response.json()["detail"] == (
+        "OPENAI_API_KEY is not configured. Add it to backend/.env.local "
+        "or your backend environment."
+    )
+    assert response.json()["code"] == "ai_provider_not_configured"
+    assert response.json()["retryable"] is False
+    assert response.json()["requestId"] == response.headers["X-Request-ID"]
 
 
 def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
@@ -131,8 +139,8 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
     chat = service.submit_request(
         initial.conversation_id, "I want to teach Learner A-102 to ask for help."
     )
-    assert len(chat.questions) == 5
-    assert chat.can_generate is True
+    assert len(chat.questions) > 5
+    assert chat.can_generate is False
     assert chat.draft.selected_materials == [
         "Visual Cards",
         "Help Card",
@@ -147,11 +155,12 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
     updated = service.update_answer(
         chat.conversation_id,
         "response-level",
-        QuestionAnswerUpdate(
-            selected_option_ids=[], custom_answer="Two-word request"
-        ),
+        QuestionAnswerUpdate(selected_option_ids=[], custom_answer="Two-word request"),
     )
-    custom = updated.questions[0].options[-1]
+    response_question = next(
+        question for question in updated.questions if question.id == "response-level"
+    )
+    custom = response_question.options[-1]
     assert custom.source == "teacher_custom"
     assert updated.draft.response_level == "Two-word request"
 
@@ -328,9 +337,7 @@ def test_v2_learner_record_and_extraction_http_contracts():
 def test_v2_lesson_chat_product_http_flow():
     client = TestClient(app)
 
-    started = client.post(
-        "/api/v2/lesson-chat/start", json={"learnerId": "a102"}
-    )
+    started = client.post("/api/v2/lesson-chat/start", json={"learnerId": "a102"})
     assert started.status_code == 201
     state = started.json()
     assert state["conversationId"] == "conversation-a102"
@@ -349,13 +356,22 @@ def test_v2_lesson_chat_product_http_flow():
     )
     assert generated.status_code == 200
     state = generated.json()
-    assert [question["field"] for question in state["questions"]] == [
+    assert {question["field"] for question in state["questions"]} >= {
+        "goalText",
+        "baseline",
         "responseLevel",
         "scenarios",
+        "opportunities",
+        "duration",
+        "promptingStart",
+        "promptingLimits",
+        "reinforcementPlan",
+        "errorCorrection",
         "selectedMaterials",
-        "customNotes",
-        "customNotes",
-    ]
+        "dataCollection",
+        "generalizationPlan",
+        "teacherConstraints",
+    }
     assert state["draft"]["goalText"] == (
         "Learner will ask for help using a short phrase."
     )
@@ -393,12 +409,10 @@ def test_v2_lesson_chat_product_http_flow():
         },
     )
     assert prompting.status_code == 200
-    assert "Wait time before prompt" in prompting.json()["draft"]["customNotes"]
-    assert "Pause for five seconds" in prompting.json()["draft"]["customNotes"]
+    assert "Wait time before prompt" in prompting.json()["draft"]["promptingStart"]
+    assert "Pause for five seconds" in prompting.json()["draft"]["promptingStart"]
 
-    cleared = client.post(
-        f"/api/v2/lesson-chat/{state['conversationId']}/clear"
-    )
+    cleared = client.post(f"/api/v2/lesson-chat/{state['conversationId']}/clear")
     assert cleared.status_code == 200
     assert len(cleared.json()["messages"]) == 1
     assert cleared.json()["questions"]
@@ -422,22 +436,13 @@ def test_v2_product_lesson_package_pipeline_http_contract():
     )
     assert generated.status_code == 201
     package = generated.json()
-    assert package["safetyReview"] == {
-        "status": "pass",
-        "riskLevel": "low",
-        "issues": [],
-        "recommendedEdits": [],
-        "appliedEdits": [
-            "Confirmed the goal is observable.",
-            "Kept instructions short and teacher-actionable.",
-            "Avoided punitive or stigmatizing language.",
-            "Included prompt fading, reinforcement, and data collection supports.",
-        ],
-    }
-    assert len(package["standardsChecks"]) == 5
-    assert package["standardsChecks"][-1]["status"] == "not_applicable"
-    assert "No legal or district compliance determination" in (
-        package["standardsChecks"][-1]["recommendation"]
+    assert package["safetyReview"]["status"] == "pass"
+    assert package["safetyReview"]["riskLevel"] == "low"
+    assert package["safetyReview"]["issues"] == []
+    assert len(package["standardsChecks"]) == 13
+    assert all(
+        check["version"] == "instructional-quality-v1"
+        for check in package["standardsChecks"]
     )
     assert [step["title"] for step in package["teachingFlow"]] == [
         "Warm-up and motivation",
@@ -454,7 +459,9 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         "Summary Template",
     ]
     token_board = next(
-        material for material in package["materials"] if material["type"] == "token_board"
+        material
+        for material in package["materials"]
+        if material["type"] == "token_board"
     )
     assert token_board["content"]["artwork"] == "Friendly vehicle artwork"
     assert token_board["content"]["teacherNote"] == (
@@ -516,7 +523,7 @@ def test_v2_generated_material_editing_and_export_http_contract():
         },
     )
     assert updated.status_code == 200
-    assert updated.json()["status"] == "ready"
+    assert updated.json()["status"] == "teacher_review_needed"
 
     simplified = client.post(
         f"/api/v2/generated-materials/{visual['id']}/quick-edit",
@@ -534,9 +541,7 @@ def test_v2_generated_material_editing_and_export_http_contract():
     )
     assert reward.json()["content"]["reward"] == "Choice activity"
 
-    approved = client.post(
-        f"/api/v2/generated-materials/{visual['id']}/approve"
-    )
+    approved = client.post(f"/api/v2/generated-materials/{visual['id']}/approve")
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
     stored_package = client.get(f"/api/v2/lesson-packages/{package_id}").json()
@@ -550,15 +555,18 @@ def test_v2_generated_material_editing_and_export_http_contract():
 
     export = client.post(
         f"/api/v2/lesson-packages/{package_id}/export",
-        json={"format": "pdf", "materialIds": []},
+        json={"format": "zip", "materialIds": [], "reviewedConfirmation": True},
     )
     assert export.status_code == 200
-    assert export.json() == {
-        "exportId": f"export-{package_id}-pdf",
-        "status": "ready",
-        "format": "pdf",
-        "downloadUrl": f"/mock-downloads/{package_id}.pdf",
-    }
+    assert export.json()["status"] == "completed"
+    assert export.json()["format"] == "zip"
+    assert export.json()["downloadUrl"] is None
+    assert export.json()["manifest"] == [
+        "handoff-summary.pdf",
+        "progress-data.csv",
+        "handoff-data.json",
+        "README.txt",
+    ]
 
 
 def test_v2_sessions_and_nonlinear_progress_http_contracts():
@@ -584,9 +592,7 @@ def test_v2_sessions_and_nonlinear_progress_http_contracts():
         },
     )
     assert created.status_code == 201
-    duplicated = client.post(
-        f"/api/v2/sessions/{created.json()['id']}/duplicate"
-    )
+    duplicated = client.post(f"/api/v2/sessions/{created.json()['id']}/duplicate")
     assert duplicated.status_code == 201
     assert duplicated.json()["status"] == "draft"
     summary = client.get("/api/v2/sessions/session-1/summary")
@@ -607,7 +613,14 @@ def test_v2_sessions_and_nonlinear_progress_http_contracts():
         "Independence",
     ]
     data = client.get("/api/v2/learners/a102/progress-data")
-    assert [point["accuracyPercent"] for point in data.json()] == [52, 55, 53, 56, 54, 58]
+    assert [point["accuracyPercent"] for point in data.json()] == [
+        52,
+        55,
+        53,
+        56,
+        54,
+        58,
+    ]
     assert [point["independencePercent"] for point in data.json()] == [
         28,
         31,
@@ -668,15 +681,11 @@ def test_v2_material_library_browse_create_duplicate_and_attach():
     assert created.status_code == 201
     assert created.json()["source"] == "template"
 
-    duplicated = client.post(
-        f"/api/v2/materials/{created.json()['id']}/duplicate"
-    )
+    duplicated = client.post(f"/api/v2/materials/{created.json()['id']}/duplicate")
     assert duplicated.status_code == 201
     assert duplicated.json()["title"] == "Break Choice Card Copy"
 
-    chat = client.post(
-        "/api/v2/lesson-chat/start", json={"learnerId": "a102"}
-    ).json()
+    chat = client.post("/api/v2/lesson-chat/start", json={"learnerId": "a102"}).json()
     attached = client.post(
         f"/api/v2/lesson-drafts/{chat['draft']['id']}/materials",
         json={"materialId": created.json()["id"]},

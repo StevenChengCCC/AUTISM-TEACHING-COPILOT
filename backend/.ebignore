@@ -1,0 +1,11 @@
+.env
+.env.*
+__pycache__/
+*.pyc
+.venv/
+venv/
+storage/
+private-storage/
+.pytest_cache/
+.DS_Store
+backend-deploy.zip

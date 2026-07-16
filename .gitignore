@@ -23,7 +23,11 @@ frontend/.env.*
 *.log
 server.out.log
 server.err.log
+backend-deploy.zip
+*_results.html
+tests_results.html
 storage/
+private-storage/
 
 node_modules/
 dist/

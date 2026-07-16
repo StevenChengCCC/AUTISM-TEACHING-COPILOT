@@ -10,16 +10,47 @@ from app.schemas.v2_dto import (
     LearnerRecord,
     LessonDesignDraft,
     LessonDesignDraftDto,
+    ProfileExtractionResult,
 )
+from app.skills.models import GenerationMetadata
+from app.skills.registry import SkillRegistry, get_skill_registry
 
 
 class V2AIProvider(ABC):
     """Replaceable v2 AI boundary; services never depend on an AI vendor SDK."""
 
+    provider_name = "unknown"
+    last_generation_metadata: GenerationMetadata | None = None
+    generation_metadata_by_skill: dict[str, GenerationMetadata]
+
+    def _record_generation(
+        self,
+        registry: SkillRegistry,
+        skill_id: str,
+        *,
+        status: str,
+        model: str,
+        output_source: str,
+        set_last: bool = True,
+    ) -> GenerationMetadata:
+        metadata = GenerationMetadata.from_skill(
+            registry.get(skill_id),
+            status=status,  # type: ignore[arg-type]
+            provider=self.provider_name,
+            model=model,
+            output_source=output_source,  # type: ignore[arg-type]
+        )
+        if not hasattr(self, "generation_metadata_by_skill"):
+            self.generation_metadata_by_skill = {}
+        self.generation_metadata_by_skill[skill_id] = metadata
+        if set_last:
+            self.last_generation_metadata = metadata
+        return metadata
+
     @abstractmethod
     def extract_profile(
         self, learner: LearnerProfile, records: list[LearnerRecord]
-    ) -> tuple[LearnerProfile, list[str]]:
+    ) -> ProfileExtractionResult:
         raise NotImplementedError
 
     @abstractmethod
@@ -41,7 +72,9 @@ class V2AIProvider(ABC):
 
     @abstractmethod
     def generate_lesson_package(
-        self, draft: LessonDesignDraftDto
+        self,
+        draft: LessonDesignDraftDto,
+        learner_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return provider-authored content; orchestration stays in the service."""
 
@@ -61,17 +94,20 @@ class V2AIProvider(ABC):
         raise NotImplementedError
 
 
-def get_v2_ai_provider(config: Settings = settings) -> V2AIProvider:
+def get_v2_ai_provider(
+    config: Settings = settings, registry: SkillRegistry | None = None
+) -> V2AIProvider:
     """Resolve the configured provider without exposing secret values.
 
     Mock is the safe default. Non-mock providers fail closed rather than silently
     sending learner data through an unintended provider.
     """
 
+    skill_registry = registry or get_skill_registry(config)
     if config.AI_PROVIDER == "mock":
         from app.integrations.mock_ai_provider import MockV2AIProvider
 
-        return MockV2AIProvider()
+        return MockV2AIProvider(config=config, registry=skill_registry)
     if config.AI_PROVIDER == "azure_openai":
         from app.integrations.azure_openai_provider import AzureOpenAIV2Provider
 
@@ -79,5 +115,5 @@ def get_v2_ai_provider(config: Settings = settings) -> V2AIProvider:
     if config.AI_PROVIDER == "openai":
         from app.integrations.openai_provider import OpenAIV2AIProvider
 
-        return OpenAIV2AIProvider(config)
+        return OpenAIV2AIProvider(config, registry=skill_registry)
     raise RuntimeError(f"Unsupported AI_PROVIDER: {config.AI_PROVIDER}")

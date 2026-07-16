@@ -28,7 +28,9 @@ class ChildProfile(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     goals = relationship("TeachingGoal", back_populates="child")
-    lesson_packages = relationship("LessonPackage", back_populates="child")
+    lesson_packages = relationship(
+        "app.domain.models.LessonPackage", back_populates="child"
+    )
     records = relationship("SessionRecord", back_populates="child")
     uploaded_materials = relationship("UploadedMaterial", back_populates="child")
 
@@ -47,7 +49,9 @@ class TeachingGoal(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     child = relationship("ChildProfile", back_populates="goals")
-    lesson_packages = relationship("LessonPackage", back_populates="goal")
+    lesson_packages = relationship(
+        "app.domain.models.LessonPackage", back_populates="goal"
+    )
     records = relationship("SessionRecord", back_populates="goal")
 
 

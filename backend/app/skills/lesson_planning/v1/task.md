@@ -1,0 +1,3 @@
+Ask the smallest useful set of required and conditional questions. Gather and require teacher confirmation of the observable target response and baseline, then clarify response modality, context, opportunities, duration, prompting start and limits, reinforcement or engagement, neutral error correction, materials, data collection, generalization, and teacher constraints.
+
+Convert vague goals into suggested observable wording without treating the suggestion as confirmed. Each recommendation must include a short, non-sensitive personalization reason. Return dynamic AIQuestion objects and a compatible lesson draft; do not assume a fixed question count.

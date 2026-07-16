@@ -1,4 +1,4 @@
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.schemas.v2_dto import (
     GeneratedMaterial,
     GeneratedMaterialDto,
@@ -17,6 +17,7 @@ from app.schemas.v2_dto import (
     utc_now,
 )
 from app.services.v2_repositories import V2Repositories, repositories
+from app.services.v2_safety_harness_service import V2SafetyHarnessService
 
 
 class V2MaterialService:
@@ -109,12 +110,35 @@ class V2MaterialService:
                 "title": payload.title,
                 "content": payload.content,
                 "printLayout": payload.printLayout,
+                **(
+                    {"version": payload.expectedVersion}
+                    if payload.expectedVersion is not None
+                    else {}
+                ),
+                "status": "teacher_review_needed",
             }
         )
         return self._save_generated(updated)
 
     def approve_generated(self, material_id: str) -> GeneratedMaterialDto:
         material = self._get_generated_dto(material_id)
+        package = self._get_product_package(material.packageId)
+        if package.safetyReview and package.safetyReview.status == "blocked":
+            raise ConflictError(
+                "A material from a safety-blocked package cannot be approved"
+            )
+        if any(check.status == "blocked" for check in package.standardsChecks):
+            raise ConflictError(
+                "Resolve blocked instructional quality checks before material approval"
+            )
+        material_review = V2SafetyHarnessService().review_product(
+            self._draft_for_package(package),
+            {"materialContent": material.content},
+        )
+        if material_review.status == "blocked":
+            raise ConflictError(
+                "A safety-blocked generated material cannot be approved"
+            )
         return self._save_generated(material.model_copy(update={"status": "approved"}))
 
     def quick_edit_generated(
@@ -128,7 +152,14 @@ class V2MaterialService:
             content["artwork"] = "Updated classroom artwork"
         else:
             content["reward"] = "Choice activity"
-        return self._save_generated(material.model_copy(update={"content": content}))
+        return self._save_generated(
+            material.model_copy(
+                update={
+                    "content": content,
+                    "status": "teacher_review_needed",
+                }
+            )
+        )
 
     def attach_image_asset_if_exists(
         self, material_id: str, asset: ImageAssetDto
@@ -149,7 +180,9 @@ class V2MaterialService:
                 "imageSafetyStatus": asset.safetyStatus,
             }
         )
-        updated = material.model_copy(update={"content": content})
+        updated = material.model_copy(
+            update={"content": content, "status": "teacher_review_needed"}
+        )
         if isinstance(updated, GeneratedMaterialDto):
             try:
                 self._save_generated(updated)
@@ -164,16 +197,10 @@ class V2MaterialService:
     def create_export_job(
         self, package_id: str, payload: LessonPackageExportRequest
     ) -> LessonPackageExportJobDto:
-        available = self.list_generated_dtos(package_id)
-        available_ids = {material.id for material in available}
-        unknown_ids = set(payload.materialIds) - available_ids
-        if unknown_ids:
-            raise ValidationError("Export includes material IDs outside this package")
-        return LessonPackageExportJobDto(
-            exportId=f"export-{package_id}-{payload.format}",
-            status="ready",
-            format=payload.format,
-            downloadUrl=f"/mock-downloads/{package_id}.{payload.format}",
+        from app.services.v2_handoff_export_service import V2HandoffExportService
+
+        return V2HandoffExportService(self.repos).create_for_package(
+            package_id, payload
         )
 
     def _get_generated_dto(self, material_id: str) -> GeneratedMaterialDto:
@@ -188,17 +215,56 @@ class V2MaterialService:
             raise NotFoundError("Lesson package not found")
         return package
 
-    def _save_generated(
-        self, material: GeneratedMaterialDto
-    ) -> GeneratedMaterialDto:
-        saved = self.repos.generated_materials.save(material)
-        package = self._get_product_package(material.packageId)
-        package.materials = [
-            saved if current.id == saved.id else current
-            for current in package.materials
-        ]
-        self.repos.lesson_packages.save(package)
+    def _save_generated(self, material: GeneratedMaterialDto) -> GeneratedMaterialDto:
+        with self.repos.transaction():
+            saved = self.repos.generated_materials.save(material)
+            package = self._get_product_package(material.packageId)
+            package.materials = [
+                saved if current.id == saved.id else current
+                for current in package.materials
+            ]
+            if saved.status != "approved" and package.status == "approved":
+                package.status = "teacher_review_needed"
+            self.repos.lesson_packages.save(package)
         return saved
+
+    @staticmethod
+    def _draft_for_package(package: LessonPackageDto) -> LessonDesignDraftDto:
+        return LessonDesignDraftDto(
+            id=package.draftId,
+            learnerId=package.learnerId,
+            goalText=package.goal,
+            observableResponse=package.observableResponse or package.goal,
+            baseline=package.baseline,
+            responseLevel=package.responseModality,
+            scenarios=(
+                package.generalizationPlan.examples
+                if package.generalizationPlan
+                else []
+            ),
+            selectedMaterials=[item.title for item in package.materials],
+            theme=package.theme,
+            duration=package.duration,
+            customNotes="",
+            promptingStart=(
+                package.promptingPlan.startingPrompt if package.promptingPlan else ""
+            ),
+            promptingLimits=(
+                package.promptingPlan.teacherOverride if package.promptingPlan else ""
+            ),
+            reinforcementPlan=(
+                package.reinforcementPlan.selectedSupport
+                if package.reinforcementPlan
+                else ""
+            ),
+            errorCorrection=(
+                package.errorCorrectionPlan.neutralResponse
+                if package.errorCorrectionPlan
+                else ""
+            ),
+            dataCollection="Record response outcome and prompt level",
+            generalizationPlan="Teacher-reviewed generalization plan",
+        )
 
     @staticmethod
     def _library_to_dto(item: MaterialLibraryItem) -> MaterialLibraryItemDto:

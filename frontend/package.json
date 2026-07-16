@@ -2,6 +2,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "validate:deployment": "node scripts/validate-deployment-env.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

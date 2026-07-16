@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect,useState } from "react";
 import { lessonKitApi } from "../api/lessonKitApi";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
@@ -44,6 +44,8 @@ export function ModifyLessonContentPage({ lessonPackage,onBack,onContinue,onSave
   const [saving,setSaving]=useState(false);
   const [savedAt,setSavedAt]=useState("Not saved yet");
   const [dirty,setDirty]=useState(false);
+
+  useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(!dirty)return;event.preventDefault();event.returnValue="";};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[dirty]);
 
   if(!lessonPackage)return <section className="v2-empty"><h2>No lesson content to modify</h2><Button onClick={onBack}>Back to Package</Button></section>;
   const packageId=lessonPackage.id;

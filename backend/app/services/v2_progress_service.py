@@ -29,8 +29,23 @@ class V2ProgressService:
         self.learners.get(learner_id)
         items = self.repos.progress.for_learner(learner_id)
         if not items:
-            return ProgressSummary(learner_id=learner_id, observation_count=0, trend="insufficient_data", strengths=[], support_priorities=["Collect observations across several sessions"])
-        composite = [(item.independence_level + item.engagement_level + item.regulation_level + (4 - item.prompt_level)) / 4 for item in items]
+            return ProgressSummary(
+                learner_id=learner_id,
+                observation_count=0,
+                trend="insufficient_data",
+                strengths=[],
+                support_priorities=["Collect observations across several sessions"],
+            )
+        composite = [
+            (
+                item.independence_level
+                + item.engagement_level
+                + item.regulation_level
+                + (4 - item.prompt_level)
+            )
+            / 4
+            for item in items
+        ]
         if len(items) < 3:
             trend = "insufficient_data"
         elif pstdev(composite) > 0.8:
@@ -50,7 +65,14 @@ class V2ProgressService:
             priorities.append("Continue gradual prompt fading")
         if latest.regulation_level <= 1:
             priorities.append("Prioritize regulation and pacing supports")
-        return ProgressSummary(learner_id=learner_id, observation_count=len(items), trend=trend, strengths=strengths, support_priorities=priorities, latest_observation=latest)
+        return ProgressSummary(
+            learner_id=learner_id,
+            observation_count=len(items),
+            trend=trend,
+            strengths=strengths,
+            support_priorities=priorities,
+            latest_observation=latest,
+        )
 
     def product_summary(self, learner_id: str) -> LearnerProgressSummaryDto:
         self.learners.get(learner_id)
@@ -110,32 +132,35 @@ class V2ProgressService:
             goal=payload.goal,
             opportunities=payload.opportunities,
             accuracyPercent=round(payload.correct / payload.opportunities * 100),
-            independencePercent=round(payload.independent / payload.opportunities * 100),
+            independencePercent=round(
+                payload.independent / payload.opportunities * 100
+            ),
             promptLevel=payload.promptLevel,
             signalsHighlighted=payload.signalsHighlighted,
             teacherNotes=payload.teacherNotes,
         )
-        self.repos.progress_data.save(point)
-        points = self.product_data(payload.learnerId)
-        first, latest = points[0], points[-1]
-        independence_change = latest.independencePercent - first.independencePercent
-        trend = (
-            "Slow, uneven growth with emerging independence"
-            if independence_change > 0
-            else "Variable progress; continue observing small changes"
-        )
-        previous_summary = self.repos.progress_summaries.get(payload.learnerId)
-        summary = LearnerProgressSummaryDto(
-            learnerId=payload.learnerId,
-            currentGoal=payload.goal,
-            accuracyPercent=latest.accuracyPercent,
-            independencePercent=latest.independencePercent,
-            sessionsPracticed=max(
-                len(points),
-                (previous_summary.sessionsPracticed + 1) if previous_summary else 1,
-            ),
-            currentPromptLevel=latest.promptLevel,
-            trend=trend,
-            message="Plateau does not mean no progress.",
-        )
-        return self.repos.progress_summaries.save(summary)
+        with self.repos.transaction():
+            self.repos.progress_data.save(point)
+            points = self.product_data(payload.learnerId)
+            first, latest = points[0], points[-1]
+            independence_change = latest.independencePercent - first.independencePercent
+            trend = (
+                "Slow, uneven growth with emerging independence"
+                if independence_change > 0
+                else "Variable progress; continue observing small changes"
+            )
+            previous_summary = self.repos.progress_summaries.get(payload.learnerId)
+            summary = LearnerProgressSummaryDto(
+                learnerId=payload.learnerId,
+                currentGoal=payload.goal,
+                accuracyPercent=latest.accuracyPercent,
+                independencePercent=latest.independencePercent,
+                sessionsPracticed=max(
+                    len(points),
+                    (previous_summary.sessionsPracticed + 1) if previous_summary else 1,
+                ),
+                currentPromptLevel=latest.promptLevel,
+                trend=trend,
+                message="Plateau does not mean no progress.",
+            )
+            return self.repos.progress_summaries.save(summary)
