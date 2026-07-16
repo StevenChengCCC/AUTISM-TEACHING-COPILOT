@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from itertools import count
 from threading import RLock
@@ -36,9 +37,14 @@ class InMemoryV2Repository(Generic[T]):
     def __init__(self, seed: list[T] | None = None, key_field: str = "id"):
         self._lock = RLock()
         self._items: dict[str, T] = {}
+        self._versions: dict[str, dict[int, T]] = {}
         self._key_field = key_field
         for item in seed or []:
-            self._items[getattr(item, self._key_field)] = deepcopy(item)
+            key = getattr(item, self._key_field)
+            self._items[key] = deepcopy(item)
+            self._versions.setdefault(key, {})[getattr(item, "version", 1)] = deepcopy(
+                item
+            )
 
     def list(self) -> list[T]:
         with self._lock:
@@ -51,14 +57,57 @@ class InMemoryV2Repository(Generic[T]):
 
     def save(self, item: T) -> T:
         with self._lock:
-            self._items[getattr(item, self._key_field)] = deepcopy(item)
-            return deepcopy(item)
+            key = getattr(item, self._key_field)
+            existing = self._items.get(key)
+            saved = deepcopy(item)
+            if existing is not None and hasattr(item, "version"):
+                from app.core.exceptions import VersionConflictError
+
+                if getattr(item, "version") != getattr(existing, "version"):
+                    raise VersionConflictError(
+                        "The resource changed after it was loaded. Refresh and try again."
+                    )
+                saved = item.model_copy(
+                    update={"version": getattr(existing, "version") + 1}, deep=True
+                )
+            self._items[key] = deepcopy(saved)
+            self._versions.setdefault(key, {})[getattr(saved, "version", 1)] = deepcopy(
+                saved
+            )
+            return deepcopy(saved)
+
+    def list_versions(self, item_id: str) -> list[T]:
+        with self._lock:
+            versions = self._versions.get(item_id, {})
+            return deepcopy([versions[number] for number in sorted(versions)])
+
+    def get_version(self, item_id: str, version: int) -> T | None:
+        with self._lock:
+            item = self._versions.get(item_id, {}).get(version)
+            return deepcopy(item) if item is not None else None
 
     def create(self, item: T) -> T:
         return self.save(item)
 
     def update(self, item: T) -> T:
         return self.save(item)
+
+    def delete(self, item_id: str, expected_version: int | None = None) -> bool:
+        with self._lock:
+            item = self._items.get(item_id)
+            if item is None:
+                return False
+            if (
+                expected_version is not None
+                and getattr(item, "version", 1) != expected_version
+            ):
+                from app.core.exceptions import VersionConflictError
+
+                raise VersionConflictError(
+                    "The resource changed after it was loaded. Refresh and try again."
+                )
+            del self._items[item_id]
+            return True
 
 
 # Backward-compatible name for existing v2 services.
@@ -92,7 +141,9 @@ class ProgressRepository:
 
     def for_learner(self, learner_id: str) -> list[ProgressObservation]:
         with self._lock:
-            return deepcopy([item for item in self._items if item.learner_id == learner_id])
+            return deepcopy(
+                [item for item in self._items if item.learner_id == learner_id]
+            )
 
 
 def _now() -> datetime:
@@ -131,16 +182,79 @@ def _seed_image_assets() -> list[ImageAssetDto]:
         )
 
     return [
-        asset("asset-toy-car", "Blue Toy Car", "toy car", "A simple blue toy car viewed from the side.", ["vehicle", "car", "toy", "visual card"]),
-        asset("asset-toy-car-stuck", "Toy Car Stuck", "toy car stuck", "A toy car gently stuck beside a small block.", ["vehicle", "car", "stuck", "asking for help", "scenario"]),
-        asset("asset-closed-box", "Closed Box", "closed box", "A closed classroom storage box with a visible lid.", ["box", "container", "closed", "asking for help", "scenario"]),
-        asset("asset-backpack-zipper", "Backpack Zipper", "backpack zipper", "A backpack with its zipper partly closed.", ["backpack", "zipper", "school", "asking for help", "scenario"]),
-        asset("asset-snack-container", "Snack Container", "snack container", "A closed reusable snack container on a plain background.", ["snack", "container", "closed", "classroom", "scenario"]),
-        asset("asset-puzzle-piece-missing", "Missing Puzzle Piece", "puzzle piece missing", "A simple puzzle with one clearly empty piece space.", ["puzzle", "missing", "problem solving", "asking for help", "scenario"]),
-        asset("asset-help-card-icon", "Help Card Icon", "help card icon", "A speech bubble with the word help represented as a simple symbol.", ["help", "communication", "request", "help card", "icon"], "mock"),
-        asset("asset-token-board-star", "Token Board Star", "token board star", "A friendly five-point star token with a clear outline.", ["star", "token", "reinforcement", "token board", "icon"], "mock"),
-        asset("asset-visual-prompt-card", "Visual Prompt Card", "visual prompt card", "A clean blank visual prompt card with a blue border.", ["visual support", "prompt", "card", "template"], "mock"),
-        asset("asset-classroom-table", "Classroom Table", "classroom table", "A simple classroom table with two chairs and no people.", ["classroom", "table", "school", "environment"]),
+        asset(
+            "asset-toy-car",
+            "Blue Toy Car",
+            "toy car",
+            "A simple blue toy car viewed from the side.",
+            ["vehicle", "car", "toy", "visual card"],
+        ),
+        asset(
+            "asset-toy-car-stuck",
+            "Toy Car Stuck",
+            "toy car stuck",
+            "A toy car gently stuck beside a small block.",
+            ["vehicle", "car", "stuck", "asking for help", "scenario"],
+        ),
+        asset(
+            "asset-closed-box",
+            "Closed Box",
+            "closed box",
+            "A closed classroom storage box with a visible lid.",
+            ["box", "container", "closed", "asking for help", "scenario"],
+        ),
+        asset(
+            "asset-backpack-zipper",
+            "Backpack Zipper",
+            "backpack zipper",
+            "A backpack with its zipper partly closed.",
+            ["backpack", "zipper", "school", "asking for help", "scenario"],
+        ),
+        asset(
+            "asset-snack-container",
+            "Snack Container",
+            "snack container",
+            "A closed reusable snack container on a plain background.",
+            ["snack", "container", "closed", "classroom", "scenario"],
+        ),
+        asset(
+            "asset-puzzle-piece-missing",
+            "Missing Puzzle Piece",
+            "puzzle piece missing",
+            "A simple puzzle with one clearly empty piece space.",
+            ["puzzle", "missing", "problem solving", "asking for help", "scenario"],
+        ),
+        asset(
+            "asset-help-card-icon",
+            "Help Card Icon",
+            "help card icon",
+            "A speech bubble with the word help represented as a simple symbol.",
+            ["help", "communication", "request", "help card", "icon"],
+            "mock",
+        ),
+        asset(
+            "asset-token-board-star",
+            "Token Board Star",
+            "token board star",
+            "A friendly five-point star token with a clear outline.",
+            ["star", "token", "reinforcement", "token board", "icon"],
+            "mock",
+        ),
+        asset(
+            "asset-visual-prompt-card",
+            "Visual Prompt Card",
+            "visual prompt card",
+            "A clean blank visual prompt card with a blue border.",
+            ["visual support", "prompt", "card", "template"],
+            "mock",
+        ),
+        asset(
+            "asset-classroom-table",
+            "Classroom Table",
+            "classroom table",
+            "A simple classroom table with two chairs and no people.",
+            ["classroom", "table", "school", "environment"],
+        ),
     ]
 
 
@@ -148,46 +262,301 @@ class V2Repositories:
     """Application repository registry; production wiring can inject persistent adapters."""
 
     def __init__(self):
+        self.audit_events: list[dict] = []
         learners = [
-            LearnerProfile(id="a102", code="Learner A-102", age=7, avatar="👦🏻", tags=["Visual support", "Short attention span", "Asking for Help"], interests=["Vehicles", "Puzzles", "Toy garage", "Bubbles"], support_needs=["Visual support", "Short attention span", "Prompt fading support"], reinforcement_preferences=["Token board", "Car play", "Praise"], communication_mode="Short phrases and picture support", attention_profile="Benefits from short, structured activities with planned wait time.", notes="Benefits from short activities, wait time, visual cues, and familiar vehicle-themed practice."),
-            LearnerProfile(id="b214", code="Learner B-214", age=9, avatar="👧🏻", tags=["AAC", "Communication", "Requesting a Break"], interests=["Music", "Animals", "Movement breaks"], support_needs=["AAC modeling", "Wait time", "Predictable routines"], reinforcement_preferences=["Music break", "Movement break", "Praise"], communication_mode="AAC device, gestures, and modeled language", attention_profile="Benefits from predictable routines and unhurried response time.", notes="Current focus is requesting a break using AAC with consistent modeling and wait time."),
-            LearnerProfile(id="c087", code="Learner C-087", age=6, avatar="👦🏽", tags=["Visual matching", "Emotion cards", "Identifying Emotions"], interests=["Emotion cards", "Matching games", "Building blocks"], support_needs=["Visual choices", "Movement breaks", "Simple matching tasks"], reinforcement_preferences=["Movement break", "Specific praise", "Choice time"], communication_mode="Single words, pointing, and picture choices", attention_profile="Benefits from brief visual matching activities with movement between turns.", notes="Current focus is identifying emotions through simple matching and visual choices."),
-            LearnerProfile(id="n501", code="Learner N-501", age=7, avatar="🧒🏻", tags=["New", "Records ready", "Visual prompts"], interests=["Cars", "Puzzles", "Bubbles"], support_needs=["Visual prompts", "Short structured activities"], reinforcement_preferences=["Bubbles", "Car play", "Praise"], communication_mode="Short phrases with visual prompts", attention_profile="Benefits from short, visual, structured activities.", notes="New learner profile with uploaded records ready for teacher review."),
+            LearnerProfile(
+                id="a102",
+                code="Learner A-102",
+                age=7,
+                avatar="👦🏻",
+                tags=["Visual support", "Short attention span", "Asking for Help"],
+                interests=["Vehicles", "Puzzles", "Toy garage", "Bubbles"],
+                support_needs=[
+                    "Visual support",
+                    "Short attention span",
+                    "Prompt fading support",
+                ],
+                reinforcement_preferences=["Token board", "Car play", "Praise"],
+                communication_mode="Short phrases and picture support",
+                attention_profile="Benefits from short, structured activities with planned wait time.",
+                notes="Benefits from short activities, wait time, visual cues, and familiar vehicle-themed practice.",
+                strengths=["Participates in familiar structured play"],
+                prompting_preferences=[
+                    "Visual prompt first",
+                    "Wait before prompting",
+                    "Least-to-most prompting",
+                ],
+                current_goals=["Requesting help"],
+                activity_duration_preference="Short 10–12 minute activities",
+                profile_review_status="confirmed",
+            ),
+            LearnerProfile(
+                id="b214",
+                code="Learner B-214",
+                age=9,
+                avatar="👧🏻",
+                tags=["AAC", "Communication", "Requesting a Break"],
+                interests=["Music", "Animals", "Movement breaks"],
+                support_needs=["AAC modeling", "Wait time", "Predictable routines"],
+                reinforcement_preferences=["Music break", "Movement break", "Praise"],
+                communication_mode="AAC device, gestures, and modeled language",
+                attention_profile="Benefits from predictable routines and unhurried response time.",
+                notes="Current focus is requesting a break using AAC with consistent modeling and wait time.",
+                prompting_preferences=["AAC model", "Wait before prompting"],
+                current_goals=["Requesting a break"],
+                profile_review_status="confirmed",
+            ),
+            LearnerProfile(
+                id="c087",
+                code="Learner C-087",
+                age=6,
+                avatar="👦🏽",
+                tags=["Visual matching", "Emotion cards", "Identifying Emotions"],
+                interests=["Emotion cards", "Matching games", "Building blocks"],
+                support_needs=[
+                    "Visual choices",
+                    "Movement breaks",
+                    "Simple matching tasks",
+                ],
+                reinforcement_preferences=[
+                    "Movement break",
+                    "Specific praise",
+                    "Choice time",
+                ],
+                communication_mode="Single words, pointing, and picture choices",
+                attention_profile="Benefits from brief visual matching activities with movement between turns.",
+                notes="Current focus is identifying emotions through simple matching and visual choices.",
+                prompting_preferences=["Visual choices", "Model then wait"],
+                current_goals=["Identifying emotions"],
+                profile_review_status="confirmed",
+            ),
+            LearnerProfile(
+                id="n501",
+                code="Learner N-501",
+                age=7,
+                avatar="🧒🏻",
+                tags=["New", "Records ready", "Visual prompts"],
+                interests=["Cars", "Puzzles", "Bubbles"],
+                support_needs=["Visual prompts", "Short structured activities"],
+                reinforcement_preferences=["Bubbles", "Car play", "Praise"],
+                communication_mode="Short phrases with visual prompts",
+                attention_profile="Benefits from short, visual, structured activities.",
+                notes="New learner profile with uploaded records ready for teacher review.",
+            ),
         ]
         records = [
-            LearnerRecord(id="record-a1", learner_id="a102", file_name="IEP summary.pdf", file_type="PDF", status="reviewed", uploaded_at=_now(), extracted_text="Learner uses short phrases with visual support. Current goal is requesting help during structured play. Benefits from vehicle-themed materials, wait time, and token reinforcement."),
-            LearnerRecord(id="record-a2", learner_id="a102", file_name="Intake notes.docx", file_type="DOCX", status="reviewed", uploaded_at=_now(), extracted_text="Interests include vehicles, puzzles, toy garage play, and bubbles. Short activities and familiar routines support engagement and participation."),
-            LearnerRecord(id="record-a3", learner_id="a102", file_name="Session notes May 12.txt", file_type="TXT", status="reviewed", uploaded_at=_now(), extracted_text="Progress is inconsistent but visible through participation and prompt fading. Prompt level has started to move from full verbal prompts toward partial verbal and visual prompts."),
-            LearnerRecord(id="record-a4", learner_id="a102", file_name="Behavior support snapshot.txt", file_type="TXT", status="ready", uploaded_at=_now(), extracted_text="Use brief directions, visual choices, wait time, and supportive transitions. Avoid rushing responses; regulation and recovery are meaningful progress signals."),
-            LearnerRecord(id="record-a5", learner_id="a102", file_name="Reinforcer preference notes.txt", file_type="TXT", status="ready", uploaded_at=_now(), extracted_text="Car play, token board, bubbles, and specific praise are effective. Collect data on prompt level, independence, engagement, and generalization rather than correctness alone."),
-            LearnerRecord(id="record-n1", learner_id="n501", file_name="IEP summary.pdf", file_type="PDF", status="ready", uploaded_at=_now(), extracted_text="Learner communicates with short phrases and benefits from visual prompts, repetition, and short structured activities."),
-            LearnerRecord(id="record-n2", learner_id="n501", file_name="Intake notes.docx", file_type="DOCX", status="reviewed", uploaded_at=_now(), extracted_text="Family notes strong interest in cars, puzzles, and bubbles. Familiar materials increase participation."),
-            LearnerRecord(id="record-n3", learner_id="n501", file_name="Session notes May 12.txt", file_type="TXT", status="reviewed", uploaded_at=_now(), extracted_text="Provide multiple examples, wait before prompting, and note small changes in participation and independence."),
-            LearnerRecord(id="record-n4", learner_id="n501", file_name="Behavior support snapshot.txt", file_type="TXT", status="ready", uploaded_at=_now(), extracted_text="Visual schedules, brief activities, and predictable transitions support regulation and recovery."),
-            LearnerRecord(id="record-n5", learner_id="n501", file_name="Reinforcer preference notes.txt", file_type="TXT", status="ready", uploaded_at=_now(), extracted_text="Bubbles, car play, and praise are preferred. Begin with frequent reinforcement and collect prompt-level data."),
+            LearnerRecord(
+                id="record-a1",
+                learner_id="a102",
+                file_name="IEP summary.pdf",
+                file_type="PDF",
+                status="reviewed",
+                uploaded_at=_now(),
+                extracted_text="Learner uses short phrases with visual support. Current goal is requesting help during structured play. Benefits from vehicle-themed materials, wait time, and token reinforcement.",
+            ),
+            LearnerRecord(
+                id="record-a2",
+                learner_id="a102",
+                file_name="Intake notes.docx",
+                file_type="DOCX",
+                status="reviewed",
+                uploaded_at=_now(),
+                extracted_text="Interests include vehicles, puzzles, toy garage play, and bubbles. Short activities and familiar routines support engagement and participation.",
+            ),
+            LearnerRecord(
+                id="record-a3",
+                learner_id="a102",
+                file_name="Session notes May 12.txt",
+                file_type="TXT",
+                status="reviewed",
+                uploaded_at=_now(),
+                extracted_text="Progress is inconsistent but visible through participation and prompt fading. Prompt level has started to move from full verbal prompts toward partial verbal and visual prompts.",
+            ),
+            LearnerRecord(
+                id="record-a4",
+                learner_id="a102",
+                file_name="Behavior support snapshot.txt",
+                file_type="TXT",
+                status="ready",
+                uploaded_at=_now(),
+                extracted_text="Use brief directions, visual choices, wait time, and supportive transitions. Avoid rushing responses; regulation and recovery are meaningful progress signals.",
+            ),
+            LearnerRecord(
+                id="record-a5",
+                learner_id="a102",
+                file_name="Reinforcer preference notes.txt",
+                file_type="TXT",
+                status="ready",
+                uploaded_at=_now(),
+                extracted_text="Car play, token board, bubbles, and specific praise are effective. Collect data on prompt level, independence, engagement, and generalization rather than correctness alone.",
+            ),
+            LearnerRecord(
+                id="record-n1",
+                learner_id="n501",
+                file_name="IEP summary.pdf",
+                file_type="PDF",
+                status="ready",
+                uploaded_at=_now(),
+                extracted_text="Learner communicates with short phrases and benefits from visual prompts, repetition, and short structured activities.",
+            ),
+            LearnerRecord(
+                id="record-n2",
+                learner_id="n501",
+                file_name="Intake notes.docx",
+                file_type="DOCX",
+                status="reviewed",
+                uploaded_at=_now(),
+                extracted_text="Family notes strong interest in cars, puzzles, and bubbles. Familiar materials increase participation.",
+            ),
+            LearnerRecord(
+                id="record-n3",
+                learner_id="n501",
+                file_name="Session notes May 12.txt",
+                file_type="TXT",
+                status="reviewed",
+                uploaded_at=_now(),
+                extracted_text="Provide multiple examples, wait before prompting, and note small changes in participation and independence.",
+            ),
+            LearnerRecord(
+                id="record-n4",
+                learner_id="n501",
+                file_name="Behavior support snapshot.txt",
+                file_type="TXT",
+                status="ready",
+                uploaded_at=_now(),
+                extracted_text="Visual schedules, brief activities, and predictable transitions support regulation and recovery.",
+            ),
+            LearnerRecord(
+                id="record-n5",
+                learner_id="n501",
+                file_name="Reinforcer preference notes.txt",
+                file_type="TXT",
+                status="ready",
+                uploaded_at=_now(),
+                extracted_text="Bubbles, car play, and praise are preferred. Begin with frequent reinforcement and collect prompt-level data.",
+            ),
         ]
         sessions = [
-            LessonSession(id="session-1", learner_id="a102", goal="Asking for Help", status="planned"),
-            LessonSession(id="session-2", learner_id="b214", goal="Requesting a Break", status="completed"),
-            LessonSession(id="session-3", learner_id="n501", goal="Confirm Learner Profile", status="draft"),
-            LessonSession(id="session-4", learner_id="c087", goal="Identifying Emotions", status="in_progress"),
+            LessonSession(
+                id="session-1",
+                learner_id="a102",
+                goal="Asking for Help",
+                status="planned",
+            ),
+            LessonSession(
+                id="session-2",
+                learner_id="b214",
+                goal="Requesting a Break",
+                status="completed",
+            ),
+            LessonSession(
+                id="session-3",
+                learner_id="n501",
+                goal="Confirm Learner Profile",
+                status="draft",
+            ),
+            LessonSession(
+                id="session-4",
+                learner_id="c087",
+                goal="Identifying Emotions",
+                status="in_progress",
+            ),
         ]
         library = [
-            MaterialLibraryItem(id="library-1", title="First-Then Card", type="Visual Cards", thumbnail_label="First → Then", source="template", created_at=_now()),
-            MaterialLibraryItem(id="library-2", title="Emotion Card", type="Visual Cards", thumbnail_label="How do I feel?", source="template", created_at=_now()),
-            MaterialLibraryItem(id="library-3", title="Token Board", type="Token Boards", thumbnail_label="I am working for ⭐", source="template", created_at=_now()),
-            MaterialLibraryItem(id="library-4", title="Data Sheet", type="Data Sheets", thumbnail_label="Data Collection", source="template", created_at=_now()),
-            MaterialLibraryItem(id="library-5", title="Choice Board", type="Visual Cards", thumbnail_label="My Choices", source="template", created_at=_now()),
-            MaterialLibraryItem(id="library-6", title="Help Card", type="Help Cards", thumbnail_label="Asking for Help", source="template", created_at=_now()),
-            MaterialLibraryItem(id="library-7", title="Summary Template", type="Summary Templates", thumbnail_label="Session Summary", source="template", created_at=_now()),
+            MaterialLibraryItem(
+                id="library-1",
+                title="First-Then Card",
+                type="Visual Cards",
+                thumbnail_label="First → Then",
+                source="template",
+                created_at=_now(),
+            ),
+            MaterialLibraryItem(
+                id="library-2",
+                title="Emotion Card",
+                type="Visual Cards",
+                thumbnail_label="How do I feel?",
+                source="template",
+                created_at=_now(),
+            ),
+            MaterialLibraryItem(
+                id="library-3",
+                title="Token Board",
+                type="Token Boards",
+                thumbnail_label="I am working for ⭐",
+                source="template",
+                created_at=_now(),
+            ),
+            MaterialLibraryItem(
+                id="library-4",
+                title="Data Sheet",
+                type="Data Sheets",
+                thumbnail_label="Data Collection",
+                source="template",
+                created_at=_now(),
+            ),
+            MaterialLibraryItem(
+                id="library-5",
+                title="Choice Board",
+                type="Visual Cards",
+                thumbnail_label="My Choices",
+                source="template",
+                created_at=_now(),
+            ),
+            MaterialLibraryItem(
+                id="library-6",
+                title="Help Card",
+                type="Help Cards",
+                thumbnail_label="Asking for Help",
+                source="template",
+                created_at=_now(),
+            ),
+            MaterialLibraryItem(
+                id="library-7",
+                title="Summary Template",
+                type="Summary Templates",
+                thumbnail_label="Session Summary",
+                source="template",
+                created_at=_now(),
+            ),
         ]
         recent_lessons = [
-            RecentLessonDto(id="recent-1", learnerId="a102", title="Asking for Help", date="2025-05-12"),
-            RecentLessonDto(id="recent-2", learnerId="a102", title="Help During Toy Garage Play", date="2025-05-08"),
-            RecentLessonDto(id="recent-3", learnerId="a102", title="Using the Help Card", date="2025-05-03"),
-            RecentLessonDto(id="recent-4", learnerId="b214", title="Requesting a Break", date="2025-05-11"),
-            RecentLessonDto(id="recent-5", learnerId="c087", title="Identifying Emotions", date="2025-05-10"),
-            RecentLessonDto(id="recent-6", learnerId="n501", title="Learner Profile Review", date="2025-05-12"),
+            RecentLessonDto(
+                id="recent-1",
+                learnerId="a102",
+                title="Asking for Help",
+                date="2025-05-12",
+            ),
+            RecentLessonDto(
+                id="recent-2",
+                learnerId="a102",
+                title="Help During Toy Garage Play",
+                date="2025-05-08",
+            ),
+            RecentLessonDto(
+                id="recent-3",
+                learnerId="a102",
+                title="Using the Help Card",
+                date="2025-05-03",
+            ),
+            RecentLessonDto(
+                id="recent-4",
+                learnerId="b214",
+                title="Requesting a Break",
+                date="2025-05-11",
+            ),
+            RecentLessonDto(
+                id="recent-5",
+                learnerId="c087",
+                title="Identifying Emotions",
+                date="2025-05-10",
+            ),
+            RecentLessonDto(
+                id="recent-6",
+                learnerId="n501",
+                title="Learner Profile Review",
+                date="2025-05-12",
+            ),
         ]
         progress_summaries = [
             LearnerProgressSummaryDto(
@@ -202,30 +571,174 @@ class V2Repositories:
             )
         ]
         progress_signals = [
-            ProgressSignalDto(id="signal-engagement", type="engagement", label="Engagement", description="Participates longer when vehicle visuals are used.", status="improving"),
-            ProgressSignalDto(id="signal-prompts", type="prompt_fading", label="Prompt Fading", description="Moving inconsistently from Level 3 toward Level 2 prompts.", status="emerging"),
-            ProgressSignalDto(id="signal-generalization", type="generalization", label="Generalization Attempts", description="Tried asking for help in one new classroom routine.", status="emerging"),
-            ProgressSignalDto(id="signal-regulation", type="regulation_recovery", label="Regulation / Recovery", description="Returns to the activity after a short visual break.", status="stable"),
-            ProgressSignalDto(id="signal-participation", type="participation", label="Participation", description="Joins most practice opportunities with support.", status="stable"),
-            ProgressSignalDto(id="signal-independence", type="independence", label="Independence", description="A few responses now occur before the full prompt.", status="improving"),
+            ProgressSignalDto(
+                id="signal-engagement",
+                type="engagement",
+                label="Engagement",
+                description="Participates longer when vehicle visuals are used.",
+                status="improving",
+            ),
+            ProgressSignalDto(
+                id="signal-prompts",
+                type="prompt_fading",
+                label="Prompt Fading",
+                description="Moving inconsistently from Level 3 toward Level 2 prompts.",
+                status="emerging",
+            ),
+            ProgressSignalDto(
+                id="signal-generalization",
+                type="generalization",
+                label="Generalization Attempts",
+                description="Tried asking for help in one new classroom routine.",
+                status="emerging",
+            ),
+            ProgressSignalDto(
+                id="signal-regulation",
+                type="regulation_recovery",
+                label="Regulation / Recovery",
+                description="Returns to the activity after a short visual break.",
+                status="stable",
+            ),
+            ProgressSignalDto(
+                id="signal-participation",
+                type="participation",
+                label="Participation",
+                description="Joins most practice opportunities with support.",
+                status="stable",
+            ),
+            ProgressSignalDto(
+                id="signal-independence",
+                type="independence",
+                label="Independence",
+                description="A few responses now occur before the full prompt.",
+                status="improving",
+            ),
         ]
         progress_data = [
-            ProgressDataPointDto(id="progress-1", learnerId="a102", sessionDate="2025-03-24", goal="Asking for Help", opportunities=8, accuracyPercent=52, independencePercent=28, promptLevel="Level 3", signalsHighlighted=["engagement", "participation"], teacherNotes="Stayed engaged longer with the toy garage and participated in most supported opportunities."),
-            ProgressDataPointDto(id="progress-2", learnerId="a102", sessionDate="2025-04-01", goal="Asking for Help", opportunities=8, accuracyPercent=55, independencePercent=31, promptLevel="Level 3", signalsHighlighted=["regulation_recovery", "participation"], teacherNotes="Recovered after a short break and returned to practice; accuracy remained uneven."),
-            ProgressDataPointDto(id="progress-3", learnerId="a102", sessionDate="2025-04-14", goal="Asking for Help", opportunities=9, accuracyPercent=53, independencePercent=33, promptLevel="Level 3", signalsHighlighted=["prompt_fading", "engagement"], teacherNotes="Accepted a lighter prompt twice. The skill is still not mastered, but prompt fading is emerging."),
-            ProgressDataPointDto(id="progress-4", learnerId="a102", sessionDate="2025-04-28", goal="Asking for Help", opportunities=8, accuracyPercent=56, independencePercent=35, promptLevel="Level 2", signalsHighlighted=["prompt_fading", "participation"], teacherNotes="Moved to a partial verbal prompt during familiar play; progress remains slow and uneven."),
-            ProgressDataPointDto(id="progress-5", learnerId="a102", sessionDate="2025-05-05", goal="Asking for Help", opportunities=9, accuracyPercent=54, independencePercent=38, promptLevel="Level 2", signalsHighlighted=["independence", "regulation_recovery"], teacherNotes="Initiated before the full prompt in two opportunities and stayed regulated through the transition."),
-            ProgressDataPointDto(id="progress-6", learnerId="a102", sessionDate="2025-05-12", goal="Asking for Help", opportunities=8, accuracyPercent=58, independencePercent=42, promptLevel="Level 2", signalsHighlighted=["independence", "generalization"], teacherNotes="Asked for help once in a new routine. This small win matters even though progress remains uneven."),
+            ProgressDataPointDto(
+                id="progress-1",
+                learnerId="a102",
+                sessionDate="2025-03-24",
+                goal="Asking for Help",
+                opportunities=8,
+                accuracyPercent=52,
+                independencePercent=28,
+                promptLevel="Level 3",
+                signalsHighlighted=["engagement", "participation"],
+                teacherNotes="Stayed engaged longer with the toy garage and participated in most supported opportunities.",
+            ),
+            ProgressDataPointDto(
+                id="progress-2",
+                learnerId="a102",
+                sessionDate="2025-04-01",
+                goal="Asking for Help",
+                opportunities=8,
+                accuracyPercent=55,
+                independencePercent=31,
+                promptLevel="Level 3",
+                signalsHighlighted=["regulation_recovery", "participation"],
+                teacherNotes="Recovered after a short break and returned to practice; accuracy remained uneven.",
+            ),
+            ProgressDataPointDto(
+                id="progress-3",
+                learnerId="a102",
+                sessionDate="2025-04-14",
+                goal="Asking for Help",
+                opportunities=9,
+                accuracyPercent=53,
+                independencePercent=33,
+                promptLevel="Level 3",
+                signalsHighlighted=["prompt_fading", "engagement"],
+                teacherNotes="Accepted a lighter prompt twice. The skill is still not mastered, but prompt fading is emerging.",
+            ),
+            ProgressDataPointDto(
+                id="progress-4",
+                learnerId="a102",
+                sessionDate="2025-04-28",
+                goal="Asking for Help",
+                opportunities=8,
+                accuracyPercent=56,
+                independencePercent=35,
+                promptLevel="Level 2",
+                signalsHighlighted=["prompt_fading", "participation"],
+                teacherNotes="Moved to a partial verbal prompt during familiar play; progress remains slow and uneven.",
+            ),
+            ProgressDataPointDto(
+                id="progress-5",
+                learnerId="a102",
+                sessionDate="2025-05-05",
+                goal="Asking for Help",
+                opportunities=9,
+                accuracyPercent=54,
+                independencePercent=38,
+                promptLevel="Level 2",
+                signalsHighlighted=["independence", "regulation_recovery"],
+                teacherNotes="Initiated before the full prompt in two opportunities and stayed regulated through the transition.",
+            ),
+            ProgressDataPointDto(
+                id="progress-6",
+                learnerId="a102",
+                sessionDate="2025-05-12",
+                goal="Asking for Help",
+                opportunities=8,
+                accuracyPercent=58,
+                independencePercent=42,
+                promptLevel="Level 2",
+                signalsHighlighted=["independence", "generalization"],
+                teacherNotes="Asked for help once in a new routine. This small win matters even though progress remains uneven.",
+            ),
         ]
         progress_observations = [
-            ProgressObservation(session_id="session-1", learner_id="a102", independence_level=1, prompt_level=3, engagement_level=2, regulation_level=2, generalization_contexts=[], notes="Participated with visual support; early small win.", observed_at=datetime(2025, 4, 21, tzinfo=timezone.utc)),
-            ProgressObservation(session_id="session-1", learner_id="a102", independence_level=1, prompt_level=3, engagement_level=3, regulation_level=2, generalization_contexts=[], notes="Recovery improved after a brief visual break.", observed_at=datetime(2025, 4, 28, tzinfo=timezone.utc)),
-            ProgressObservation(session_id="session-1", learner_id="a102", independence_level=2, prompt_level=2, engagement_level=3, regulation_level=2, generalization_contexts=["table work"], notes="Accepted lighter prompts; skill is still emerging.", observed_at=datetime(2025, 5, 5, tzinfo=timezone.utc)),
-            ProgressObservation(session_id="session-1", learner_id="a102", independence_level=2, prompt_level=2, engagement_level=3, regulation_level=3, generalization_contexts=["table work", "classroom routine"], notes="One spontaneous attempt in a new routine; not yet mastery.", observed_at=_now()),
+            ProgressObservation(
+                session_id="session-1",
+                learner_id="a102",
+                independence_level=1,
+                prompt_level=3,
+                engagement_level=2,
+                regulation_level=2,
+                generalization_contexts=[],
+                notes="Participated with visual support; early small win.",
+                observed_at=datetime(2025, 4, 21, tzinfo=timezone.utc),
+            ),
+            ProgressObservation(
+                session_id="session-1",
+                learner_id="a102",
+                independence_level=1,
+                prompt_level=3,
+                engagement_level=3,
+                regulation_level=2,
+                generalization_contexts=[],
+                notes="Recovery improved after a brief visual break.",
+                observed_at=datetime(2025, 4, 28, tzinfo=timezone.utc),
+            ),
+            ProgressObservation(
+                session_id="session-1",
+                learner_id="a102",
+                independence_level=2,
+                prompt_level=2,
+                engagement_level=3,
+                regulation_level=2,
+                generalization_contexts=["table work"],
+                notes="Accepted lighter prompts; skill is still emerging.",
+                observed_at=datetime(2025, 5, 5, tzinfo=timezone.utc),
+            ),
+            ProgressObservation(
+                session_id="session-1",
+                learner_id="a102",
+                independence_level=2,
+                prompt_level=2,
+                engagement_level=3,
+                regulation_level=3,
+                generalization_contexts=["table work", "classroom routine"],
+                notes="One spontaneous attempt in a new routine; not yet mastery.",
+                observed_at=_now(),
+            ),
         ]
         self.learners = InMemoryV2Repository[LearnerProfile](learners)
         self.records = RecordRepository(records)
-        self.conversations = InMemoryV2Repository[AIChatState](key_field="conversation_id")
+        self.conversations = InMemoryV2Repository[AIChatState](
+            key_field="conversation_id"
+        )
         self.chats = self.conversations
         self.lesson_packages = InMemoryV2Repository[LessonPackage]()
         self.packages = self.lesson_packages
@@ -235,18 +748,63 @@ class V2Repositories:
         self.library = self.materials_library
         self.image_assets = InMemoryV2Repository[ImageAssetDto](_seed_image_assets())
         self.sessions = InMemoryV2Repository[LessonSession](sessions)
+        self.export_jobs = InMemoryV2Repository(key_field="exportId")
         self.recent_lessons = InMemoryV2Repository[RecentLessonDto](recent_lessons)
-        self.progress_summaries = InMemoryV2Repository[LearnerProgressSummaryDto](progress_summaries, key_field="learnerId")
-        self.progress_signals = InMemoryV2Repository[ProgressSignalDto](progress_signals)
+        self.progress_summaries = InMemoryV2Repository[LearnerProgressSummaryDto](
+            progress_summaries, key_field="learnerId"
+        )
+        self.progress_signals = InMemoryV2Repository[ProgressSignalDto](
+            progress_signals
+        )
         self.progress_data = InMemoryV2Repository[ProgressDataPointDto](progress_data)
         self.progress = ProgressRepository()
         for observation in progress_observations:
             self.progress.add(observation)
         self.ids = count(1000)
 
+    def record_audit(
+        self,
+        action: str,
+        entity_type: str,
+        entity_external_id: str,
+        metadata: dict | None = None,
+    ) -> None:
+        """Store minimized demo audit metadata without learner content."""
+
+        self.audit_events.append(
+            {
+                "action": action,
+                "entityType": entity_type,
+                "entityExternalId": entity_external_id,
+                "metadata": deepcopy(metadata or {}),
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
     def next_id(self, prefix: str) -> str:
         with self.learners._lock:
             return f"{prefix}-{next(self.ids)}"
 
+    @contextmanager
+    def transaction(self):
+        """Compatibility unit-of-work for explicit local synthetic demo mode."""
 
-repositories = V2Repositories()
+        yield self
+
+    def for_scope(self, organization_external_id: str, user_external_id: str):
+        # Memory mode is restricted to tests and explicit local synthetic demos.
+        # Return an isolated store so data never crosses a requested scope.
+        return V2Repositories()
+
+
+def create_v2_repositories():
+    from app.core.config import settings
+
+    if settings.effective_v2_repository_mode == "sqlalchemy":
+        from app.services.v2_sqlalchemy_repositories import SQLAlchemyV2Repositories
+
+        return SQLAlchemyV2Repositories(config=settings)
+    return V2Repositories()
+
+
+repositories = create_v2_repositories()

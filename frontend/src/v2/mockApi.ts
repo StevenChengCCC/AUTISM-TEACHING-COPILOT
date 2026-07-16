@@ -5,13 +5,14 @@ import { mockMaterials } from "./data/mockMaterials";
 import { mockRecentLessons } from "./data/mockRecentLessons";
 import { mockRecords } from "./data/mockRecords";
 import { mockSessions,mockSessionStats } from "./data/mockSessions";
-import type { AIChatState, AIQuestion, ExportJob, GeneratedMaterial, LearnerProfile, LearnerProfileExtraction, LearnerProgressSummary, LessonDesignDraft, LessonPackage, LessonPackageUpdateInput, LessonSession, LessonSessionSummary, MaterialLibraryItem, MaterialQuickEditAction, ProgressDataPoint, ProgressSignal } from "./types";
+import type { AIChatState, AIQuestion, ExportJob, GeneratedMaterial, HandoffExportDownload, LearnerProfile, LearnerProfileExtraction, LearnerProgressSummary, LessonDesignDraft, LessonPackage, LessonPackageUpdateInput, LessonSession, LessonSessionSummary, MaterialLibraryItem, MaterialQuickEditAction, ProgressDataPoint, ProgressSignal, TeacherHandoffExportInput } from "./types";
 
 const chats = new Map<string, AIChatState>();
 const packages = new Map<string, LessonPackage>();
 const copy = <T,>(value:T):T => structuredClone(value);
 const pause = async <T,>(value:T):Promise<T> => Promise.resolve(copy(value));
 const learners=copy(mockLearners);const records=copy(mockRecords);const sessions=copy(mockSessions);const materials=copy(mockMaterials);const progressData:ProgressDataPoint[]=[];
+const exportJobs:ExportJob[]=[];
 
 function applyQuestionToDraft(chat:AIChatState, question:AIQuestion) {
   const values = question.selectedOptionIds
@@ -99,11 +100,17 @@ export const lessonKitMockApi = {
   },
   getLessonPackage: async (packageId:string) => {const value=packages.get(packageId);if(!value)throw new Error("Package not found");return pause(value);},
   updateLessonPackage: async (packageId:string,payload:LessonPackageUpdateInput) => {const value=packages.get(packageId);if(!value)throw new Error("Package not found");const updated={...value,...payload,materials:value.materials,safetyReview:value.safetyReview,standardsChecks:value.standardsChecks};packages.set(packageId,updated);return pause(updated);},
+  approveLessonPackage: async (packageId:string):Promise<LessonPackage> => {const value=packages.get(packageId);if(!value)throw new Error("Package not found");const updated={...value,status:"approved" as const,version:(value.version??1)+1};packages.set(packageId,updated);return pause(updated);},
   getGeneratedMaterials: async (packageId:string) => pause(packages.get(packageId)?.materials ?? []),
   updateGeneratedMaterial: async (materialId:string,payload:{title:string;content:GeneratedMaterial["content"];printLayout:GeneratedMaterial["printLayout"]}) => updateLocalMaterial(materialId,(item)=>({...item,...payload})),
   approveGeneratedMaterial: async (materialId:string) => updateLocalMaterial(materialId,(item)=>({...item,status:"approved"})),
   quickEditGeneratedMaterial: async (materialId:string,action:MaterialQuickEditAction) => updateLocalMaterial(materialId,(item)=>{const content={...item.content};if(action==="simplify_wording")content.instruction="Ask for help.";if(action==="regenerate_artwork")content.artwork="Updated classroom artwork";if(action==="adjust_reward")content.reward="Choice activity";return {...item,content};}),
-  exportLessonPackage: (packageId:string,format:ExportJob["format"]):Promise<ExportJob> => pause({exportId:`export-${packageId}-${format}`,status:"ready",format,downloadUrl:`/mock-downloads/${packageId}.${format}`}),
+  exportLessonPackage: async (packageId:string,format:ExportJob["format"]):Promise<ExportJob> => {const job:ExportJob={exportId:`export-${packageId}-${format}`,learnerId:"a102",packageId,status:"completed",format,progressPercent:100,requestedAt:new Date().toISOString(),completedAt:new Date().toISOString(),fileName:"teacher-handoff.zip",fileSizeBytes:1024,downloadUrl:null,message:"Local mock export is ready.",manifest:["handoff-summary.pdf","progress-data.csv","handoff-data.json","README.txt"],downloadCount:0,version:1};exportJobs.unshift(job);return pause(job);},
+  createHandoffExport: async (learnerId:string,payload:TeacherHandoffExportInput):Promise<ExportJob> => {const job:ExportJob={exportId:`handoff-local-${exportJobs.length+1}`,learnerId,packageId:payload.packageIds[0]??null,status:"completed",format:"zip",progressPercent:100,requestedAt:new Date().toISOString(),completedAt:new Date().toISOString(),fileName:"teacher-handoff.zip",fileSizeBytes:1024,message:"Local mock handoff is ready.",manifest:["handoff-summary.pdf","progress-data.csv","handoff-data.json","README.txt"],downloadCount:0,version:1};exportJobs.unshift(job);return pause(job);},
+  getHandoffExports: (learnerId?:string):Promise<ExportJob[]> => pause(exportJobs.filter((job)=>!learnerId||job.learnerId===learnerId)),
+  retryHandoffExport: async (id:string):Promise<ExportJob> => {const source=exportJobs.find((job)=>job.exportId===id);if(!source)throw new Error("Export not found");const job={...source,exportId:`handoff-local-${exportJobs.length+1}`,status:"completed" as const,requestedAt:new Date().toISOString()};exportJobs.unshift(job);return pause(job);},
+  getHandoffExportDownload: async (id:string):Promise<HandoffExportDownload> => {const job=exportJobs.find((item)=>item.exportId===id);if(!job)throw new Error("Export not found");return pause({exportId:id,downloadUrl:"data:text/plain;charset=utf-8,Local%20mock%20teacher%20handoff",expiresAt:new Date(Date.now()+300000).toISOString()});},
+  deleteHandoffExport: async (id:string):Promise<ExportJob> => {const job=exportJobs.find((item)=>item.exportId===id);if(!job)throw new Error("Export not found");job.status="deleted";return pause(job);},
   getSessions: () => pause(sessions),
   getSessionStats: () => pause(mockSessionStats.map((stat)=>({...stat,count:sessions.filter((item)=>item.status===stat.status).length}))),
   createSession: async (payload:Omit<LessonSession,"id"|"updatedAt">) => {const session={...payload,id:`session-local-${sessions.length+1}`,updatedAt:"Just now"};sessions.push(session);return pause(session);},

@@ -1,0 +1,12 @@
+skillId: image_generation
+version: v1
+status: active
+intendedUse: [Create non-identifying educational image prompts for teacher-reviewed materials]
+prohibitedUse: [Real learner likenesses, diagnoses, logos, embedded private data]
+inputSchemaVersion: image-generation-input-v1
+outputSchemaVersion: image-generation-output-v1
+promptTemplateVersion: image-generation-prompt-v1
+evaluatorVersion: image-generation-evaluator-v1
+teacherReviewRequired: true
+sourceReviewStatus: pending
+promptComponents: [system.md, quality_rules.yaml]

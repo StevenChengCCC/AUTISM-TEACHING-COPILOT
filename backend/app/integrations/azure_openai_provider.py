@@ -10,6 +10,7 @@ from app.schemas.v2_dto import (
     LearnerRecord,
     LessonDesignDraft,
     LessonDesignDraftDto,
+    ProfileExtractionResult,
 )
 
 
@@ -21,10 +22,15 @@ class AzureOpenAIV2Provider(V2AIProvider):
     prompts and safety controls, and return the same provider contracts.
     """
 
+    provider_name = "azure_openai"
+
     def __init__(self, settings: Settings):
         if not settings.AZURE_OPENAI_ENDPOINT or not settings.AZURE_OPENAI_DEPLOYMENT:
             raise RuntimeError("Azure OpenAI endpoint and deployment are required")
-        if not settings.reveal(settings.AZURE_OPENAI_API_KEY) and not settings.KEY_VAULT_URL:
+        if (
+            not settings.reveal(settings.AZURE_OPENAI_API_KEY)
+            and not settings.KEY_VAULT_URL
+        ):
             raise RuntimeError("Azure OpenAI secret source is not configured")
         self._settings = settings
 
@@ -36,7 +42,7 @@ class AzureOpenAIV2Provider(V2AIProvider):
 
     def extract_profile(
         self, learner: LearnerProfile, records: list[LearnerRecord]
-    ) -> tuple[LearnerProfile, list[str]]:
+    ) -> ProfileExtractionResult:
         return self._not_enabled()
 
     def generate_lesson_questions(
@@ -48,7 +54,9 @@ class AzureOpenAIV2Provider(V2AIProvider):
         return self._not_enabled()
 
     def generate_lesson_package(
-        self, draft: LessonDesignDraftDto
+        self,
+        draft: LessonDesignDraftDto,
+        learner_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._not_enabled()
 

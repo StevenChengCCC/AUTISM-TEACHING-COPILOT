@@ -1,0 +1,13 @@
+rules:
+  - id: fictional-only
+    instruction: Use fictional non-identifying people and never request a real learner likeness.
+    severity: high
+  - id: no-private-data
+    instruction: Exclude learner codes, record text, diagnoses, logos, and personal data.
+    severity: high
+  - id: age-respectful
+    instruction: Use neutral educational illustrations that do not infantilize older learners.
+    severity: high
+  - id: low-distraction
+    instruction: Use one clear concept, sufficient contrast, and a low-distraction printable composition.
+    severity: medium

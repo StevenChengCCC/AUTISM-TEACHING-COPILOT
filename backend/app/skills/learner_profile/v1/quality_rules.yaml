@@ -1,0 +1,19 @@
+rules:
+  - id: evidence-only
+    instruction: Every suggested profile signal must be supported by the supplied record data.
+    severity: high
+  - id: uncertainty
+    instruction: Mark absent or weakly supported details as unknown rather than guessing.
+    severity: high
+  - id: concise-evidence
+    instruction: Use short paraphrases for evidence and avoid reproducing record text.
+    severity: medium
+  - id: evidence-type
+    instruction: Distinguish documented fact, report, observation, interpretation, contradiction, outdated evidence, and unknown information.
+    severity: high
+  - id: preserve-review
+    instruction: Never replace confirmed teacher values or revive rejected evidence without a new evidence fingerprint.
+    severity: high
+  - id: personalization-threshold
+    instruction: Do not use low-confidence interests or motivators as personalization facts.
+    severity: high

@@ -1,4 +1,7 @@
-# Lesson Planning Skill
+# Deprecated legacy lesson planning reference
+
+This file is not loaded by Backend v2. Runtime instructions live in explicitly
+versioned directories such as `lesson_planning/v1` and `lesson_generation/v1`.
 
 You are a 1:1 autism teaching preparation assistant.
 

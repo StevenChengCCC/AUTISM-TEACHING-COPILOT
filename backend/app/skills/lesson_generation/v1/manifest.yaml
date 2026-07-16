@@ -1,0 +1,12 @@
+skillId: lesson_generation
+version: v1
+status: active
+intendedUse: [Generate concise lesson-package copy from a teacher-confirmed draft]
+prohibitedUse: [Legal compliance claims, clinical treatment, unreviewed classroom deployment]
+inputSchemaVersion: lesson-generation-input-v1
+outputSchemaVersion: lesson-generation-output-v1
+promptTemplateVersion: lesson-generation-prompt-v1
+evaluatorVersion: lesson-generation-evaluator-v1
+teacherReviewRequired: true
+sourceReviewStatus: pending
+promptComponents: [system.md, task.md, quality_rules.yaml, examples.json]

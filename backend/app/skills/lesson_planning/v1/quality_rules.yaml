@@ -1,0 +1,22 @@
+rules:
+  - id: observable-goal
+    instruction: Phrase the draft goal as an observable learner action.
+    severity: high
+  - id: teacher-choice
+    instruction: Provide editable options and avoid presenting AI recommendations as decisions.
+    severity: high
+  - id: strengths-based
+    instruction: Use neutral strengths-based language and practical classroom contexts.
+    severity: medium
+  - id: baseline-required
+    instruction: Require teacher confirmation of a baseline or explicitly record that baseline is unknown.
+    severity: high
+  - id: communication-access
+    instruction: Accept established speech, gesture, picture, sign, and AAC response modalities.
+    severity: high
+  - id: conditional-questions
+    instruction: Ask only questions needed to resolve missing, conflicting, unsafe, or teacher-dependent details.
+    severity: medium
+  - id: recommendation-reason
+    instruction: Explain recommendations with a short reason derived only from confirmed or sufficiently supported profile information.
+    severity: medium

@@ -4,6 +4,8 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from zipfile import BadZipFile, ZipFile
+from io import BytesIO
 
 from app.core.config import Settings, settings
 from app.core.exceptions import ValidationError
@@ -27,7 +29,16 @@ _DANGEROUS_EXTENSIONS = {
 }
 _ARCHIVE_EXTENSIONS = {".7z", ".gz", ".rar", ".tar", ".zip"}
 _MACRO_OFFICE_EXTENSIONS = {".docm", ".pptm", ".xlsm"}
-_CONTROL_CHARS_EXCEPT_COMMON_WHITESPACE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_CONTROL_CHARS_EXCEPT_COMMON_WHITESPACE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"
+)
+_EXPECTED_MIME_TYPES = {
+    ".pdf": {"application/pdf"},
+    ".docx": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    },
+    ".txt": {"text/plain"},
+}
 
 
 @dataclass(frozen=True)
@@ -62,7 +73,9 @@ class V2UploadSecurityService:
         dangerous_suffixes = (
             _DANGEROUS_EXTENSIONS | _ARCHIVE_EXTENSIONS | _MACRO_OFFICE_EXTENSIONS
         )
-        dangerous_matches = [suffix for suffix in suffixes if suffix in dangerous_suffixes]
+        dangerous_matches = [
+            suffix for suffix in suffixes if suffix in dangerous_suffixes
+        ]
         if dangerous_matches:
             raise ValidationError(
                 f"Unsupported or unsafe upload extension: {dangerous_matches[-1]}"
@@ -86,10 +99,16 @@ class V2UploadSecurityService:
             normalized_content_type = content_type.split(";")[0].strip().lower()
             if (
                 normalized_content_type
-                and normalized_content_type not in self.config.allowed_upload_mime_type_set
+                and normalized_content_type
+                not in self.config.allowed_upload_mime_type_set
             ):
                 raise ValidationError(
                     f"Unsupported upload content type: {normalized_content_type}"
+                )
+            expected = _EXPECTED_MIME_TYPES.get(extension)
+            if expected and normalized_content_type not in expected:
+                raise ValidationError(
+                    "Declared content type did not match the file extension."
                 )
 
     def safe_storage_name(self, original_file_name: str) -> str:
@@ -121,16 +140,34 @@ class V2UploadSecurityService:
         if extension == ".png" and signature != "png":
             raise ValidationError("Uploaded PNG signature did not match its extension.")
         if extension in {".jpg", ".jpeg"} and signature != "jpeg":
-            raise ValidationError("Uploaded JPEG signature did not match its extension.")
+            raise ValidationError(
+                "Uploaded JPEG signature did not match its extension."
+            )
         if extension == ".docx" and signature != "zip":
-            raise ValidationError("Uploaded DOCX signature did not match its extension.")
-        if extension == ".txt" and signature not in {"txt", "unknown"}:
+            raise ValidationError(
+                "Uploaded DOCX signature did not match its extension."
+            )
+        if extension == ".docx" and signature == "zip":
+            try:
+                with ZipFile(BytesIO(file_bytes)) as archive:
+                    names = set(archive.namelist())
+                    if "word/document.xml" not in names:
+                        raise ValidationError(
+                            "Uploaded DOCX did not contain a Word document."
+                        )
+                    if "word/vbaProject.bin" in names:
+                        raise ValidationError(
+                            "Macro-enabled documents are not allowed."
+                        )
+            except BadZipFile as exc:
+                raise ValidationError("Uploaded DOCX structure was invalid.") from exc
+        if extension == ".txt" and signature != "txt":
             raise ValidationError("Uploaded TXT signature did not match its extension.")
 
     def scan_file_for_malware(self, file_path: str | Path) -> UploadScanResult:
         if not self.config.ENABLE_UPLOAD_ANTIVIRUS_SCAN:
             return UploadScanResult(
-                status="skipped",
+                status="not_configured",
                 message=(
                     "Antivirus scanning is disabled for this demo. Production should "
                     "scan quarantined files with ClamAV, cloud malware scanning, or a "
@@ -138,7 +175,7 @@ class V2UploadSecurityService:
                 ),
             )
         return UploadScanResult(
-            status="unavailable",
+            status="failed",
             message=(
                 "Antivirus scanning was requested, but no scanner is configured. "
                 "Do not send private learner records to public scanning APIs by default."

@@ -1,0 +1,12 @@
+skillId: learner_profile
+version: v1
+status: active
+intendedUse: [Extract reviewable instructional profile suggestions from teacher-provided records]
+prohibitedUse: [Diagnosis, clinical conclusions, autonomous profile approval]
+inputSchemaVersion: learner-profile-input-v1
+outputSchemaVersion: learner-profile-output-v1
+promptTemplateVersion: learner-profile-prompt-v1
+evaluatorVersion: learner-profile-evaluator-v1
+teacherReviewRequired: true
+sourceReviewStatus: pending
+promptComponents: [system.md, task.md, quality_rules.yaml, examples.json]

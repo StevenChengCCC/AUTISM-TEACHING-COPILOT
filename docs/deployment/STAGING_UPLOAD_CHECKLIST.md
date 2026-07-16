@@ -1,0 +1,21 @@
+# Staging private-upload checklist
+
+- [ ] Use synthetic/de-identified documents only.
+- [ ] PostgreSQL is configured and `alembic upgrade head` has run once.
+- [ ] `APP_ENV=staging`; no SQLite or memory repository fallback.
+- [ ] Dedicated S3 bucket/prefix has all Block Public Access settings enabled.
+- [ ] Bucket Object Ownership is Bucket owner enforced; ACLs are disabled.
+- [ ] Default encryption is enabled.
+- [ ] CORS allows PUT only from the exact Amplify/custom staging origin.
+- [ ] EB instance profile can Put/Get/Delete only `learner-records/*`.
+- [ ] No AWS access key is present in frontend or repository variables.
+- [ ] Presigned URLs expire in five minutes (or another reviewed short TTL).
+- [ ] TXT/PDF/DOCX happy paths succeed and extracted text persists.
+- [ ] Wrong MIME/signature, executable/macro, oversized, and key-tampering tests fail.
+- [ ] Image-only PDF becomes `needs_ocr`.
+- [ ] UI shows parsing failure and allows teacher correction.
+- [ ] S3 objects are not publicly downloadable.
+- [ ] Delete removes the object and clears/soft-deletes extracted text.
+- [ ] Failed S3 delete is visible and retryable.
+- [ ] `malwareScanStatus=not_configured` is visible; nobody claims scanning exists.
+- [ ] Readiness remains not ready for production capabilities not yet implemented.

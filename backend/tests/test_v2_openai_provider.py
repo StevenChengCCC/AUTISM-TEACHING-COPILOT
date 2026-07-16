@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.core.config import Settings
-from app.core.exceptions import AIProviderConfigurationError
+from app.core.exceptions import (
+    AIProviderConfigurationError,
+    AIProviderUnavailableError,
+)
 from app.integrations.ai_provider import get_v2_ai_provider
 from app.integrations.mock_ai_provider import MockV2AIProvider
 from app.integrations.openai_provider import OpenAIV2AIProvider
@@ -86,6 +89,25 @@ def test_malformed_openai_output_uses_deterministic_mock_fallback():
     assert provider.last_fallback_used is True
     assert draft.learner_id == "a102"
     assert draft.goal_text == "Learner will ask for help using a short phrase."
+
+
+def test_fail_closed_mode_never_returns_realistic_mock_content():
+    config = Settings(
+        _env_file=None,
+        AI_PROVIDER="openai",
+        AI_FAILURE_MODE="fail_closed",
+        OPENAI_API_KEY="not-a-real-key",
+    )
+    provider = OpenAIV2AIProvider(config, client=_fake_client("not-json"))
+    learner = LearnerProfile(id="a102", code="Learner A-102", age=7)
+
+    with pytest.raises(
+        AIProviderUnavailableError,
+        match="AI generation is temporarily unavailable",
+    ):
+        provider.generate_lesson_questions(learner, "I want to teach asking for help.")
+
+    assert provider.last_fallback_used is False
 
 
 def test_unknown_provider_has_clear_configuration_error():

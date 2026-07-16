@@ -60,3 +60,57 @@ def test_local_config_searches_for_backend_env_local():
 
     assert "backend/.env.local" in env_files
     assert ".env.local" in env_files
+
+
+def test_database_defaults_to_local_sqlite():
+    settings = Settings(_env_file=None)
+
+    assert settings.effective_database_url == "sqlite:///./autism_copilot.db"
+
+
+def test_explicit_database_url_takes_priority_over_rds_values():
+    settings = Settings(
+        _env_file=None,
+        DATABASE_URL="postgresql+psycopg2://direct-user:direct-pass@example.com:5432/directdb",
+        RDS_HOSTNAME="rds.example.com",
+        RDS_PORT="5432",
+        RDS_DB_NAME="rdsdb",
+        RDS_USERNAME="rdsuser",
+        RDS_PASSWORD="fake-direct-rds-pass",
+    )
+
+    assert (
+        settings.effective_database_url
+        == "postgresql+psycopg2://direct-user:direct-pass@example.com:5432/directdb"
+    )
+
+
+def test_rds_environment_builds_postgresql_url_without_repr_secret_leak():
+    settings = Settings(
+        _env_file=None,
+        RDS_HOSTNAME="lesson-kit-demo.abc123.us-east-1.rds.amazonaws.com",
+        RDS_PORT="5432",
+        RDS_DB_NAME="lessonkit",
+        RDS_USERNAME="studio_user",
+        RDS_PASSWORD="fake-pass-for-test",
+    )
+
+    assert (
+        settings.effective_database_url
+        == "postgresql+psycopg2://studio_user:fake-pass-for-test@"
+        "lesson-kit-demo.abc123.us-east-1.rds.amazonaws.com:5432/lessonkit"
+    )
+    assert "fake-pass-for-test" not in repr(settings)
+
+
+def test_incomplete_rds_environment_keeps_sqlite_default():
+    settings = Settings(
+        _env_file=None,
+        RDS_HOSTNAME="lesson-kit-demo.abc123.us-east-1.rds.amazonaws.com",
+        RDS_PORT="5432",
+        RDS_DB_NAME="lessonkit",
+        RDS_USERNAME="studio_user",
+        RDS_PASSWORD=None,
+    )
+
+    assert settings.effective_database_url == "sqlite:///./autism_copilot.db"

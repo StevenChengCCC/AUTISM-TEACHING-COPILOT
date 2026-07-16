@@ -1,0 +1,12 @@
+skillId: lesson_planning
+version: v1
+status: active
+intendedUse: [Turn a teacher lesson request into editable planning questions and a draft]
+prohibitedUse: [Diagnosis, treatment plans, replacing teacher judgment]
+inputSchemaVersion: lesson-planning-input-v1
+outputSchemaVersion: lesson-planning-output-v1
+promptTemplateVersion: lesson-planning-prompt-v1
+evaluatorVersion: lesson-planning-evaluator-v1
+teacherReviewRequired: true
+sourceReviewStatus: pending
+promptComponents: [system.md, task.md, quality_rules.yaml, examples.json]
