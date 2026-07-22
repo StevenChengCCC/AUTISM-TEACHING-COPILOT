@@ -1,6 +1,8 @@
 import type { StudioPage } from "../types";
 import { useEffect,useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
+import { BRAND } from "../brand";
+import { BrandMark } from "./BrandMark";
 
 type Props = {
   page: StudioPage;
@@ -17,15 +19,18 @@ const items: { page: StudioPage; label: string; icon: string }[] = [
 export function TopNav({ page, onNavigate }: Props) {
   const { user, signOut } = useAuth();
   const [menuOpen,setMenuOpen]=useState(false);
-  const [teachingMode,setTeachingMode]=useState(()=>sessionStorage.getItem("lesson-kit-studio.teaching-mode")==="true");
-  useEffect(()=>{document.body.classList.toggle("lesson-kit-teaching-mode",teachingMode);sessionStorage.setItem("lesson-kit-studio.teaching-mode",String(teachingMode));return()=>document.body.classList.remove("lesson-kit-teaching-mode");},[teachingMode]);
+  const [teachingMode,setTeachingMode]=useState(()=>sessionStorage.getItem("autism-teaching-copilot.teaching-mode")==="true");
+  useEffect(()=>{document.body.classList.toggle("autism-copilot-teaching-mode",teachingMode);sessionStorage.setItem("autism-teaching-copilot.teaching-mode",String(teachingMode));return()=>document.body.classList.remove("autism-copilot-teaching-mode");},[teachingMode]);
   useEffect(()=>{if(!menuOpen)return;const close=(event:KeyboardEvent)=>{if(event.key==="Escape")setMenuOpen(false);};window.addEventListener("keydown",close);return()=>window.removeEventListener("keydown",close);},[menuOpen]);
   const activePage = page === "developerAI" ? null : ["students", "sessions", "materials"].includes(page) ? page : "home";
   return (
     <header className="v2-topnav">
-      <button className="v2-brand" onClick={() => onNavigate("home")} aria-label="Lesson Kit Studio home">
-        <span className="v2-brand-mark" aria-hidden="true">▰</span>
-        <span>Lesson Kit Studio</span>
+      <button className="v2-brand" onClick={() => onNavigate("home")} aria-label={`${BRAND.productName} home`} title={BRAND.productName}>
+        <BrandMark />
+        <span className="v2-brand-copy">
+          <strong>{BRAND.productName}</strong>
+          <small>{BRAND.descriptor}</small>
+        </span>
       </button>
       <nav className="v2-mainnav" aria-label="Main navigation">
         {items.map((item) => (
