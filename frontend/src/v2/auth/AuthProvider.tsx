@@ -13,7 +13,7 @@ type AuthState = {
   status: "loading" | "authenticated" | "anonymous" | "expired" | "error";
   user: AuthUser | null;
   error: string;
-  signIn: () => Promise<void>;
+  signIn: (loginHint?: string) => Promise<void>;
   signOut: () => void;
 };
 
@@ -81,4 +81,3 @@ export function useAuth(): AuthState {
   if (!context) throw new Error("useAuth must be used within AuthProvider.");
   return context;
 }
-

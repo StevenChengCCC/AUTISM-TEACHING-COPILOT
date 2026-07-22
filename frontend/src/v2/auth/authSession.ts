@@ -7,8 +7,8 @@ export type BrowserSession = {
   expiresAt: number;
 };
 
-const SESSION_KEY = "lesson-kit-studio.auth-session";
-const PKCE_KEY = "lesson-kit-studio.pkce";
+const SESSION_KEY = "autism-teaching-copilot.auth-session";
+const PKCE_KEY = "autism-teaching-copilot.pkce";
 
 export const authConfig = {
   mode: (import.meta.env.VITE_AUTH_MODE ?? "demo") as AuthMode,
@@ -19,6 +19,7 @@ export const authConfig = {
   redirectUri: import.meta.env.VITE_COGNITO_REDIRECT_URI ?? window.location.origin,
   logoutUri: import.meta.env.VITE_COGNITO_LOGOUT_URI ?? window.location.origin,
   scopes: import.meta.env.VITE_COGNITO_SCOPES ?? "openid email profile",
+  phoneSignInEnabled: import.meta.env.VITE_COGNITO_PHONE_SIGN_IN === "true",
 };
 
 function encodeBase64Url(bytes: Uint8Array): string {
@@ -47,7 +48,8 @@ export function readSession(): BrowserSession | null {
   const value = sessionStorage.getItem(SESSION_KEY);
   if (!value) return null;
   try {
-    return JSON.parse(value) as BrowserSession;
+    const session = JSON.parse(value) as BrowserSession;
+    return session;
   } catch {
     sessionStorage.removeItem(SESSION_KEY);
     return null;
@@ -74,7 +76,7 @@ export function decodeTokenClaims(token: string): Record<string, unknown> {
   }
 }
 
-export async function beginLogin(): Promise<void> {
+export async function beginLogin(loginHint = ""): Promise<void> {
   if (authConfig.mode === "demo") {
     window.location.assign(authConfig.redirectUri);
     return;
@@ -93,6 +95,7 @@ export async function beginLogin(): Promise<void> {
     code_challenge_method: "S256",
     code_challenge: challenge,
   });
+  if (loginHint.trim()) query.set("login_hint", loginHint.trim());
   window.location.assign(`${authConfig.domain}/oauth2/authorize?${query}`);
 }
 

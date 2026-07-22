@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { lessonKitApi } from "./api/lessonKitApi";
+import { BRAND } from "./brand";
 import { AppShell } from "./components/AppShell";
+import { BrandMark } from "./components/BrandMark";
 import { DeveloperAISettingsPage } from "./pages/DeveloperAISettingsPage";
 import { LessonPackageReadyPage } from "./pages/LessonPackageReadyPage";
 import { MaterialsPage } from "./pages/MaterialsPage";
@@ -31,26 +33,26 @@ const resumablePages: StudioPage[] = [
   "modifyLessonContent", "reviewPrintableContent",
 ];
 
-export function LessonKitStudioApp() {
-  const storedPage = sessionStorage.getItem("lesson-kit-studio.page") as StudioPage | null;
+export function AutismTeachingCopilotApp() {
+  const storedPage = sessionStorage.getItem("autism-teaching-copilot.page") as StudioPage | null;
   const [page, setPage] = useState<StudioPage>(storedPage && resumablePages.includes(storedPage) ? storedPage : "home");
-  const [learnerId, setLearnerId] = useState(sessionStorage.getItem("lesson-kit-studio.learner-id") ?? "a102");
+  const [learnerId, setLearnerId] = useState(sessionStorage.getItem("autism-teaching-copilot.learner-id") ?? "a102");
   const [lessonPackage, setLessonPackage] = useState<LessonPackage | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [restoring, setRestoring] = useState(true);
 
   useEffect(() => {
-    sessionStorage.setItem("lesson-kit-studio.page", page);
-    sessionStorage.setItem("lesson-kit-studio.learner-id", learnerId);
+    sessionStorage.setItem("autism-teaching-copilot.page", page);
+    sessionStorage.setItem("autism-teaching-copilot.learner-id", learnerId);
   }, [page, learnerId]);
 
   useEffect(() => {
-    const packageId = sessionStorage.getItem("lesson-kit-studio.package-id");
+    const packageId = sessionStorage.getItem("autism-teaching-copilot.package-id");
     if (!packageId) { setRestoring(false); return; }
     void lessonKitApi.getLessonPackage(packageId)
       .then(setLessonPackage)
       .catch(() => {
-        sessionStorage.removeItem("lesson-kit-studio.package-id");
+        sessionStorage.removeItem("autism-teaching-copilot.package-id");
         if (["lessonPackageReady", "modifyLessonContent", "reviewPrintableContent"].includes(page)) setPage("home");
       })
       .finally(() => setRestoring(false));
@@ -58,8 +60,8 @@ export function LessonKitStudioApp() {
 
   const savePackage = (value: LessonPackage | null) => {
     setLessonPackage(value);
-    if (value) sessionStorage.setItem("lesson-kit-studio.package-id", value.id);
-    else sessionStorage.removeItem("lesson-kit-studio.package-id");
+    if (value) sessionStorage.setItem("autism-teaching-copilot.package-id", value.id);
+    else sessionStorage.removeItem("autism-teaching-copilot.package-id");
   };
   const navigateTo = (next: StudioPage) => { setFeedbackMessage(""); setPage(next); };
   const startExistingLearnerFlow = (id: string) => { setLearnerId(id); navigateTo("reviewLearnerExisting"); };
@@ -95,7 +97,7 @@ export function LessonKitStudioApp() {
     }
   }
 
-  if (restoring) return <main className="v2-auth-loading" aria-live="polite"><span className="v2-spinner" />Restoring your saved workspace…</main>;
+  if (restoring) return <main className="v2-auth-loading" aria-live="polite"><BrandMark decorative={false} /><span className="v2-spinner" /><span>Restoring your {BRAND.shortName} workspace…</span></main>;
 
   return (
     <AppShell page={page} step={workflowSteps[page]} onNavigate={navigateTo}>
