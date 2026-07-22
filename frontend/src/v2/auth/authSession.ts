@@ -19,7 +19,6 @@ export const authConfig = {
   redirectUri: import.meta.env.VITE_COGNITO_REDIRECT_URI ?? window.location.origin,
   logoutUri: import.meta.env.VITE_COGNITO_LOGOUT_URI ?? window.location.origin,
   scopes: import.meta.env.VITE_COGNITO_SCOPES ?? "openid email profile",
-  phoneSignInEnabled: import.meta.env.VITE_COGNITO_PHONE_SIGN_IN === "true",
 };
 
 function encodeBase64Url(bytes: Uint8Array): string {
