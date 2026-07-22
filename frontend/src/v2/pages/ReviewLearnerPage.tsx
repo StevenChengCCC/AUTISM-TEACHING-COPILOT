@@ -1,4 +1,4 @@
-import { useEffect,useState } from "react";
+import { useCallback,useEffect,useState } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
@@ -15,9 +15,12 @@ function RecordCard({ record,onFeedback }:{ record:LearnerRecord;onFeedback:(mes
 }
 
 export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback }:{ learnerId:string;isNew:boolean;onContinue:()=>void;onBack?:()=>void;onFeedback:(message:string)=>void }) {
-  const [extraction,setExtraction]=useState<LearnerProfileExtraction|null>(null);const [form,setForm]=useState<EditableProfile>(emptyProfile);
-  useEffect(()=>{void lessonKitApi.getExtractedLearnerProfile(learnerId).then((value)=>{setExtraction(value);setForm(profileFromLearner(value.learner));});},[learnerId]);
-  if(!extraction)return <div className="v2-loading">Preparing learner information…</div>;const learner=extraction.learner;const update=(field:keyof EditableProfile,value:string)=>setForm((current)=>({...current,[field]:value}));
+  const [extraction,setExtraction]=useState<LearnerProfileExtraction|null>(null);const [form,setForm]=useState<EditableProfile>(emptyProfile);const [isLoading,setIsLoading]=useState(true);const [loadError,setLoadError]=useState<string|null>(null);
+  const loadExtraction=useCallback(async()=>{setIsLoading(true);setLoadError(null);try{const value=await lessonKitApi.getExtractedLearnerProfile(learnerId);setExtraction(value);setForm(profileFromLearner(value.learner));}catch(error){setExtraction(null);setLoadError(error instanceof Error?error.message:"Learner information is temporarily unavailable.");}finally{setIsLoading(false);}},[learnerId]);
+  useEffect(()=>{void loadExtraction();},[loadExtraction]);
+  if(isLoading)return <div className="v2-loading" role="status" aria-live="polite">Preparing learner information…</div>;
+  if(loadError||!extraction)return <div className="v2-load-error" role="alert"><Card><span className="v2-load-error__icon" aria-hidden="true">!</span><h2>We couldn’t prepare this learner profile</h2><p>{loadError??"Learner information is temporarily unavailable."}</p><Button onClick={()=>void loadExtraction()}>Try again</Button></Card></div>;
+  const learner=extraction.learner;const update=(field:keyof EditableProfile,value:string)=>setForm((current)=>({...current,[field]:value}));
   const addRecord=async(fileName:string)=>{const record=await lessonKitApi.addRecordForLearner(learnerId,{fileName,fileType:"TXT",text:"Supplemental information for teacher review."});setExtraction((current)=>current?{...current,records:[...current.records,record],analyzedRecordCount:current.analyzedRecordCount+1}:current);onFeedback(`${fileName} added for review.`);};
   const saveAndContinue=async()=>{try{const updated=await lessonKitApi.updateLearner(learnerId,{age:Number(form.age),communicationMode:form.communication,supportNeeds:form.supportNeeds.split(",").map((item)=>item.trim()).filter(Boolean),interests:form.interests.split(",").map((item)=>item.trim()).filter(Boolean),reinforcementPreferences:form.reinforcement.split(",").map((item)=>item.trim()).filter(Boolean),attentionProfile:form.activityFormats,notes:form.notes});await lessonKitApi.confirmLearnerProfile(learnerId,updated.version??1);onFeedback(`${form.code} profile confirmed and saved.`);onContinue();}catch(error){onFeedback(error instanceof Error?error.message:"The learner profile could not be confirmed.");}};
   const replaceFirstRecord=()=>{setExtraction((current)=>current?{...current,records:current.records.map((record,index)=>index===0?{...record,fileName:"Replacement learner summary.pdf",uploadedAt:"Just now",status:"ready"}:record)}:current);onFeedback("The first source record was replaced.");};
