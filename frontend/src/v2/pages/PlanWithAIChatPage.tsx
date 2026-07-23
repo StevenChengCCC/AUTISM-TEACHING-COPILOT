@@ -22,7 +22,7 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
       .catch((error)=>setLoadError(error instanceof Error?error.message:"The lesson conversation could not be loaded."));
   },[learnerId,resumeExisting]);
   async function answer(questionId:string,ids:string[],customAnswer="") { if(!chat)return; setChat(await lessonKitApi.updateAIQuestionAnswer(chat.conversationId,questionId,ids,customAnswer)); }
-  async function generate(){if(!chat?.canGenerate)return;setGenerating(true);try{const value=await lessonKitApi.generateLessonPackageFromDraft(chat.draft);try{await lessonKitApi.createSession({learnerId,status:"draft",goal:value.goal});}catch{onFeedback("The lesson kit was saved, but its session shortcut could not be created.");}onGenerate(value);}catch(error){onFeedback(error instanceof Error?error.message:"Lesson package generation is temporarily unavailable.");}finally{setGenerating(false);}}
+  async function generate(){if(!chat?.canGenerate)return;setGenerating(true);try{const value=await lessonKitApi.generateLessonPackageFromDraft(chat.draft);try{await lessonKitApi.createSession({learnerId,status:"planned",goal:value.goal});}catch{onFeedback("The lesson kit was saved, but its session shortcut could not be created.");}onGenerate(value);}catch(error){onFeedback(error instanceof Error?error.message:"Lesson package generation is temporarily unavailable.");}finally{setGenerating(false);}}
   async function sendMessage(){
     const content=composer.trim();if(!chat||!content||sending)return;
     const firstRequest=chat.questions.length===0;

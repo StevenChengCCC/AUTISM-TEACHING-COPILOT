@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.core.exceptions import NotFoundError
 from app.schemas.v2_dto import (
+    LessonPackageDto,
     LessonSession,
     LessonSessionDto,
     LessonSessionStatDto,
@@ -20,7 +21,25 @@ class V2SessionService:
         self.learners = V2LearnerService(repos)
 
     def list(self) -> list[LessonSession]:
-        return self.repos.sessions.list()
+        sessions = self.repos.sessions.list()
+        if not getattr(self.repos, "is_durable", False):
+            return sessions
+        known = {(item.learner_id, item.goal) for item in sessions}
+        for package in self.repos.lesson_packages.list():
+            if not isinstance(package, LessonPackageDto):
+                continue
+            key = (package.learnerId, package.goal)
+            if key in known:
+                continue
+            recovered = LessonSession(
+                id=f"session-{package.id}",
+                learner_id=package.learnerId,
+                goal=package.goal,
+                status="planned",
+            )
+            sessions.append(self.repos.sessions.save(recovered))
+            known.add(key)
+        return sessions
 
     def list_dtos(self) -> list[LessonSessionDto]:
         return [self.to_dto(session) for session in self.list()]

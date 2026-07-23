@@ -13,6 +13,7 @@ from app.schemas.v2_dto import (
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_repositories import V2Repositories
+from app.services.v2_session_service import V2SessionService
 
 
 def test_v2_health_contract():
@@ -674,6 +675,30 @@ def test_v2_sessions_and_nonlinear_progress_http_contracts():
     assert recorded.json()["independencePercent"] == 50
     assert recorded.json()["sessionsPracticed"] == 18
     assert len(client.get("/api/v2/learners/a102/progress-data").json()) == 7
+
+
+def test_durable_session_list_recovers_shortcuts_for_existing_lesson_packages():
+    repos = V2Repositories()
+    repos.is_durable = True
+    package = V2LessonPackageService(repos).generate_product(
+        LessonDesignDraftDto(
+            id="historical-draft",
+            learnerId="a102",
+            goalText="Learner will complete a self-care routine.",
+            responseLevel="Task sequence",
+            scenarios=["Classroom routine"],
+            selectedMaterials=["Visual Cards", "Data Sheet"],
+            theme="Daily living",
+            duration="10 min",
+            customNotes="Teacher review required.",
+        )
+    )
+
+    sessions = V2SessionService(repos).list()
+
+    recovered = next(item for item in sessions if item.goal == package.goal)
+    assert recovered.status == "planned"
+    assert repos.sessions.get(recovered.id) is not None
 
 
 def test_v2_material_library_browse_create_duplicate_and_attach():
