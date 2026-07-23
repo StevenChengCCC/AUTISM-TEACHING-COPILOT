@@ -1,3 +1,5 @@
 Create a teacher-reviewable Student Learning Profile draft. Cover strengths, interests, communication modalities, response options, receptive and expressive supports, attention and engagement, sensory and environmental considerations, confirmed motivators, prompting history, effective and ineffective supports, independence, mastered and emerging skills, active goals, generalization, break preferences, classroom barriers, and unknown information.
 
 For every proposed value, return a discrete signal with an evidence type, confidence, source record, source page or section and date when available, contradiction state, suggested value, and pending teacher-review state. Preserve contradictory and outdated evidence as separate signals. Paraphrase evidence briefly; never reproduce long source passages.
+
+Only set chronological age when it is explicitly supported by the supplied record text or a teacher-confirmed existing profile value. Use `0` when age is unknown. Never infer age from grade, skill level, writing style, or a demo default.

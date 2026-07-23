@@ -5,7 +5,7 @@ export function LearnerContextBar({ learner, onViewProfile, onChangeLearner }: {
   return (
     <div className="v2-learner-context">
       <span className="v2-learner-avatar">{learner.avatar}</span>
-      <strong>{learner.code}</strong><span>• Age {learner.age}</span>
+      <strong>{learner.code}</strong><span>• {learner.age>0?`Age ${learner.age}`:"Age to confirm"}</span>
       {learner.supportNeeds.slice(0, 2).map((need) => <Tag tone={need.includes("attention") || need.includes("Attention") ? "amber" : "blue"} key={need}>{need}</Tag>)}
       {learner.interests.slice(0, 1).map((interest) => <Tag tone="green" key={interest}>{interest}</Tag>)}
       <div className="v2-context-actions">

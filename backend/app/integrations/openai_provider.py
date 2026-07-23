@@ -16,6 +16,7 @@ from app.schemas.v2_dto import (
     LearnerRecord,
     LessonDesignDraft,
     LessonDesignDraftDto,
+    LessonPlanningResult,
     ProfileExtractionResult,
     ProfileSignal,
 )
@@ -71,8 +72,32 @@ class OpenAIV2AIProvider(V2AIProvider):
             self._client = OpenAI(
                 api_key=self._settings.require_openai_api_key(),
                 timeout=self._settings.OPENAI_TIMEOUT_SECONDS,
+                max_retries=self._settings.OPENAI_MAX_RETRIES,
             )
         return self._client
+
+    def _request_client(self, timeout_seconds: int | None = None) -> Any:
+        """Return a request-scoped client without mutating the shared client.
+
+        Profile extraction has a tighter latency budget than lesson generation.
+        Injected test clients intentionally do not need to implement with_options.
+        """
+
+        client = self._get_client()
+        if timeout_seconds is not None and hasattr(client, "with_options"):
+            return client.with_options(timeout=timeout_seconds)
+        return client
+
+    def _reasoning_options(self, model: str) -> dict[str, Any]:
+        # GPT-4.1 models do not use the GPT-5 reasoning controls. Keeping this
+        # conditional lets profile extraction use a fast non-reasoning model.
+        if model.startswith("gpt-5"):
+            return {
+                "reasoning": {
+                    "effort": self._settings.OPENAI_REASONING_EFFORT,
+                }
+            }
+        return {}
 
     @staticmethod
     def _decode_json(content: str | None) -> dict[str, Any]:
@@ -98,24 +123,33 @@ class OpenAIV2AIProvider(V2AIProvider):
         self,
         prompt: PromptEnvelope,
         response_model: type[BaseModel] | None = None,
+        *,
+        model: str | None = None,
+        timeout_seconds: int | None = None,
     ) -> dict[str, Any]:
         # Resolve configuration before the vendor call so the deliberate, safe
         # missing-key error remains distinct from SDK/network failures.
-        client = self._get_client()
+        client = self._request_client(timeout_seconds)
+        request_model = model or self._settings.OPENAI_TEXT_MODEL
+        reasoning_options = self._reasoning_options(request_model)
+        used_typed_parse = False
         try:
-            if response_model is not None:
+            if response_model is not None and hasattr(client.responses, "parse"):
+                used_typed_parse = True
                 response = client.responses.parse(
-                    model=self._settings.OPENAI_TEXT_MODEL,
+                    model=request_model,
                     instructions=prompt.system_instructions,
                     input=prompt.user_input,
                     text_format=response_model,
+                    **reasoning_options,
                 )
             else:
                 response = client.responses.create(
-                    model=self._settings.OPENAI_TEXT_MODEL,
+                    model=request_model,
                     instructions=prompt.system_instructions,
                     input=prompt.user_input,
                     text={"format": {"type": "json_object"}},
+                    **reasoning_options,
                 )
         except ValidationError as exc:
             raise _OpenAIOutputError(
@@ -126,7 +160,7 @@ class OpenAIV2AIProvider(V2AIProvider):
             raise _OpenAIRequestError(
                 "OpenAI request failed. Check backend provider configuration and try again."
             ) from exc
-        if response_model is not None:
+        if response_model is not None and used_typed_parse:
             parsed = getattr(response, "output_parsed", None)
             if parsed is None:
                 raise _OpenAIOutputError(
@@ -143,15 +177,31 @@ class OpenAIV2AIProvider(V2AIProvider):
             raise _OpenAIOutputError(
                 "The model response had an unexpected shape"
             ) from exc
-        return self._decode_json(content)
+        decoded = self._decode_json(content)
+        if response_model is not None:
+            try:
+                return response_model.model_validate(decoded).model_dump(
+                    mode="json", by_alias=True
+                )
+            except ValidationError as exc:
+                raise _OpenAIOutputError(
+                    "The model response did not match the required schema"
+                ) from exc
+        return decoded
 
-    def _mark_fallback(self, operation: str, skill_id: str, failure_kind: str) -> None:
+    def _mark_fallback(
+        self,
+        operation: str,
+        skill_id: str,
+        failure_kind: str,
+        model: str | None = None,
+    ) -> None:
         self.last_fallback_used = True
         self._record_generation(
             self._registry,
             skill_id,
             status="local_mock",
-            model=self._settings.OPENAI_TEXT_MODEL,
+            model=model or self._settings.OPENAI_TEXT_MODEL,
             output_source="mock_fallback",
         )
         if skill_id == "lesson_generation":
@@ -170,7 +220,11 @@ class OpenAIV2AIProvider(V2AIProvider):
         )
 
     def _handle_provider_failure(
-        self, operation: str, skill_id: str, failure_kind: str
+        self,
+        operation: str,
+        skill_id: str,
+        failure_kind: str,
+        model: str | None = None,
     ) -> None:
         if self._settings.effective_ai_failure_mode == "fail_closed":
             logger.error(
@@ -187,14 +241,14 @@ class OpenAIV2AIProvider(V2AIProvider):
             raise AIProviderFailureError(
                 "AI generation is temporarily unavailable. Please try again later."
             )
-        self._mark_fallback(operation, skill_id, failure_kind)
+        self._mark_fallback(operation, skill_id, failure_kind, model)
 
-    def _success(self, skill_id: str) -> None:
+    def _success(self, skill_id: str, model: str | None = None) -> None:
         self._record_generation(
             self._registry,
             skill_id,
             status="ready",
-            model=self._settings.OPENAI_TEXT_MODEL,
+            model=model or self._settings.OPENAI_TEXT_MODEL,
             output_source="provider",
         )
 
@@ -207,20 +261,24 @@ class OpenAIV2AIProvider(V2AIProvider):
         )
 
     @staticmethod
-    def _validate_question_groups(questions: list[AIQuestion]) -> None:
-        question_ids = {question.id for question in questions}
-        required_ids = {
-            "target-response",
-            "baseline",
-            "response-level",
-            "scenarios",
-            "materials",
-            "data-collection",
-            "duration",
-            "prompting-limits",
-        }
-        if not required_ids.issubset(question_ids):
-            raise _OpenAIOutputError("Required lesson question groups were missing")
+    def _validate_lesson_questions(
+        questions: list[AIQuestion], draft: LessonDesignDraft
+    ) -> None:
+        if not questions:
+            raise _OpenAIOutputError("The lesson planner returned no questions")
+        if not draft.goal_text.strip():
+            raise _OpenAIOutputError("The lesson planner returned no draft goal")
+        if len({question.id for question in questions}) != len(questions):
+            raise _OpenAIOutputError("Lesson question IDs must be unique")
+        for question in questions:
+            if (
+                question.input_type in {"single_select", "multi_select"}
+                and not question.options
+                and not question.allow_custom_answer
+            ):
+                raise _OpenAIOutputError(
+                    "A selection question did not include any answer options"
+                )
 
     def extract_profile(
         self, learner: LearnerProfile, records: list[LearnerRecord]
@@ -248,6 +306,8 @@ class OpenAIV2AIProvider(V2AIProvider):
                     untrusted_input={"records": payload["records"]},
                 ),
                 ProfileExtractionResult,
+                model=self._settings.OPENAI_PROFILE_MODEL,
+                timeout_seconds=self._settings.OPENAI_PROFILE_TIMEOUT_SECONDS,
             )
             extracted_values = result["learner"]
             if not isinstance(extracted_values, dict):
@@ -273,7 +333,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                 raise _OpenAIOutputError("unknownFields must be a list of strings")
             extracted.profile_signals = signals
             extracted.unknown_fields = unknown_fields
-            self._success("learner_profile")
+            self._success("learner_profile", self._settings.OPENAI_PROFILE_MODEL)
             return ProfileExtractionResult(
                 learner=extracted,
                 profileSignals=signals,
@@ -288,7 +348,10 @@ class OpenAIV2AIProvider(V2AIProvider):
             TypeError,
         ) as exc:
             self._handle_provider_failure(
-                "profile extraction", "learner_profile", self._failure_kind(exc)
+                "profile extraction",
+                "learner_profile",
+                self._failure_kind(exc),
+                self._settings.OPENAI_PROFILE_MODEL,
             )
             return self._fallback.extract_profile(learner, records)
 
@@ -307,15 +370,17 @@ class OpenAIV2AIProvider(V2AIProvider):
                     },
                     trusted_input={"learner": build_ai_safe_profile(learner)},
                     untrusted_input={"teacherRequest": teacher_request},
-                )
+                ),
+                LessonPlanningResult,
+                model=self._settings.OPENAI_PLANNING_MODEL,
+                timeout_seconds=self._settings.OPENAI_PLANNING_TIMEOUT_SECONDS,
             )
-            questions = [
-                AIQuestion.model_validate(question) for question in result["questions"]
-            ]
-            self._validate_question_groups(questions)
-            draft = LessonDesignDraft.model_validate(result["draft"])
+            planning = LessonPlanningResult.model_validate(result)
+            questions = planning.questions
+            draft = planning.draft
+            self._validate_lesson_questions(questions, draft)
             draft.learner_id = learner.id
-            self._success("lesson_planning")
+            self._success("lesson_planning", self._settings.OPENAI_PLANNING_MODEL)
             return questions, draft
         except (
             _OpenAIOutputError,
@@ -325,7 +390,10 @@ class OpenAIV2AIProvider(V2AIProvider):
             TypeError,
         ) as exc:
             self._handle_provider_failure(
-                "lesson question generation", "lesson_planning", self._failure_kind(exc)
+                "lesson question generation",
+                "lesson_planning",
+                self._failure_kind(exc),
+                self._settings.OPENAI_PLANNING_MODEL,
             )
             return self._fallback.generate_lesson_questions(learner, teacher_request)
 

@@ -7,5 +7,9 @@ venv/
 storage/
 private-storage/
 .pytest_cache/
+.deepeval/
+*_results.html
+*.db
+tests/
 .DS_Store
 backend-deploy.zip

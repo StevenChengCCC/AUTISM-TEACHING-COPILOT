@@ -509,18 +509,24 @@ def delete_record(
     "/learners/{learner_id}/profile-extraction",
     response_model=LearnerProfileExtractionDto,
 )
+def get_profile_extraction(learner_id: str) -> LearnerProfileExtractionDto:
+    return V2ProfileExtractionService().extract(learner_id)
+
+
 @router.post(
     "/learners/{learner_id}/profile-extraction",
     response_model=LearnerProfileExtractionDto,
     include_in_schema=False,
 )
-def extract_profile(learner_id: str) -> LearnerProfileExtractionDto:
-    return V2ProfileExtractionService().extract(learner_id)
+def regenerate_profile_extraction(learner_id: str) -> LearnerProfileExtractionDto:
+    return V2ProfileExtractionService().extract(learner_id, force=True)
 
 
 @router.post("/lesson-chat/start", response_model=AIChatStateDto, status_code=201)
 def start_lesson_chat(payload: StartLessonChatRequest) -> AIChatStateDto:
-    return V2LessonChatService().start_dto(payload.learnerId)
+    return V2LessonChatService().start_dto(
+        payload.learnerId, resume_existing=payload.resumeExisting
+    )
 
 
 @router.post("/lesson-chat/message", response_model=AIChatStateDto)

@@ -46,6 +46,12 @@ class V2LearnerService:
     def update(self, learner_id: str, payload: LearnerUpdate) -> LearnerProfile:
         learner = self.get(learner_id)
         changes = payload.model_dump(exclude_none=True, exclude={"expected_version"})
+        next_code = changes.get("code")
+        if next_code and any(
+            item.id != learner_id and item.code == next_code
+            for item in self.repos.learners.list()
+        ):
+            raise ConflictError("Learner code already exists")
         if payload.expected_version is not None:
             learner = learner.model_copy(update={"version": payload.expected_version})
         updated = learner.model_copy(update=changes)

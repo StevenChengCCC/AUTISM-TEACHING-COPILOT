@@ -28,7 +28,9 @@ class V2ProfileExtractionService:
         self.ai = ai or get_v2_ai_provider()
         self.upload_security = upload_security
 
-    def extract(self, learner_id: str) -> LearnerProfileExtractionDto:
+    def extract(
+        self, learner_id: str, *, force: bool = False
+    ) -> LearnerProfileExtractionDto:
         learner = self.learners.get(learner_id)
         records = self.records.list_for_learner(learner_id)
         eligible_records = [
@@ -36,6 +38,15 @@ class V2ProfileExtractionService:
             for record in records
             if record.status in {"ready", "reviewed"} and record.effective_text.strip()
         ]
+        if (
+            not force
+            and getattr(self.learners.repos, "is_durable", False)
+            and (
+            learner.profile_review_status in {"reviewed", "confirmed"}
+            or learner.profile_signals
+            )
+        ):
+            return self._current_extraction(learner, records, len(eligible_records))
         if records and not eligible_records:
             raise ValidationError(
                 "Learner records still require parsing, OCR, or teacher text review before profile extraction."
@@ -79,6 +90,31 @@ class V2ProfileExtractionService:
                 if metadata
                 else None
             ),
+        )
+
+    def _current_extraction(
+        self,
+        learner: LearnerProfile,
+        records: list,
+        analyzed_record_count: int,
+    ) -> LearnerProfileExtractionDto:
+        insights = [
+            signal.summary or signal.label
+            for signal in learner.profile_signals
+            if signal.status != "rejected" and (signal.summary or signal.label)
+        ][:6]
+        if not insights:
+            insights = [
+                "Saved learner information is ready for teacher review."
+            ]
+        return LearnerProfileExtractionDto(
+            learner=self.learners.to_dto(learner),
+            records=[self.records.to_dto(record) for record in records],
+            insights=insights,
+            profileSignals=learner.profile_signals,
+            unknownFields=learner.unknown_fields,
+            analyzedRecordCount=analyzed_record_count,
+            status="complete",
         )
 
     @staticmethod
@@ -138,6 +174,14 @@ class V2ProfileExtractionService:
             "activity_duration_preference",
             "independence_profile",
             "generalization_profile",
+        )
+        # Zero represents an unconfirmed age for a newly created draft. Never
+        # overwrite a teacher-confirmed positive age during re-extraction.
+        updates["age"] = current.age if current.age > 0 else extracted.age
+        updates["profile_review_status"] = (
+            "confirmed"
+            if current.profile_review_status == "confirmed"
+            else "reviewed"
         )
         for field in list_fields:
             existing_value = getattr(current, field)

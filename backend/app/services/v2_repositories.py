@@ -261,6 +261,8 @@ def _seed_image_assets() -> list[ImageAssetDto]:
 class V2Repositories:
     """Application repository registry; production wiring can inject persistent adapters."""
 
+    is_durable = False
+
     def __init__(self):
         self.audit_events: list[dict] = []
         learners = [

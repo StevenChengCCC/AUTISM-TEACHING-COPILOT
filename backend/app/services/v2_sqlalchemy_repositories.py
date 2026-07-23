@@ -930,6 +930,8 @@ class RepositoryScope:
 class SQLAlchemyV2Repositories:
     """Organization-scoped durable adapter preserving the existing service API."""
 
+    is_durable = True
+
     def __init__(
         self,
         session_factory: sessionmaker = SessionLocal,

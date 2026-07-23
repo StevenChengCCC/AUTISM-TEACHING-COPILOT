@@ -384,6 +384,29 @@ def test_v2_lesson_chat_product_http_flow():
     assert "Car play" in state["draft"]["customNotes"]
     assert "Visual prompt first" in state["draft"]["customNotes"]
 
+    resumed = client.post(
+        "/api/v2/lesson-chat/start",
+        json={"learnerId": "a102", "resumeExisting": True},
+    )
+    assert resumed.status_code == 201
+    assert resumed.json()["questions"]
+    assert resumed.json()["draft"]["goalText"] == state["draft"]["goalText"]
+
+    fresh = client.post(
+        "/api/v2/lesson-chat/start",
+        json={"learnerId": "a102", "resumeExisting": False},
+    )
+    assert fresh.status_code == 201
+    assert fresh.json()["questions"] == []
+    state = client.post(
+        "/api/v2/lesson-chat/message",
+        json={
+            "conversationId": fresh.json()["conversationId"],
+            "learnerId": "a102",
+            "message": "I want to teach Learner A-102 to ask for help.",
+        },
+    ).json()
+
     custom = client.patch(
         f"/api/v2/lesson-chat/{state['conversationId']}/answers",
         json={

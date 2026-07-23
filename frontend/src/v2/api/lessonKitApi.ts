@@ -30,7 +30,7 @@ export const lessonKitApi = {
     const learner=await lessonKitMockApi.getLearnerById(id);if(!learner)throw new Error("Learner not found");return learner;
   },
   createLearner: (payload:Omit<LearnerProfile,"id">):Promise<LearnerProfile> => useLocalMock ? lessonKitMockApi.createLearner(payload) : backendClient.post("/v2/learners",payload),
-  updateLearner: (id:string,payload:Partial<Omit<LearnerProfile,"id"|"code">>):Promise<LearnerProfile> => useLocalMock ? lessonKitMockApi.updateLearner(id,payload) : backendClient.patch(`/v2/learners/${id}`,payload),
+  updateLearner: (id:string,payload:Partial<Omit<LearnerProfile,"id">> & { expectedVersion?:number }):Promise<LearnerProfile> => useLocalMock ? lessonKitMockApi.updateLearner(id,payload) : backendClient.patch(`/v2/learners/${id}`,payload),
   confirmLearnerProfile: async (id:string,expectedVersion:number):Promise<LearnerProfile> => useLocalMock ? lessonKitMockApi.updateLearner(id,{profileReviewStatus:"confirmed"}) : backendClient.post(`/v2/learners/${id}/profile/confirm`,{expectedVersion}),
   getRecordsForLearner: (id:string):Promise<LearnerRecord[]> => useLocalMock ? lessonKitMockApi.getRecordsForLearner(id) : backendClient.get(`/v2/learners/${id}/records`),
   addRecordForLearner: (id:string,payload:RecordUploadInput):Promise<LearnerRecord> => useLocalMock ? lessonKitMockApi.addRecordForLearner(id,payload) : backendClient.post(`/v2/learners/${id}/records`,payload),
@@ -55,8 +55,8 @@ export const lessonKitApi = {
   },
   getExtractedLearnerProfile: (id:string):Promise<LearnerProfileExtraction> => useLocalMock ? lessonKitMockApi.getExtractedLearnerProfile(id) : backendClient.get(`/v2/learners/${id}/profile-extraction`),
 
-  getInitialLessonChat: async (learnerId:string):Promise<AIChatState> => {
-    const state=useLocalMock?await lessonKitMockApi.getInitialLessonChat(learnerId):await backendClient.post<AIChatState>("/v2/lesson-chat/start",{learnerId});
+  getInitialLessonChat: async (learnerId:string,resumeExisting=false):Promise<AIChatState> => {
+    const state=useLocalMock?await lessonKitMockApi.getInitialLessonChat(learnerId):await backendClient.post<AIChatState>("/v2/lesson-chat/start",{learnerId,resumeExisting});
     return state;
   },
   submitLessonRequest: (conversationId:string,learnerId:string,message:string,currentDraft?:LessonDesignDraft):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.submitLessonRequest(conversationId,message) : backendClient.post("/v2/lesson-chat/message",{conversationId,learnerId,message,currentDraft}),
