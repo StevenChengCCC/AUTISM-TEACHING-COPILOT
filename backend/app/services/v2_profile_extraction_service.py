@@ -175,13 +175,13 @@ class V2ProfileExtractionService:
             "independence_profile",
             "generalization_profile",
         )
-        # Zero represents an unconfirmed age for a newly created draft. Never
-        # overwrite a teacher-confirmed positive age during re-extraction.
-        updates["age"] = current.age if current.age > 0 else extracted.age
-        updates["profile_review_status"] = (
-            "confirmed"
-            if current.profile_review_status == "confirmed"
-            else "reviewed"
+        # Draft ages are unconfirmed. This also repairs legacy drafts created
+        # when the frontend incorrectly prefilled every new learner as age 7.
+        # Once a teacher confirms a profile, re-extraction cannot replace age.
+        updates["age"] = (
+            extracted.age
+            if current.profile_review_status == "draft"
+            else (current.age if current.age > 0 else extracted.age)
         )
         for field in list_fields:
             existing_value = getattr(current, field)

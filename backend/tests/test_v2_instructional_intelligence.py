@@ -6,6 +6,7 @@ from app.core.exceptions import ConflictError
 from app.evaluation.round5_runner import run
 from app.integrations.mock_ai_provider import MockV2AIProvider
 from app.schemas.v2_dto import (
+    LearnerProfile,
     LearnerRecord,
     LessonDesignDraftDto,
     LessonPackageDecisionRequest,
@@ -163,6 +164,38 @@ def test_rejected_signal_requires_a_new_evidence_fingerprint_to_return():
         "signal-old",
         "signal-new",
     }
+
+
+def test_profile_extraction_repairs_unconfirmed_legacy_age_but_preserves_confirmed_age():
+    draft = LearnerProfile(
+        id="legacy-draft",
+        code="Learner N-OLD",
+        age=7,
+        profileReviewStatus="draft",
+    )
+    extracted = draft.model_copy(update={"age": 10})
+    corrected = V2ProfileExtractionService._merge_profile(
+        draft,
+        ProfileExtractionResult(
+            learner=extracted,
+            profileSignals=[],
+            unknownFields=[],
+            insights=[],
+        ),
+    )
+    assert corrected.age == 10
+
+    confirmed = draft.model_copy(update={"profile_review_status": "confirmed"})
+    preserved = V2ProfileExtractionService._merge_profile(
+        confirmed,
+        ProfileExtractionResult(
+            learner=extracted,
+            profileSignals=[],
+            unknownFields=[],
+            insights=[],
+        ),
+    )
+    assert preserved.age == 7
 
 
 def test_lesson_planning_questions_are_dynamic_and_require_teacher_confirmation():
