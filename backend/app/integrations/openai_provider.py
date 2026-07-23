@@ -5,7 +5,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings, settings
 from app.core.exceptions import AIInvalidOutputError, AIProviderFailureError
@@ -94,22 +94,49 @@ class OpenAIV2AIProvider(V2AIProvider):
             raise _OpenAIOutputError("The model response must be a JSON object")
         return parsed
 
-    def _request_json(self, prompt: PromptEnvelope) -> dict[str, Any]:
+    def _request_json(
+        self,
+        prompt: PromptEnvelope,
+        response_model: type[BaseModel] | None = None,
+    ) -> dict[str, Any]:
         # Resolve configuration before the vendor call so the deliberate, safe
         # missing-key error remains distinct from SDK/network failures.
         client = self._get_client()
         try:
-            response = client.responses.create(
-                model=self._settings.OPENAI_TEXT_MODEL,
-                instructions=prompt.system_instructions,
-                input=prompt.user_input,
-                text={"format": {"type": "json_object"}},
-            )
+            if response_model is not None:
+                response = client.responses.parse(
+                    model=self._settings.OPENAI_TEXT_MODEL,
+                    instructions=prompt.system_instructions,
+                    input=prompt.user_input,
+                    text_format=response_model,
+                )
+            else:
+                response = client.responses.create(
+                    model=self._settings.OPENAI_TEXT_MODEL,
+                    instructions=prompt.system_instructions,
+                    input=prompt.user_input,
+                    text={"format": {"type": "json_object"}},
+                )
+        except ValidationError as exc:
+            raise _OpenAIOutputError(
+                "The model response did not match the required schema"
+            ) from exc
         except Exception as exc:
             # Do not leak credentials, learner content, or vendor response details.
             raise _OpenAIRequestError(
                 "OpenAI request failed. Check backend provider configuration and try again."
             ) from exc
+        if response_model is not None:
+            parsed = getattr(response, "output_parsed", None)
+            if parsed is None:
+                raise _OpenAIOutputError(
+                    "The model returned no schema-compatible content"
+                )
+            if not isinstance(parsed, response_model):
+                raise _OpenAIOutputError(
+                    "The model returned an unexpected parsed response type"
+                )
+            return parsed.model_dump(mode="json", by_alias=True)
         try:
             content = response.output_text
         except (AttributeError, TypeError) as exc:
@@ -219,7 +246,8 @@ class OpenAIV2AIProvider(V2AIProvider):
                     },
                     trusted_input={"learner": payload["learner"]},
                     untrusted_input={"records": payload["records"]},
-                )
+                ),
+                ProfileExtractionResult,
             )
             extracted_values = result["learner"]
             if not isinstance(extracted_values, dict):
