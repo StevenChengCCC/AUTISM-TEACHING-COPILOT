@@ -180,7 +180,7 @@ export function UploadRecordsPage({
           <div className="v2-upload-learner">
             <span>{learner?.avatar ?? "🧒🏻"}</span>
             <div>
-              <h2>{learner?.code ?? "Learner N-501"} <small>· Age {learner?.age ?? 7}</small></h2>
+              <h2>{learner?.code ?? "New learner"} <small>· {learner?.age && learner.age>0?`Age ${learner.age}`:"Age to confirm"}</small></h2>
               <div>{learner?.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>
             </div>
           </div>

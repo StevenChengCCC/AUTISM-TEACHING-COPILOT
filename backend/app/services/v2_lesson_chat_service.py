@@ -28,10 +28,16 @@ class V2LessonChatService:
         self.learners = V2LearnerService(repos)
         self.ai = ai or get_v2_ai_provider()
 
-    def start(self, learner_id: str) -> AIChatState:
+    def start(
+        self, learner_id: str, *, resume_existing: bool = False
+    ) -> AIChatState:
         self.learners.get(learner_id)
+        conversation_id = f"conversation-{learner_id}"
+        existing = self.repos.chats.get(conversation_id)
+        if resume_existing and existing is not None:
+            return existing
         chat = AIChatState(
-            conversation_id=f"conversation-{learner_id}",
+            conversation_id=conversation_id,
             learner_id=learner_id,
             messages=[
                 AIMessage(
@@ -46,8 +52,12 @@ class V2LessonChatService:
         )
         return self.repos.chats.save(chat)
 
-    def start_dto(self, learner_id: str) -> AIChatStateDto:
-        return self.to_dto(self.start(learner_id))
+    def start_dto(
+        self, learner_id: str, *, resume_existing: bool = False
+    ) -> AIChatStateDto:
+        return self.to_dto(
+            self.start(learner_id, resume_existing=resume_existing)
+        )
 
     def submit_request(self, conversation_id: str, content: str) -> AIChatState:
         chat = self._get(conversation_id)

@@ -13,7 +13,10 @@ from app.integrations.openai_provider import OpenAIV2AIProvider
 from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerRecord,
+    AIQuestion,
+    LessonDesignDraft,
     LessonDesignDraftDto,
+    LessonPlanningResult,
     ProfileExtractionResult,
 )
 from app.services.v2_lesson_chat_service import V2LessonChatService
@@ -24,8 +27,10 @@ from app.services.v2_repositories import V2Repositories
 class _FakeResponses:
     def __init__(self, content: str) -> None:
         self.content = content
+        self.request = None
 
-    def create(self, **_kwargs):
+    def create(self, **kwargs):
+        self.request = kwargs
         return SimpleNamespace(output_text=self.content)
 
 
@@ -36,8 +41,10 @@ def _fake_client(content: str):
 class _FakeParsedResponses:
     def __init__(self) -> None:
         self.text_format = None
+        self.request = None
 
     def parse(self, **kwargs):
+        self.request = kwargs
         self.text_format = kwargs["text_format"]
         return SimpleNamespace(
             output_parsed=ProfileExtractionResult(
@@ -50,6 +57,42 @@ class _FakeParsedResponses:
                 profileSignals=[],
                 unknownFields=[],
                 insights=["Use visual supports"],
+            )
+        )
+
+
+class _FakePlanningResponses:
+    def __init__(self) -> None:
+        self.request = None
+
+    def parse(self, **kwargs):
+        self.request = kwargs
+        return SimpleNamespace(
+            output_parsed=LessonPlanningResult(
+                questions=[
+                    AIQuestion(
+                        id="counting-range",
+                        prompt="What counting range should the lesson target?",
+                        field="goalText",
+                        inputType="single_select",
+                        options=[
+                            {
+                                "id": "one-to-five",
+                                "label": "1 to 5",
+                                "value": "Count from 1 to 5",
+                            }
+                        ],
+                        selectedOptionIds=["one-to-five"],
+                        required=True,
+                    )
+                ],
+                draft=LessonDesignDraft(
+                    id="generated-draft",
+                    learnerId="a102",
+                    goalText="Learner will count objects from 1 to 5.",
+                    responseLevel="Point and count",
+                    selectedMaterials=["Visual Cards"],
+                ),
             )
         )
 
@@ -139,9 +182,63 @@ def test_profile_extraction_uses_typed_responses_parse():
     result = provider.extract_profile(learner, [record])
 
     assert responses.text_format is ProfileExtractionResult
+    assert responses.request["model"] == "gpt-4.1-mini"
+    assert "reasoning" not in responses.request
     assert result.learner.communication_mode == "Short phrases"
     assert result.insights == ["Use visual supports"]
     assert provider.last_fallback_used is False
+    assert provider.last_generation_metadata.model == "gpt-4.1-mini"
+
+
+def test_gpt5_requests_use_configured_low_reasoning_effort():
+    config = Settings(
+        _env_file=None,
+        AI_PROVIDER="openai",
+        OPENAI_API_KEY="not-a-real-key",
+        OPENAI_REASONING_EFFORT="low",
+    )
+    responses = _FakeResponses('{"lessonBrief":"A concise lesson brief."}')
+    provider = OpenAIV2AIProvider(
+        config, client=SimpleNamespace(responses=responses)
+    )
+
+    result = provider.polish_lesson_brief(
+        LessonDesignDraft(
+            id="draft-test",
+            learnerId="a102",
+            goalText="Ask for help.",
+            responseLevel="Short phrase",
+            theme="Vehicles",
+            duration="10 minutes",
+            customNotes="",
+        )
+    )
+
+    assert result == "A concise lesson brief."
+    assert responses.request["model"] == "gpt-5.5"
+    assert responses.request["reasoning"] == {"effort": "low"}
+
+
+def test_lesson_planning_accepts_dynamic_question_ids_and_uses_fast_model():
+    config = Settings(
+        _env_file=None,
+        AI_PROVIDER="openai",
+        OPENAI_API_KEY="not-a-real-key",
+        OPENAI_PLANNING_MODEL="gpt-4.1-mini",
+    )
+    responses = _FakePlanningResponses()
+    provider = OpenAIV2AIProvider(
+        config, client=SimpleNamespace(responses=responses)
+    )
+
+    questions, draft = provider.generate_lesson_questions(
+        LearnerProfile(id="a102", code="Learner A-102", age=7),
+        "I want to teach counting numbers.",
+    )
+
+    assert questions[0].id == "counting-range"
+    assert draft.goal_text == "Learner will count objects from 1 to 5."
+    assert responses.request["model"] == "gpt-4.1-mini"
 
 
 def test_fail_closed_mode_never_returns_realistic_mock_content():

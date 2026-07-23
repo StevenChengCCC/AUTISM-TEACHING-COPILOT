@@ -63,8 +63,16 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr | None = None
     OPENAI_MODEL: str = "gpt-5.5"  # Compatibility alias for the legacy adapter.
     OPENAI_TEXT_MODEL: str = "gpt-5.5"
+    OPENAI_PROFILE_MODEL: str = "gpt-4.1-mini"
+    OPENAI_PLANNING_MODEL: str = "gpt-4.1-mini"
     OPENAI_IMAGE_MODEL: str = "gpt-image-2"
     OPENAI_TIMEOUT_SECONDS: int = 60
+    OPENAI_PROFILE_TIMEOUT_SECONDS: int = 45
+    OPENAI_PLANNING_TIMEOUT_SECONDS: int = 45
+    OPENAI_MAX_RETRIES: int = 0
+    OPENAI_REASONING_EFFORT: Literal["none", "low", "medium", "high", "xhigh"] = (
+        "low"
+    )
     IMAGE_SEARCH_TIMEOUT_SECONDS: int = 10
     IMAGE_ASSET_STRATEGY: Literal["generate_first", "reuse_search_generate"] = (
         "generate_first"

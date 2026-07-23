@@ -188,6 +188,7 @@ class LearnerCreate(V2Model):
 
 
 class LearnerUpdate(V2Model):
+    code: str | None = None
     age: int | None = None
     tags: list[str] | None = None
     interests: list[str] | None = None
@@ -404,6 +405,13 @@ class LessonDesignDraft(V2Model):
     generalization_plan: str = "Practice across examples, people, and settings"
     teacher_constraints: str = ""
     version: int = 1
+
+
+class LessonPlanningResult(V2Model):
+    """Typed provider contract for dynamic lesson questions and their draft."""
+
+    questions: list[AIQuestion] = Field(min_length=1)
+    draft: LessonDesignDraft
 
 
 class AIChatState(V2Model):
@@ -1143,6 +1151,7 @@ class ProgressDataPointDto(V2Model):
 
 class StartLessonChatRequest(V2Model):
     learnerId: str
+    resumeExisting: bool = False
 
 
 class LessonChatMessageRequest(V2Model):

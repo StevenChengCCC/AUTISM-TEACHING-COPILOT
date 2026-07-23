@@ -31,8 +31,12 @@ def test_openai_defaults_and_missing_key_fail_safely_at_runtime():
     settings = Settings(_env_file=None, AI_PROVIDER="openai", OPENAI_API_KEY=None)
 
     assert settings.OPENAI_TEXT_MODEL == "gpt-5.5"
+    assert settings.OPENAI_PROFILE_MODEL == "gpt-4.1-mini"
     assert settings.OPENAI_IMAGE_MODEL == "gpt-image-2"
     assert settings.OPENAI_TIMEOUT_SECONDS == 60
+    assert settings.OPENAI_PROFILE_TIMEOUT_SECONDS == 45
+    assert settings.OPENAI_MAX_RETRIES == 0
+    assert settings.OPENAI_REASONING_EFFORT == "low"
     provider = get_v2_ai_provider(settings)
     assert isinstance(provider, OpenAIV2AIProvider)
 
