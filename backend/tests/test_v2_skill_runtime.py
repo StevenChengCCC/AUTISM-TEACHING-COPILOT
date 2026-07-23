@@ -104,6 +104,7 @@ def test_prompt_assembly_keeps_untrusted_record_text_out_of_system_prompt():
     assert raw_text in prompt.user_input
     assert "Global safety boundary" in prompt.system_instructions
     assert "Output contract" in prompt.system_instructions
+    assert "JSON object" in prompt.user_input
     assert "UNTRUSTED_CONTENT" in prompt.user_input
 
 
