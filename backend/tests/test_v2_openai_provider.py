@@ -10,7 +10,12 @@ from app.core.exceptions import (
 from app.integrations.ai_provider import get_v2_ai_provider
 from app.integrations.mock_ai_provider import MockV2AIProvider
 from app.integrations.openai_provider import OpenAIV2AIProvider
-from app.schemas.v2_dto import LearnerProfile, LessonDesignDraftDto
+from app.schemas.v2_dto import (
+    LearnerProfile,
+    LearnerRecord,
+    LessonDesignDraftDto,
+    ProfileExtractionResult,
+)
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_repositories import V2Repositories
@@ -26,6 +31,27 @@ class _FakeResponses:
 
 def _fake_client(content: str):
     return SimpleNamespace(responses=_FakeResponses(content))
+
+
+class _FakeParsedResponses:
+    def __init__(self) -> None:
+        self.text_format = None
+
+    def parse(self, **kwargs):
+        self.text_format = kwargs["text_format"]
+        return SimpleNamespace(
+            output_parsed=ProfileExtractionResult(
+                learner=LearnerProfile(
+                    id="a102",
+                    code="Learner A-102",
+                    age=7,
+                    communicationMode="Short phrases",
+                ),
+                profileSignals=[],
+                unknownFields=[],
+                insights=["Use visual supports"],
+            )
+        )
 
 
 class _FakeImages:
@@ -89,6 +115,33 @@ def test_malformed_openai_output_uses_deterministic_mock_fallback():
     assert provider.last_fallback_used is True
     assert draft.learner_id == "a102"
     assert draft.goal_text == "Learner will ask for help using a short phrase."
+
+
+def test_profile_extraction_uses_typed_responses_parse():
+    config = Settings(
+        _env_file=None, AI_PROVIDER="openai", OPENAI_API_KEY="not-a-real-key"
+    )
+    responses = _FakeParsedResponses()
+    provider = OpenAIV2AIProvider(
+        config, client=SimpleNamespace(responses=responses)
+    )
+    learner = LearnerProfile(id="a102", code="Learner A-102", age=7)
+    record = LearnerRecord(
+        id="record-1",
+        learnerId="a102",
+        fileName="synthetic.txt",
+        fileType="TXT",
+        status="ready",
+        uploadedAt="2026-07-23T00:00:00Z",
+        extractedText="Synthetic classroom note.",
+    )
+
+    result = provider.extract_profile(learner, [record])
+
+    assert responses.text_format is ProfileExtractionResult
+    assert result.learner.communication_mode == "Short phrases"
+    assert result.insights == ["Use visual supports"]
+    assert provider.last_fallback_used is False
 
 
 def test_fail_closed_mode_never_returns_realistic_mock_content():
