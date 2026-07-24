@@ -928,3 +928,46 @@ class MockV2AIProvider(V2AIProvider):
             "promptUsed": prompt_used,
             "fallbackUsed": False,
         }
+
+    def revise_lesson_section(
+        self,
+        *,
+        section_label: str,
+        current_text: str,
+        instruction: str,
+        lesson_context: dict,
+    ) -> str:
+        del lesson_context
+        self._mark_local_mock("lesson_generation")
+        clean = " ".join(current_text.split())
+        original = clean
+        request = instruction.casefold()
+        if "short" in request or "简短" in request:
+            clean = clean.split(". ")[0].strip()
+            if clean == original and len(clean.split()) > 5:
+                words = clean.rstrip(".").split()
+                clean = " ".join(words[: max(5, int(len(words) * 0.7))]) + "."
+        elif "simple" in request or "simpl" in request or "简单" in request:
+            clean = (
+                clean.replace("utilize", "use")
+                .replace("in order to", "to")
+                .replace("approximately", "about")
+            )
+        elif "prompt" in request or "提示" in request:
+            clean = (
+                f"{clean.rstrip('.')} Wait 5 seconds, begin with a visual cue, "
+                "and fade to less support after successful attempts."
+            )
+        elif "concrete" in request or "具体" in request:
+            clean = (
+                f"{clean.rstrip('.')} Model one familiar example, give the learner "
+                "a clear opportunity to respond, and record the support used."
+            )
+        else:
+            clean = (
+                f"{clean.rstrip('.')} Revised for {section_label.lower()} using the "
+                "teacher's requested focus."
+            )
+        if clean == original:
+            clean = f"{clean.rstrip('.')} Updated for the teacher's selected focus."
+        return clean.strip()
