@@ -4,7 +4,6 @@ import logging
 
 from app.core.config import Settings, settings
 from app.core.exceptions import (
-    AIInvalidOutputError,
     AIProviderFailureError,
     AppError,
     ConflictError,
@@ -194,14 +193,14 @@ class V2LessonPackageService:
                 generated_content.get("materials"), draft
             )
         )
-        is_real_provider_output = bool(
-            generation_metadata and generation_metadata.output_source == "provider"
-        )
-        if invalid_provider_output and is_real_provider_output:
-            raise AIInvalidOutputError(
-                "AI returned an incomplete lesson package. Please retry."
-            )
         if invalid_provider_output:
+            logger.warning(
+                "lesson_package_structural_defaults_applied",
+                extra={
+                    "event": "lesson_package_structural_defaults_applied",
+                    "provider": provider_name,
+                },
+            )
             fallback_used = True
         teaching_flow = self._parse_product_flow(
             generated_content.get("teachingFlow"), fallback_content["teachingFlow"]
@@ -810,7 +809,7 @@ class V2LessonPackageService:
     @staticmethod
     def _material_type_for_selection(value: str) -> str | None:
         normalized = " ".join(value.replace("_", " ").casefold().split())
-        return {
+        exact = {
             "visual cards": "visual_card",
             "visual card": "visual_card",
             "choice board": "choice_board",
@@ -833,6 +832,33 @@ class V2LessonPackageService:
             "summary template": "summary_template",
             "handoff note": "handoff_note",
         }.get(normalized)
+        if exact:
+            return exact
+        if "first then" in normalized or "first-then" in normalized:
+            return "first_then_board"
+        if "token" in normalized or "reward" in normalized:
+            return "token_board"
+        if "choice" in normalized:
+            return "choice_board"
+        if "help" in normalized:
+            return "help_card"
+        if "break" in normalized:
+            return "break_card"
+        if "sort" in normalized:
+            return "sorting_page"
+        if "match" in normalized:
+            return "matching_page"
+        if "scenario" in normalized:
+            return "scenario_cards"
+        if "data" in normalized or "tracking" in normalized:
+            return "data_sheet"
+        if "summary" in normalized:
+            return "summary_template"
+        if "teacher" in normalized and ("cue" in normalized or "prompt" in normalized):
+            return "teacher_cue_card"
+        if "card" in normalized or "picture" in normalized or "visual" in normalized:
+            return "visual_card"
+        return None
 
     def _build_product_materials(
         self,
