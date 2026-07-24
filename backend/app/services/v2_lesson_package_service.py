@@ -31,6 +31,8 @@ from app.schemas.v2_dto import (
     LessonPackageDto,
     LessonPackageDecisionRequest,
     LessonPackageRegenerateSectionRequest,
+    LessonSectionEditPreviewDto,
+    LessonSectionEditPreviewRequest,
     LessonPackageUpdateRequest,
     LessonPackageVersionComparisonDto,
     LessonPackageVersionDto,
@@ -576,6 +578,42 @@ class V2LessonPackageService:
             raise ValidationError("The requested section is not available")
         regenerated = self._reevaluate_product(package.model_copy(update=updates))
         return self.repos.lesson_packages.save(regenerated)
+
+    def preview_section_edit(
+        self,
+        package_id: str,
+        payload: LessonSectionEditPreviewRequest,
+    ) -> LessonSectionEditPreviewDto:
+        package = self.get_product(package_id)
+        if package.version != payload.expectedVersion:
+            from app.core.exceptions import VersionConflictError
+
+            raise VersionConflictError(
+                "The lesson package changed after it was loaded. Refresh and try again."
+            )
+        revised = self.ai.revise_lesson_section(
+            section_label=payload.sectionLabel,
+            current_text=payload.currentText,
+            instruction=payload.instruction,
+            lesson_context={
+                "goal": package.goal,
+                "theme": package.theme,
+                "duration": package.duration,
+                "learnerId": package.learnerId,
+            },
+        ).strip()
+        if not revised:
+            raise ValidationError("The AI revision was empty. Nothing was changed.")
+        return LessonSectionEditPreviewDto(
+            packageId=package.id,
+            sectionId=payload.sectionId,
+            sectionLabel=payload.sectionLabel,
+            beforeText=payload.currentText,
+            revisedText=revised,
+            instruction=payload.instruction,
+            providerUsed=self.ai.provider_name,
+            fallbackUsed=bool(getattr(self.ai, "last_fallback_used", False)),
+        )
 
     def list_product_versions(self, package_id: str) -> list[LessonPackageVersionDto]:
         self.get_product(package_id)
