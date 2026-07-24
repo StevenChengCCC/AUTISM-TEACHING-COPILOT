@@ -2,6 +2,13 @@ import { clearSession, getBearerToken, refreshSession } from "../auth/authSessio
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000/api";
 
+export function resolveBackendAssetUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  if (value.startsWith("data:") || /^https?:\/\//.test(value)) return value;
+  const backendOrigin = new URL(API_BASE, window.location.origin).origin;
+  return `${backendOrigin}${value.startsWith("/") ? value : `/${value}`}`;
+}
+
 type RequestOptions = Omit<RequestInit, "body"> & { body?: unknown };
 
 export class LessonKitApiError extends Error {

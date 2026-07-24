@@ -99,7 +99,20 @@ def test_generate_first_adds_three_reviewable_images_and_reuses_cache(tmp_path):
     packages = V2LessonPackageService(repos, ai=provider, images=images)
 
     first = packages.generate_product(lesson_draft())
+    assert provider.image_calls == []
+    first = packages.queue_product_images(first.id)
+    assert all(
+        material.content.get("imageGenerationStatus") == "pending"
+        for material in first.materials
+        if material.type in {"visual_card", "help_card", "token_board"}
+    )
+    packages.prepare_product_images(first.id)
+    first = packages.get_product(first.id)
+
     second = packages.generate_product(lesson_draft())
+    packages.queue_product_images(second.id)
+    packages.prepare_product_images(second.id)
+    second = packages.get_product(second.id)
 
     assert len(provider.image_calls) == 3
     visual_types = {"visual_card", "help_card", "token_board"}
@@ -135,7 +148,14 @@ def test_failed_generation_still_builds_package_and_caches_fallback():
     packages = V2LessonPackageService(repos, ai=provider, images=images)
 
     first = packages.generate_product(lesson_draft())
+    packages.queue_product_images(first.id)
+    packages.prepare_product_images(first.id)
+    first = packages.get_product(first.id)
+
     second = packages.generate_product(lesson_draft())
+    packages.queue_product_images(second.id)
+    packages.prepare_product_images(second.id)
+    second = packages.get_product(second.id)
 
     assert len(provider.image_calls) == 3
     assert first.lessonBrief and second.lessonBrief

@@ -208,17 +208,26 @@ class V2ImageAssetService:
         prompt: str,
         style: str | None = None,
         size: str | None = "1024x1024",
+        *,
+        allow_generation: bool = True,
+        allow_external_search: bool = True,
+        force_generation: bool = False,
     ) -> ImageAssetDto:
         normalized_concept = _normalize(concept)
         normalized_material_type = _normalize(material_type)
-        cached = self._find_cached_asset(
-            normalized_concept, normalized_material_type
-        )
-        if cached:
-            self._attach_if_present(material_id, cached)
-            return cached
+        if not force_generation:
+            cached = self._find_cached_asset(
+                normalized_concept, normalized_material_type
+            )
+            if cached:
+                self._attach_if_present(material_id, cached)
+                return cached
 
-        if self.config.IMAGE_ASSET_STRATEGY == "reuse_search_generate":
+        if (
+            allow_external_search
+            and not force_generation
+            and self.config.IMAGE_ASSET_STRATEGY == "reuse_search_generate"
+        ):
             external = self._first_external_candidate(
                 normalized_concept, normalized_material_type
             )
@@ -226,24 +235,26 @@ class V2ImageAssetService:
                 self._attach_if_present(material_id, external)
                 return external
 
-        generated = self._generate_asset(
-            learner_id,
-            normalized_concept,
-            normalized_material_type,
-            prompt,
-            style,
-            size,
-        )
-        if generated:
-            self._attach_if_present(material_id, generated)
-            return generated
+        if allow_generation:
+            generated = self._generate_asset(
+                learner_id,
+                normalized_concept,
+                normalized_material_type,
+                prompt,
+                style,
+                size,
+            )
+            if generated:
+                self._attach_if_present(material_id, generated)
+                return generated
 
-        external = self._first_external_candidate(
-            normalized_concept, normalized_material_type
-        )
-        if external:
-            self._attach_if_present(material_id, external)
-            return external
+        if allow_external_search:
+            external = self._first_external_candidate(
+                normalized_concept, normalized_material_type
+            )
+            if external:
+                self._attach_if_present(material_id, external)
+                return external
 
         internal = self.find_internal_candidates(
             normalized_concept, normalized_material_type, 1

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from app.core.config import Settings, settings
 from app.core.exceptions import (
     AIInvalidOutputError,
@@ -56,8 +58,12 @@ from app.services.v2_ai_context_service import (
     personalization_sources,
 )
 from app.services.v2_learner_service import V2LearnerService
+from app.services.v2_material_service import V2MaterialService
 from app.services.v2_safety_harness_service import V2SafetyHarnessService
 from app.services.v2_standards_skill_service import V2StandardsSkillService
+
+
+logger = logging.getLogger(__name__)
 
 
 class V2LessonPackageService:
@@ -220,7 +226,6 @@ class V2LessonPackageService:
                 )
                 for material in materials
             ]
-        self._prepare_product_material_images(learner, materials)
         safety_review = self.safety.review_product(draft, generated_content)
         standards_checks = self.standards.evaluate_product(
             draft, materials, generated_content
@@ -364,6 +369,93 @@ class V2LessonPackageService:
             for material in materials:
                 self.repos.generated_materials.save(material)
         return package
+
+    def queue_product_images(self, package_id: str) -> LessonPackageDto:
+        """Mark visual materials pending without calling an external provider."""
+
+        package = self.get_product(package_id)
+        material_service = V2MaterialService(self.repos)
+        for material in package.materials:
+            if material.type not in {"visual_card", "help_card", "token_board"}:
+                continue
+            if not str(material.content.get("imageConcept") or "").strip():
+                continue
+            material_service.set_image_generation_status(material.id, "pending")
+        return self.get_product(package_id)
+
+    def prepare_product_images(self, package_id: str) -> None:
+        """Generate package images after the package response has been returned."""
+
+        package = self.get_product(package_id)
+        for material in package.materials:
+            if material.type not in {"visual_card", "help_card", "token_board"}:
+                continue
+            if not str(material.content.get("imageConcept") or "").strip():
+                continue
+            try:
+                self.prepare_material_image(material.id)
+            except Exception:
+                logger.warning(
+                    "material_image_generation_failed",
+                    extra={
+                        "event": "material_image_generation_failed",
+                        "material_id": material.id,
+                    },
+                )
+                try:
+                    V2MaterialService(self.repos).set_image_generation_status(
+                        material.id,
+                        "failed",
+                        "Artwork could not be generated. The lesson material is still available.",
+                    )
+                except Exception:
+                    logger.warning(
+                        "material_image_failure_status_not_saved",
+                        extra={
+                            "event": "material_image_failure_status_not_saved",
+                            "material_id": material.id,
+                        },
+                    )
+
+    def prepare_material_image(
+        self, material_id: str, *, force_generation: bool = False
+    ) -> GeneratedMaterialDto:
+        material = self.repos.generated_materials.get(material_id)
+        if not material or not isinstance(material, GeneratedMaterialDto):
+            raise NotFoundError("Generated material not found")
+        if material.type not in {"visual_card", "help_card", "token_board"}:
+            raise ValidationError("This material does not require generated artwork")
+        package = self.get_product(material.packageId)
+        learner = self.learners.get(package.learnerId)
+        concept = str(material.content.get("imageConcept") or "").strip()
+        if not concept:
+            raise ValidationError("This material does not have an image concept")
+
+        material_service = V2MaterialService(self.repos)
+        material_service.set_image_generation_status(material.id, "processing")
+        prompt, _ = build_safe_image_prompt(
+            learner,
+            material.type,
+            concept,
+            str(material.content.get("imagePrompt") or ""),
+        )
+        safe_concept = build_image_generation_context(
+            learner, material.type, concept
+        )["concept"]
+        self.images.prepare_generated_image_for_material(
+            learner_id=learner.id,
+            material_id=material.id,
+            material_type=material.type,
+            concept=safe_concept,
+            prompt=prompt,
+            style="clean printable educational illustration",
+            size="1024x1024",
+            force_generation=force_generation,
+        )
+        updated = self.repos.generated_materials.get(material.id)
+        if not updated or not isinstance(updated, GeneratedMaterialDto):
+            raise NotFoundError("Generated material not found")
+        return updated
 
     def get_product(self, package_id: str) -> LessonPackageDto:
         package = self.repos.lesson_packages.get(package_id)
@@ -964,49 +1056,6 @@ class V2LessonPackageService:
         return MockV2AIProvider().generate_lesson_package(
             fallback_draft, learner_context
         )
-
-    def _prepare_product_material_images(
-        self, learner, materials: list[GeneratedMaterialDto]
-    ) -> None:
-        for material in materials:
-            if material.type not in {"visual_card", "help_card", "token_board"}:
-                continue
-            concept = str(material.content.get("imageConcept") or "").strip()
-            if not concept:
-                continue
-            prompt, alt_text = build_safe_image_prompt(
-                learner,
-                material.type,
-                concept,
-                str(material.content.get("imagePrompt") or ""),
-            )
-            safe_concept = build_image_generation_context(
-                learner, material.type, concept
-            )["concept"]
-            asset = self.images.prepare_generated_image_for_material(
-                learner_id=learner.id,
-                material_id=material.id,
-                material_type=material.type,
-                concept=safe_concept,
-                prompt=prompt,
-                style="clean printable educational illustration",
-                size="1024x1024",
-            )
-            content = dict(material.content)
-            content.update(
-                {
-                    "imageConcept": asset.concept,
-                    "imagePrompt": prompt,
-                    "imageAssetId": asset.id,
-                    "imageUrl": asset.imageUrl or asset.thumbnailUrl,
-                    "imageBase64": None if asset.imageUrl else asset.imageBase64,
-                    "imageAltText": alt_text,
-                    "imageSourceType": asset.sourceType,
-                    "imageLicenseInfo": asset.licenseInfo,
-                    "imageSafetyStatus": asset.safetyStatus,
-                }
-            )
-            material.content = content
 
     @staticmethod
     def _build_flow() -> list[TeachingStep]:

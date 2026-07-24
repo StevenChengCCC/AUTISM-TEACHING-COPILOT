@@ -510,6 +510,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                     model=self._settings.OPENAI_IMAGE_MODEL,
                     prompt=safe_prompt,
                     size=requested_size,
+                    quality="low",
                     output_format="png",
                     n=1,
                 )
