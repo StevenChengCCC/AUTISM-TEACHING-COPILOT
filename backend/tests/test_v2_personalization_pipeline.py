@@ -18,6 +18,7 @@ from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_profile_extraction_service import V2ProfileExtractionService
 from app.services.v2_repositories import V2Repositories
+from app.skills.models import GenerationMetadata
 
 
 def _draft(
@@ -222,6 +223,62 @@ def test_package_provider_receives_safe_context_and_generated_content_is_used():
     assert visual.content["phrase"] == "My choice"
     assert package.aiProvider == "recording"
     assert package.fallbackUsed is True
+
+
+class _IncompleteStructuredPackageProvider(_RecordingPackageProvider):
+    provider_name = "openai"
+
+    def __init__(self):
+        super().__init__()
+        self.generation_metadata_by_skill = {}
+        self.last_generation_metadata = GenerationMetadata(
+            status="ready",
+            provider="openai",
+            model="gpt-5.5",
+            skillId="lesson_generation",
+            skillVersion="v1",
+            promptTemplateVersion="v1",
+            inputSchemaVersion="v1",
+            outputSchemaVersion="v1",
+            evaluatorVersion="v1",
+            generatedAt=datetime.now(timezone.utc).isoformat(),
+            outputSource="provider",
+            teacherReviewRequired=True,
+        )
+
+    def generate_lesson_package(self, draft, learner_context=None):
+        self.context = learner_context
+        return {
+            "lessonBrief": "Use short counting practice with teacher support.",
+            "summaryTemplate": "Record the response and prompt level.",
+            "teachingFlow": [{"title": "Incomplete provider step"}],
+            "materials": [],
+        }
+
+
+def test_incomplete_provider_structure_uses_safe_templates_for_custom_materials():
+    repos = V2Repositories()
+    provider = _IncompleteStructuredPackageProvider()
+
+    package = V2LessonPackageService(repos, ai=provider).generate_product(
+        _draft(
+            "a102",
+            "The learner will verbally count from 1 to 5 in order.",
+            theme="Counting and number sequencing",
+            selected=["Number cards 1 to 5", "iPad token board app"],
+        )
+    )
+
+    assert package.lessonBrief == (
+        "Use short counting practice with teacher support."
+    )
+    assert package.fallbackUsed is True
+    assert len(package.teachingFlow) == 5
+    assert {item.type for item in package.materials} == {
+        "visual_card",
+        "token_board",
+        "summary_template",
+    }
 
 
 class _CapturingImageProvider(_RecordingPackageProvider):
