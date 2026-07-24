@@ -1046,6 +1046,25 @@ class LessonPackageRegenerateSectionRequest(V2Model):
     teacherInstructions: str = Field(default="", max_length=2000)
 
 
+class LessonSectionEditPreviewRequest(V2Model):
+    sectionId: str = Field(min_length=1, max_length=120)
+    sectionLabel: str = Field(min_length=1, max_length=160)
+    currentText: str = Field(min_length=1, max_length=12000)
+    instruction: str = Field(min_length=1, max_length=1000)
+    expectedVersion: int = Field(ge=1)
+
+
+class LessonSectionEditPreviewDto(V2Model):
+    packageId: str
+    sectionId: str
+    sectionLabel: str
+    beforeText: str
+    revisedText: str
+    instruction: str
+    providerUsed: str
+    fallbackUsed: bool = False
+
+
 class LessonPackageVersionDto(V2Model):
     packageId: str
     version: int
@@ -1207,6 +1226,12 @@ class LessonPackageExportRequest(V2Model):
     format: Literal["pdf", "docx", "pptx", "zip"] = "zip"
     materialIds: list[str] = Field(default_factory=list)
     reviewedConfirmation: bool = False
+
+
+class PrintableLessonKitRequest(V2Model):
+    materialIds: list[str] = Field(default_factory=list)
+    pageSize: Literal["Letter", "A4"] = "Letter"
+    reviewedConfirmation: Literal[True]
 
 
 class HandoffSectionSelectionDto(V2Model):

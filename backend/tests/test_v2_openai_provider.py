@@ -219,6 +219,43 @@ def test_gpt5_requests_use_configured_low_reasoning_effort():
     assert responses.request["reasoning"] == {"effort": "low"}
 
 
+def test_lesson_package_uses_fast_dedicated_model_without_reasoning_controls():
+    config = Settings(
+        _env_file=None,
+        AI_PROVIDER="openai",
+        OPENAI_API_KEY="not-a-real-key",
+        OPENAI_TEXT_MODEL="gpt-5.5",
+        OPENAI_PACKAGE_MODEL="gpt-4.1-mini",
+        OPENAI_PACKAGE_TIMEOUT_SECONDS=45,
+    )
+    responses = _FakeResponses(
+        '{"lessonBrief":"Practice counting with brief teacher support.",'
+        '"summaryTemplate":"Record independence and prompt level."}'
+    )
+    provider = OpenAIV2AIProvider(
+        config, client=SimpleNamespace(responses=responses)
+    )
+
+    generated = provider.generate_lesson_package(
+        LessonDesignDraftDto(
+            id="draft-counting",
+            learnerId="a102",
+            goalText="The learner will count from 1 to 5.",
+            responseLevel="Verbal counting",
+            scenarios=["Count five classroom objects"],
+            selectedMaterials=["Number cards 1 to 5"],
+            theme="Counting",
+            duration="5 minutes",
+            customNotes="Use short directions.",
+        )
+    )
+
+    assert generated["lessonBrief"].startswith("Practice counting")
+    assert responses.request["model"] == "gpt-4.1-mini"
+    assert "reasoning" not in responses.request
+    assert provider.last_generation_metadata.model == "gpt-4.1-mini"
+
+
 def test_lesson_planning_accepts_dynamic_question_ids_and_uses_fast_model():
     config = Settings(
         _env_file=None,

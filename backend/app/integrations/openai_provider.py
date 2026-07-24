@@ -34,6 +34,10 @@ class _OpenAIRequestError(RuntimeError):
     """A sanitized vendor request failure safe to handle at the provider boundary."""
 
 
+class _LessonSectionRevision(BaseModel):
+    revisedText: str
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -442,7 +446,11 @@ class OpenAIV2AIProvider(V2AIProvider):
                 },
                 supplemental_skills=(material_skill,),
             )
-            result = self._request_json(prompt)
+            result = self._request_json(
+                prompt,
+                model=self._settings.OPENAI_PACKAGE_MODEL,
+                timeout_seconds=self._settings.OPENAI_PACKAGE_TIMEOUT_SECONDS,
+            )
             lesson_brief = result["lessonBrief"]
             summary_template = result["summaryTemplate"]
             if not all(
@@ -461,12 +469,14 @@ class OpenAIV2AIProvider(V2AIProvider):
                 generated["teachingFlow"] = result["teachingFlow"]
             if isinstance(result.get("materials"), list):
                 generated["materials"] = result["materials"]
-            self._success("lesson_generation")
+            self._success(
+                "lesson_generation", self._settings.OPENAI_PACKAGE_MODEL
+            )
             self._record_generation(
                 self._registry,
                 "material_generation",
                 status="ready",
-                model=self._settings.OPENAI_TEXT_MODEL,
+                model=self._settings.OPENAI_PACKAGE_MODEL,
                 output_source="provider",
                 set_last=False,
             )
@@ -476,8 +486,67 @@ class OpenAIV2AIProvider(V2AIProvider):
                 "lesson package generation",
                 "lesson_generation",
                 self._failure_kind(exc),
+                self._settings.OPENAI_PACKAGE_MODEL,
             )
             return self._fallback.generate_lesson_package(draft, learner_context)
+
+    def revise_lesson_section(
+        self,
+        *,
+        section_label: str,
+        current_text: str,
+        instruction: str,
+        lesson_context: dict[str, Any],
+    ) -> str:
+        self.last_fallback_used = False
+        try:
+            skill = self._registry.get("lesson_generation")
+            result = self._request_json(
+                self._prompts.build(
+                    skill,
+                    output_contract={
+                        "revisedText": (
+                            "the complete replacement text for only the selected "
+                            "section; no markdown and no commentary"
+                        )
+                    },
+                    trusted_input={
+                        "sectionLabel": section_label,
+                        "lessonContext": lesson_context,
+                    },
+                    untrusted_input={
+                        "currentSectionText": current_text,
+                        "teacherEditInstruction": instruction,
+                    },
+                ),
+                _LessonSectionRevision,
+                model=self._settings.OPENAI_PACKAGE_MODEL,
+                timeout_seconds=self._settings.OPENAI_PACKAGE_TIMEOUT_SECONDS,
+            )
+            revised = str(result.get("revisedText") or "").strip()
+            if not revised:
+                raise _OpenAIOutputError("The section revision was empty")
+            self._success("lesson_generation", self._settings.OPENAI_PACKAGE_MODEL)
+            return revised
+        except (
+            _OpenAIOutputError,
+            _OpenAIRequestError,
+            ValidationError,
+            KeyError,
+            TypeError,
+        ) as exc:
+            self._handle_provider_failure(
+                "lesson section revision",
+                "lesson_generation",
+                self._failure_kind(exc),
+                self._settings.OPENAI_PACKAGE_MODEL,
+            )
+            return self._fallback.revise_lesson_section(
+                section_label=section_label,
+                current_text=current_text,
+                instruction=instruction,
+                lesson_context=lesson_context,
+            )
 
     def generate_material_image(
         self,

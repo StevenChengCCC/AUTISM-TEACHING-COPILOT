@@ -54,11 +54,14 @@ from app.schemas.v2_dto import (
     LessonPackageDto,
     LessonPackageDecisionRequest,
     LessonPackageRegenerateSectionRequest,
+    LessonSectionEditPreviewDto,
+    LessonSectionEditPreviewRequest,
     LessonPackageUpdateRequest,
     LessonPackageVersionComparisonDto,
     LessonPackageVersionDto,
     LessonPackageExportJobDto,
     LessonPackageExportRequest,
+    PrintableLessonKitRequest,
     TeacherHandoffExportRequest,
     HandoffExportDownloadDto,
     LessonRequestSubmit,
@@ -101,6 +104,7 @@ from app.services.v2_record_service import V2RecordService
 from app.services.v2_repositories import repositories
 from app.services.v2_session_service import V2SessionService
 from app.services.v2_handoff_export_service import V2HandoffExportService
+from app.services.v2_printable_lesson_kit_service import V2PrintableLessonKitService
 from app.services.v2_ai_context_service import build_lesson_generation_context
 from app.integrations.private_object_storage import (
     LocalPrivateObjectStorage,
@@ -715,6 +719,16 @@ def regenerate_lesson_package_section(
     return V2LessonPackageService().regenerate_section(package_id, payload)
 
 
+@router.post(
+    "/lesson-packages/{package_id}/section-edit-preview",
+    response_model=LessonSectionEditPreviewDto,
+)
+def preview_lesson_package_section_edit(
+    package_id: str, payload: LessonSectionEditPreviewRequest
+) -> LessonSectionEditPreviewDto:
+    return V2LessonPackageService().preview_section_edit(package_id, payload)
+
+
 @router.get(
     "/lesson-packages/{package_id}/versions",
     response_model=list[LessonPackageVersionDto],
@@ -807,6 +821,26 @@ def export_lesson_package(
     service: V2HandoffExportService = Depends(_handoff_export_service),
 ) -> LessonPackageExportJobDto:
     return service.create_for_package(package_id, payload)
+
+
+@router.post(
+    "/lesson-packages/{package_id}/printable-kit",
+    response_model=LessonPackageExportJobDto,
+)
+def create_printable_lesson_kit(
+    package_id: str, payload: PrintableLessonKitRequest
+) -> LessonPackageExportJobDto:
+    return V2PrintableLessonKitService(repositories).create(package_id, payload)
+
+
+@router.post(
+    "/printable-lesson-kits/{export_id}/download",
+    response_model=HandoffExportDownloadDto,
+)
+def download_printable_lesson_kit(
+    export_id: str,
+) -> HandoffExportDownloadDto:
+    return V2PrintableLessonKitService(repositories).create_download(export_id)
 
 
 @router.post(

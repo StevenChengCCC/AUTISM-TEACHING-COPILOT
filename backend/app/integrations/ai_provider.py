@@ -80,6 +80,22 @@ class V2AIProvider(ABC):
 
         raise NotImplementedError
 
+    def revise_lesson_section(
+        self,
+        *,
+        section_label: str,
+        current_text: str,
+        instruction: str,
+        lesson_context: dict[str, Any],
+    ) -> str:
+        """Return a preview revision for one teacher-selected text section.
+
+        Providers may override this optional capability. Keeping it scoped to
+        plain text prevents an edit request from silently rewriting a package.
+        """
+
+        raise NotImplementedError("This AI provider does not support scoped editing")
+
     @abstractmethod
     def generate_material_image(
         self,

@@ -457,6 +457,23 @@ export interface ExportJob {
   version: number;
 }
 
+export interface LessonSectionEditPreview {
+  packageId: string;
+  sectionId: string;
+  sectionLabel: string;
+  beforeText: string;
+  revisedText: string;
+  instruction: string;
+  providerUsed: string;
+  fallbackUsed: boolean;
+}
+
+export interface PrintableLessonKitInput {
+  materialIds: string[];
+  pageSize: "Letter" | "A4";
+  reviewedConfirmation: true;
+}
+
 export interface HandoffSectionSelection {
   learnerOverview: boolean;
   teachingStrategies: boolean;
