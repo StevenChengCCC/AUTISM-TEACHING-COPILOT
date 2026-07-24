@@ -161,6 +161,18 @@ class V2MaterialService:
             )
         )
 
+    def set_image_generation_status(
+        self, material_id: str, status: str, message: str | None = None
+    ) -> GeneratedMaterialDto:
+        material = self._get_generated_dto(material_id)
+        content = dict(material.content)
+        content["imageGenerationStatus"] = status
+        if message:
+            content["imageGenerationMessage"] = message
+        else:
+            content.pop("imageGenerationMessage", None)
+        return self._save_generated(material.model_copy(update={"content": content}))
+
     def attach_image_asset_if_exists(
         self, material_id: str, asset: ImageAssetDto
     ) -> bool:
@@ -178,8 +190,12 @@ class V2MaterialService:
                 "imageSourceType": asset.sourceType,
                 "imageLicenseInfo": asset.licenseInfo,
                 "imageSafetyStatus": asset.safetyStatus,
+                "imageGenerationStatus": (
+                    "ready" if asset.sourceType == "generated" else "fallback"
+                ),
             }
         )
+        content.pop("imageGenerationMessage", None)
         updated = material.model_copy(
             update={"content": content, "status": "teacher_review_needed"}
         )

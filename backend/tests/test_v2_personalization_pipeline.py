@@ -280,11 +280,13 @@ def test_image_prompt_uses_confirmed_interest_without_identifiers_or_record_text
         ),
     )
 
-    package = V2LessonPackageService(
-        repos, ai=provider, images=images
-    ).generate_product(
+    package_service = V2LessonPackageService(repos, ai=provider, images=images)
+    package = package_service.generate_product(
         _draft("secret-id", "Learner SECRET will sort pencils.", theme="Art")
     )
+    package_service.queue_product_images(package.id)
+    package_service.prepare_product_images(package.id)
+    package = package_service.get_product(package.id)
     prompt = provider.image_prompts[0]
 
     assert "Art" in prompt

@@ -4,9 +4,15 @@ from binascii import Error as Base64Error
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 
 from app.core.auth import CurrentTeacher, get_current_teacher
+from app.core.auth_context import (
+    AuthenticatedScope,
+    get_authenticated_scope,
+    reset_authenticated_scope,
+    set_authenticated_scope,
+)
 from app.core.config import settings
 from app.integrations.ai_provider import get_v2_ai_provider
 from app.integrations.mock_ai_provider import MockV2AIProvider
@@ -107,6 +113,60 @@ router = APIRouter(
     dependencies=[Depends(get_current_teacher)],
 )
 logger = logging.getLogger(__name__)
+
+
+def _prepare_package_images_background(
+    package_id: str, scope: AuthenticatedScope | None
+) -> None:
+    token = set_authenticated_scope(scope) if scope is not None else None
+    try:
+        V2LessonPackageService().prepare_product_images(package_id)
+    except Exception:
+        logger.warning(
+            "package_image_background_task_failed",
+            extra={
+                "event": "package_image_background_task_failed",
+                "package_id": package_id,
+            },
+        )
+    finally:
+        if token is not None:
+            reset_authenticated_scope(token)
+
+
+def _prepare_material_image_background(
+    material_id: str, scope: AuthenticatedScope | None
+) -> None:
+    token = set_authenticated_scope(scope) if scope is not None else None
+    try:
+        V2LessonPackageService().prepare_material_image(
+            material_id, force_generation=True
+        )
+    except Exception:
+        logger.warning(
+            "material_image_background_task_failed",
+            extra={
+                "event": "material_image_background_task_failed",
+                "material_id": material_id,
+            },
+        )
+        try:
+            V2MaterialService().set_image_generation_status(
+                material_id,
+                "failed",
+                "Artwork could not be generated. Please try again.",
+            )
+        except Exception:
+            logger.warning(
+                "material_image_failure_status_not_saved",
+                extra={
+                    "event": "material_image_failure_status_not_saved",
+                    "material_id": material_id,
+                },
+            )
+    finally:
+        if token is not None:
+            reset_authenticated_scope(token)
 
 
 def _record_service(
@@ -591,15 +651,27 @@ def update_question_answer(
 )
 def generate_product_lesson_package(
     draft: LessonDesignDraftDto,
+    background_tasks: BackgroundTasks,
 ) -> LessonPackageDto:
-    return V2LessonPackageService().generate_product(draft)
+    service = V2LessonPackageService()
+    package = service.generate_product(draft)
+    if settings.AI_PROVIDER != "mock":
+        package = service.queue_product_images(package.id)
+        background_tasks.add_task(
+            _prepare_package_images_background,
+            package.id,
+            get_authenticated_scope(),
+        )
+    return package
 
 
 @router.post("/lesson-packages", response_model=LessonPackageDto, status_code=201)
-def generate_lesson_package(draft: LessonDesignDraftDto) -> LessonPackageDto:
+def generate_lesson_package(
+    draft: LessonDesignDraftDto, background_tasks: BackgroundTasks
+) -> LessonPackageDto:
     """Compatibility alias for the initial Backend v2 route."""
 
-    return V2LessonPackageService().generate_product(draft)
+    return generate_product_lesson_package(draft, background_tasks)
 
 
 @router.get("/lesson-packages", response_model=list[LessonPackageDto])
@@ -706,6 +778,23 @@ def quick_edit_generated_material(
     material_id: str, payload: MaterialQuickEditRequest
 ) -> GeneratedMaterialDto:
     return V2MaterialService().quick_edit_generated(material_id, payload)
+
+
+@router.post(
+    "/generated-materials/{material_id}/generate-image",
+    response_model=GeneratedMaterialDto,
+)
+def generate_material_image(
+    material_id: str, background_tasks: BackgroundTasks
+) -> GeneratedMaterialDto:
+    service = V2MaterialService()
+    pending = service.set_image_generation_status(material_id, "pending")
+    background_tasks.add_task(
+        _prepare_material_image_background,
+        material_id,
+        get_authenticated_scope(),
+    )
+    return pending
 
 
 @router.post(

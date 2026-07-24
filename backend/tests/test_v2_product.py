@@ -559,6 +559,23 @@ def test_v2_generated_material_editing_and_export_http_contract():
         json={"action": "regenerate_artwork"},
     )
     assert artwork.json()["content"]["artwork"] == "Updated classroom artwork"
+    queued_artwork = client.post(
+        f"/api/v2/generated-materials/{help_card['id']}/generate-image",
+        json={},
+    )
+    assert queued_artwork.status_code == 200
+    assert queued_artwork.json()["content"]["imageGenerationStatus"] == "pending"
+    refreshed_materials = client.get(
+        f"/api/v2/lesson-packages/{package_id}/materials"
+    ).json()
+    refreshed_help_card = next(
+        item for item in refreshed_materials if item["id"] == help_card["id"]
+    )
+    assert refreshed_help_card["content"]["imageGenerationStatus"] in {
+        "ready",
+        "fallback",
+    }
+    assert refreshed_help_card["content"]["imageAssetId"]
     reward = client.post(
         f"/api/v2/generated-materials/{token['id']}/quick-edit",
         json={"action": "adjust_reward"},
