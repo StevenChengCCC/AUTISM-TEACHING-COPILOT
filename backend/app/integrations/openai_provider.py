@@ -442,7 +442,11 @@ class OpenAIV2AIProvider(V2AIProvider):
                 },
                 supplemental_skills=(material_skill,),
             )
-            result = self._request_json(prompt)
+            result = self._request_json(
+                prompt,
+                model=self._settings.OPENAI_PACKAGE_MODEL,
+                timeout_seconds=self._settings.OPENAI_PACKAGE_TIMEOUT_SECONDS,
+            )
             lesson_brief = result["lessonBrief"]
             summary_template = result["summaryTemplate"]
             if not all(
@@ -461,12 +465,14 @@ class OpenAIV2AIProvider(V2AIProvider):
                 generated["teachingFlow"] = result["teachingFlow"]
             if isinstance(result.get("materials"), list):
                 generated["materials"] = result["materials"]
-            self._success("lesson_generation")
+            self._success(
+                "lesson_generation", self._settings.OPENAI_PACKAGE_MODEL
+            )
             self._record_generation(
                 self._registry,
                 "material_generation",
                 status="ready",
-                model=self._settings.OPENAI_TEXT_MODEL,
+                model=self._settings.OPENAI_PACKAGE_MODEL,
                 output_source="provider",
                 set_last=False,
             )
@@ -476,6 +482,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                 "lesson package generation",
                 "lesson_generation",
                 self._failure_kind(exc),
+                self._settings.OPENAI_PACKAGE_MODEL,
             )
             return self._fallback.generate_lesson_package(draft, learner_context)
 
