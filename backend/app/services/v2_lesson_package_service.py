@@ -20,6 +20,7 @@ from app.schemas.v2_dto import (
     DataSheetSpecificationDto,
     BreakCardSpecification,
     ChoiceBoardSpecification,
+    EmotionScaleSpecification,
     ErrorCorrectionPlanDto,
     GeneralizationPlanDto,
     HelpCardSpecification,
@@ -36,19 +37,25 @@ from app.schemas.v2_dto import (
     LessonPackageUpdateRequest,
     LessonPackageVersionComparisonDto,
     LessonPackageVersionDto,
+    QuantityCardsSpecification,
     PromptingPlanDto,
     PrintLayout,
     ReinforcementPlanDto,
+    CoreWordBoardSpecification,
     SessionSummarySpecification,
     ScenarioCardsSpecification,
+    SequenceCardsSpecification,
+    SocialNarrativeSpecification,
     SortingPageSpecification,
     MatchingPageSpecification,
     TeachingStep,
     TeachingStepDto,
     TeacherAdaptationPlanDto,
     TeacherCueCardSpecification,
+    TaskAnalysisCardsSpecification,
     TokenBoardSpecification,
     VisualCardSpecification,
+    VisualScheduleSpecification,
 )
 from app.services.v2_repositories import V2Repositories, repositories
 from app.services.v2_image_asset_service import V2ImageAssetService
@@ -60,6 +67,10 @@ from app.services.v2_ai_context_service import (
 )
 from app.services.v2_learner_service import V2LearnerService
 from app.services.v2_material_service import V2MaterialService
+from app.services.v2_material_blueprint_service import V2MaterialBlueprintService
+from app.services.v2_lesson_package_quality_service import (
+    V2LessonPackageQualityService,
+)
 from app.services.v2_safety_harness_service import V2SafetyHarnessService
 from app.services.v2_standards_skill_service import V2StandardsSkillService
 
@@ -68,12 +79,33 @@ logger = logging.getLogger(__name__)
 
 
 class V2LessonPackageService:
+    image_material_types = {
+        "quantity_cards",
+        "visual_card",
+        "scenario_cards",
+        "sequence_cards",
+        "social_narrative",
+        "core_word_board",
+        "visual_schedule",
+        "task_analysis_cards",
+        "emotion_scale",
+        "sorting_page",
+        "matching_page",
+        "choice_board",
+        "first_then_board",
+        "help_card",
+        "break_card",
+        "teacher_cue_card",
+        "token_board",
+    }
+
     def __init__(
         self,
         repos: V2Repositories = repositories,
         ai: V2AIProvider | None = None,
         safety: V2SafetyHarnessService | None = None,
         standards: V2StandardsSkillService | None = None,
+        quality: V2LessonPackageQualityService | None = None,
         images: V2ImageAssetService | None = None,
         config: Settings = settings,
     ):
@@ -81,6 +113,7 @@ class V2LessonPackageService:
         self.ai = ai or get_v2_ai_provider()
         self.safety = safety or V2SafetyHarnessService()
         self.standards = standards or V2StandardsSkillService()
+        self.quality = quality or V2LessonPackageQualityService()
         self.images = images or V2ImageAssetService(repos, ai=self.ai)
         self.config = config
         self.learners = V2LearnerService(repos)
@@ -365,6 +398,20 @@ class V2LessonPackageService:
                 ],
             ),
         )
+        quality_score = self.quality.evaluate(draft, package)
+        if quality_score.overallStatus == "blocked":
+            package = package.model_copy(
+                update={
+                    "qualityScore": quality_score,
+                    "status": (
+                        package.status
+                        if package.status == "safety_review_needed"
+                        else "validation_failed"
+                    ),
+                }
+            )
+        else:
+            package = package.model_copy(update={"qualityScore": quality_score})
         with self.repos.transaction():
             package = self.repos.lesson_packages.save(package)
             for material in materials:
@@ -372,16 +419,29 @@ class V2LessonPackageService:
         return package
 
     def queue_product_images(self, package_id: str) -> LessonPackageDto:
-        """Mark visual materials pending without calling an external provider."""
+        """Mark every planned classroom visual pending without provider calls."""
 
         package = self.get_product(package_id)
         material_service = V2MaterialService(self.repos)
         for material in package.materials:
-            if material.type not in {"visual_card", "help_card", "token_board"}:
+            if material.type not in self.image_material_types:
                 continue
-            if not str(material.content.get("imageConcept") or "").strip():
+            visual_items = material.content.get("visualItems")
+            if not isinstance(visual_items, list) or not visual_items:
                 continue
-            material_service.set_image_generation_status(material.id, "pending")
+            pending_items = [
+                {
+                    **item,
+                    "generationStatus": "pending",
+                }
+                for item in visual_items
+                if isinstance(item, dict)
+            ]
+            material_service.attach_visual_assets(
+                material.id,
+                pending_items,
+                overall_status="pending",
+            )
         return self.get_product(package_id)
 
     def prepare_product_images(self, package_id: str) -> None:
@@ -389,9 +449,9 @@ class V2LessonPackageService:
 
         package = self.get_product(package_id)
         for material in package.materials:
-            if material.type not in {"visual_card", "help_card", "token_board"}:
+            if material.type not in self.image_material_types:
                 continue
-            if not str(material.content.get("imageConcept") or "").strip():
+            if not material.content.get("visualItems"):
                 continue
             try:
                 self.prepare_material_image(material.id)
@@ -424,34 +484,83 @@ class V2LessonPackageService:
         material = self.repos.generated_materials.get(material_id)
         if not material or not isinstance(material, GeneratedMaterialDto):
             raise NotFoundError("Generated material not found")
-        if material.type not in {"visual_card", "help_card", "token_board"}:
+        if material.type not in self.image_material_types:
             raise ValidationError("This material does not require generated artwork")
         package = self.get_product(material.packageId)
         learner = self.learners.get(package.learnerId)
-        concept = str(material.content.get("imageConcept") or "").strip()
-        if not concept:
-            raise ValidationError("This material does not have an image concept")
+        planned_items = material.content.get("visualItems")
+        if not isinstance(planned_items, list) or not planned_items:
+            raise ValidationError("This material does not have a visual asset plan")
 
         material_service = V2MaterialService(self.repos)
         material_service.set_image_generation_status(material.id, "processing")
-        prompt, _ = build_safe_image_prompt(
-            learner,
-            material.type,
-            concept,
-            str(material.content.get("imagePrompt") or ""),
+        interest = next(
+            (str(item).strip() for item in learner.interests if str(item).strip()),
+            package.theme or "classroom",
         )
-        safe_concept = build_image_generation_context(
-            learner, material.type, concept
-        )["concept"]
-        self.images.prepare_generated_image_for_material(
-            learner_id=learner.id,
-            material_id=material.id,
-            material_type=material.type,
-            concept=safe_concept,
-            prompt=prompt,
-            style="clean printable educational illustration",
-            size="1024x1024",
-            force_generation=force_generation,
+        assets_by_concept: dict[str, object] = {}
+        completed_items: list[dict] = []
+        for raw_item in planned_items:
+            if not isinstance(raw_item, dict):
+                continue
+            item = dict(raw_item)
+            concept = str(item.get("concept") or "").strip()
+            if item.get("assetRole") == "countable_object":
+                concept = f"one isolated {interest} themed counting object"
+            if not concept:
+                continue
+            safe_concept = build_image_generation_context(
+                learner, material.type, concept
+            )["concept"]
+            asset = assets_by_concept.get(safe_concept)
+            if asset is None:
+                prompt, _ = build_safe_image_prompt(
+                    learner,
+                    material.type,
+                    safe_concept,
+                    str(item.get("prompt") or material.content.get("imagePrompt") or ""),
+                )
+                asset = self.images.prepare_generated_image_for_material(
+                    learner_id=learner.id,
+                    material_id="",
+                    material_type=material.type,
+                    concept=safe_concept,
+                    prompt=prompt,
+                    style=(
+                        "clean printable special-education material asset; "
+                        "isolated subject; white background; no text"
+                    ),
+                    size="1024x1024",
+                    force_generation=force_generation,
+                )
+                assets_by_concept[safe_concept] = asset
+            item.update(
+                {
+                    "concept": safe_concept,
+                    "imageAssetId": asset.id,
+                    "imageUrl": asset.imageUrl or asset.thumbnailUrl,
+                    "imageBase64": None if asset.imageUrl else asset.imageBase64,
+                    "imageAltText": asset.altText,
+                    "imageSourceType": asset.sourceType,
+                    "imageLicenseInfo": asset.licenseInfo,
+                    "imageSafetyStatus": asset.safetyStatus,
+                    "generationStatus": (
+                        "ready" if asset.sourceType == "generated" else "fallback"
+                    ),
+                }
+            )
+            completed_items.append(item)
+        if not completed_items:
+            raise ValidationError("No classroom visual assets could be prepared")
+        overall_status = (
+            "ready"
+            if all(item.get("generationStatus") == "ready" for item in completed_items)
+            else "fallback"
+        )
+        material_service.attach_visual_assets(
+            material.id,
+            completed_items,
+            overall_status=overall_status,
         )
         updated = self.repos.generated_materials.get(material.id)
         if not updated or not isinstance(updated, GeneratedMaterialDto):
@@ -462,6 +571,12 @@ class V2LessonPackageService:
         package = self.repos.lesson_packages.get(package_id)
         if not package or not isinstance(package, LessonPackageDto):
             raise NotFoundError("Lesson package not found")
+        current_score = self.quality.evaluate(
+            self._draft_for_product_quality(package),
+            package,
+        )
+        if current_score != package.qualityScore:
+            return package.model_copy(update={"qualityScore": current_score})
         return package
 
     def update_product(
@@ -499,6 +614,10 @@ class V2LessonPackageService:
         if any(check.status == "blocked" for check in package.standardsChecks):
             raise ConflictError(
                 "Resolve blocked instructional quality checks before approval"
+            )
+        if package.qualityScore and package.qualityScore.overallStatus == "blocked":
+            raise ConflictError(
+                "Resolve blocked lesson package quality items before approval"
             )
         return self.repos.lesson_packages.save(
             package.model_copy(update={"status": "approved"})
@@ -691,11 +810,56 @@ class V2LessonPackageService:
     def _reevaluate_product(self, package: LessonPackageDto) -> LessonPackageDto:
         """Never carry stale safety or quality decisions across teacher edits."""
 
+        draft = self._draft_for_product_quality(package)
+        content = {
+            "lessonBrief": package.lessonBrief,
+            "summaryTemplate": package.summaryTemplate,
+            "teachingFlow": [
+                item.model_dump(mode="json", by_alias=True)
+                for item in package.teachingFlow
+            ],
+            "documentContent": package.documentContent,
+        }
+        safety_review = self.safety.review_product(draft, content)
+        checks = self.standards.evaluate_product(draft, package.materials, content)
+        status = (
+            "safety_review_needed"
+            if safety_review.status == "blocked"
+            else (
+                "validation_failed"
+                if any(item.status == "blocked" for item in checks)
+                else "teacher_review_needed"
+            )
+        )
+        reevaluated = package.model_copy(
+            update={
+                "safetyReview": safety_review,
+                "standardsChecks": checks,
+                "status": status,
+            }
+        )
+        quality_score = self.quality.evaluate(draft, reevaluated)
+        if (
+            quality_score.overallStatus == "blocked"
+            and status != "safety_review_needed"
+        ):
+            status = "validation_failed"
+        return reevaluated.model_copy(
+            update={
+                "qualityScore": quality_score,
+                "status": status,
+            }
+        )
+
+    @staticmethod
+    def _draft_for_product_quality(
+        package: LessonPackageDto,
+    ) -> LessonDesignDraftDto:
         prompting = package.promptingPlan
         reinforcement = package.reinforcementPlan
         error = package.errorCorrectionPlan
         generalization = package.generalizationPlan
-        draft = LessonDesignDraftDto(
+        return LessonDesignDraftDto(
             id=package.draftId,
             learnerId=package.learnerId,
             goalText=package.goal,
@@ -717,33 +881,6 @@ class V2LessonPackageService:
                 if generalization
                 else ""
             ),
-        )
-        content = {
-            "lessonBrief": package.lessonBrief,
-            "summaryTemplate": package.summaryTemplate,
-            "teachingFlow": [
-                item.model_dump(mode="json", by_alias=True)
-                for item in package.teachingFlow
-            ],
-            "documentContent": package.documentContent,
-        }
-        safety_review = self.safety.review_product(draft, content)
-        checks = self.standards.evaluate_product(draft, package.materials, content)
-        status = (
-            "safety_review_needed"
-            if safety_review.status == "blocked"
-            else (
-                "validation_failed"
-                if any(item.status == "blocked" for item in checks)
-                else "teacher_review_needed"
-            )
-        )
-        return package.model_copy(
-            update={
-                "safetyReview": safety_review,
-                "standardsChecks": checks,
-                "status": status,
-            }
         )
 
     @staticmethod
@@ -848,6 +985,12 @@ class V2LessonPackageService:
     def _material_type_for_selection(value: str) -> str | None:
         normalized = " ".join(value.replace("_", " ").casefold().split())
         exact = {
+            "quantity cards": "quantity_cards",
+            "quantity card": "quantity_cards",
+            "number cards": "quantity_cards",
+            "number card": "quantity_cards",
+            "visual number cards": "quantity_cards",
+            "counting cards": "quantity_cards",
             "visual cards": "visual_card",
             "visual card": "visual_card",
             "choice board": "choice_board",
@@ -862,6 +1005,17 @@ class V2LessonPackageService:
             "sorting page": "sorting_page",
             "matching page": "matching_page",
             "scenario cards": "scenario_cards",
+            "sequence cards": "sequence_cards",
+            "sequencing cards": "sequence_cards",
+            "social narrative": "social_narrative",
+            "social situation guide": "social_narrative",
+            "core word board": "core_word_board",
+            "communication board": "core_word_board",
+            "visual schedule": "visual_schedule",
+            "task analysis cards": "task_analysis_cards",
+            "task analysis": "task_analysis_cards",
+            "emotion scale": "emotion_scale",
+            "regulation scale": "emotion_scale",
             "teacher cue card": "teacher_cue_card",
             "data sheets": "data_sheet",
             "data sheet": "data_sheet",
@@ -872,6 +1026,8 @@ class V2LessonPackageService:
         }.get(normalized)
         if exact:
             return exact
+        if ("quantity" in normalized or "number" in normalized) and "card" in normalized:
+            return "quantity_cards"
         if "first then" in normalized or "first-then" in normalized:
             return "first_then_board"
         if "token" in normalized or "reward" in normalized:
@@ -888,6 +1044,18 @@ class V2LessonPackageService:
             return "matching_page"
         if "scenario" in normalized:
             return "scenario_cards"
+        if "sequence" in normalized:
+            return "sequence_cards"
+        if "social narrative" in normalized or "social situation" in normalized:
+            return "social_narrative"
+        if "core word" in normalized or "communication board" in normalized:
+            return "core_word_board"
+        if "schedule" in normalized:
+            return "visual_schedule"
+        if "task analysis" in normalized or "step card" in normalized:
+            return "task_analysis_cards"
+        if "emotion scale" in normalized or "regulation scale" in normalized:
+            return "emotion_scale"
         if "data" in normalized or "tracking" in normalized:
             return "data_sheet"
         if "summary" in normalized:
@@ -905,7 +1073,7 @@ class V2LessonPackageService:
         generated: object,
         fallback: list[dict],
     ) -> list[GeneratedMaterialDto]:
-        selected_types = [
+        teacher_selected_types = [
             material_type
             for material_type in (
                 self._material_type_for_selection(item)
@@ -913,27 +1081,11 @@ class V2LessonPackageService:
             )
             if material_type
         ]
-        if "ask for help" in draft.goalText.casefold():
-            selected_types.append("help_card")
-        selected_types.append("summary_template")
+        selected_types = [
+            *self._recommended_material_types(draft),
+            *teacher_selected_types,
+        ]
         selected_types = list(dict.fromkeys(selected_types))
-        canonical_order = {
-            "visual_card": 0,
-            "choice_board": 1,
-            "first_then_board": 2,
-            "help_card": 3,
-            "break_card": 4,
-            "token_board": 5,
-            "sorting_page": 6,
-            "matching_page": 7,
-            "scenario_cards": 8,
-            "teacher_cue_card": 9,
-            "data_sheet": 10,
-            "session_summary": 11,
-            "summary_template": 12,
-            "handoff_note": 13,
-        }
-        selected_types.sort(key=lambda item: canonical_order[item])
         definitions = generated if isinstance(generated, list) else []
         fallback_by_type = {item["type"]: item for item in fallback}
         generated_by_type = {
@@ -952,6 +1104,7 @@ class V2LessonPackageService:
             for key in ("imageConcept", "imagePrompt", "imageAltText"):
                 if isinstance(definition.get(key), str):
                     content[key] = definition[key]
+            content = self._ensure_visual_content(material_type, content, draft)
             materials.append(
                 GeneratedMaterialDto(
                     id=self.repos.next_id("material"),
@@ -959,7 +1112,11 @@ class V2LessonPackageService:
                     type=material_type,
                     title=str(
                         definition.get("title")
-                        or material_type.replace("_", " ").title()
+                        or (
+                            V2MaterialBlueprintService.blueprint(material_type).display_name
+                            if V2MaterialBlueprintService.blueprint(material_type)
+                            else material_type.replace("_", " ").title()
+                        )
                     ),
                     status="teacher_review_needed",
                     content=content,
@@ -980,24 +1137,382 @@ class V2LessonPackageService:
         return materials
 
     @staticmethod
-    def _default_material_definition(
-        material_type: str, draft: LessonDesignDraftDto
+    def _recommended_material_types(
+        draft: LessonDesignDraftDto,
+    ) -> list[str]:
+        """Resolve a minimum complete kit from the instructional goal family."""
+
+        return V2MaterialBlueprintService.recommended_bundle(draft)
+
+    @classmethod
+    def _ensure_visual_content(
+        cls,
+        material_type: str,
+        content: dict,
+        draft: LessonDesignDraftDto,
     ) -> dict:
+        """Guarantee that every visual classroom material requests real artwork.
+
+        Provider-authored JSON is flexible, but a printable material needs an
+        explicit asset plan.  A single decorative image cannot represent a choice
+        board, a sequence, or a set of counting cards, so each meaningful visual
+        unit receives its own item in ``visualItems``.
+        """
+
+        if material_type not in cls.image_material_types:
+            return content
+
+        updated = dict(content)
+        theme = " ".join((draft.theme or "classroom").split())
+        scenario = next(
+            (
+                " ".join(str(item).split())
+                for item in draft.scenarios
+                if str(item).strip()
+            ),
+            "",
+        )
+        context = scenario or theme
+        if material_type in {
+            "quantity_cards",
+            "visual_card",
+            "scenario_cards",
+            "sequence_cards",
+            "social_narrative",
+            "core_word_board",
+            "visual_schedule",
+            "task_analysis_cards",
+            "emotion_scale",
+            "sorting_page",
+            "matching_page",
+        }:
+            concept = f"{theme} learning visual for {context}"
+        elif material_type in {"help_card", "break_card", "teacher_cue_card"}:
+            concept = f"clear classroom communication symbol for {context}"
+        elif material_type in {"choice_board", "first_then_board"}:
+            concept = f"two clear classroom choices for {context}"
+        else:
+            concept = f"positive classroom reward symbol themed around {theme}"
+
+        existing_concept = str(updated.get("imageConcept") or "").strip()
+        existing_prompt = str(updated.get("imagePrompt") or "").strip()
+        updated["imageConcept"] = existing_concept or concept
+        updated["imagePrompt"] = existing_prompt or (
+            f"Create one polished educational illustration for {concept}. "
+            "Use an uncluttered white or very light background, bold friendly "
+            "shapes, high contrast, and age-respectful classroom objects. "
+            "Do not include words, letters, numerals, logos, watermarks, "
+            "diagnostic labels, or an identifiable child."
+        )
+        updated["imageAltText"] = str(
+            updated.get("imageAltText")
+            or f"Teacher-reviewable illustration for {context}."
+        )
+        updated["visualItems"] = cls._build_visual_asset_plan(
+            material_type, updated, draft
+        )
+        updated.setdefault("imageGenerationStatus", "not_started")
+        return updated
+
+    @classmethod
+    def _build_visual_asset_plan(
+        cls,
+        material_type: str,
+        content: dict,
+        draft: LessonDesignDraftDto,
+    ) -> list[dict]:
+        """Describe the exact visual assets needed by a usable material.
+
+        The image model creates artwork only.  Labels, quantities, cutting lines,
+        and page geometry remain deterministic so the final material is accurate.
+        """
+
+        theme = " ".join((draft.theme or "classroom").split())
+        labels = cls._material_labels(material_type, content, draft)
+        base_prompt = (
+            "Create one isolated, age-respectful educational illustration of "
+            "{concept}. Use a plain white background, a single clear focal "
+            "subject, bold friendly shapes, and high contrast. Do not include "
+            "words, letters, numerals, logos, watermarks, borders, worksheets, "
+            "or an identifiable child."
+        )
+        count_labels = cls._counting_labels(
+            " ".join(
+                str(value)
+                for value in (
+                    draft.goalText,
+                    draft.observableResponse,
+                    draft.theme,
+                    content.get("instruction"),
+                    content.get("phrase"),
+                )
+                if value
+            )
+        )
+        if material_type in {"quantity_cards", "matching_page"} and count_labels:
+            concept = f"{theme} themed countable classroom object"
+            content["range"] = {
+                "start": int(count_labels[0]),
+                "end": int(count_labels[-1]),
+            }
+            return [
+                {
+                    "id": (
+                        f"match-quantity-{label}"
+                        if material_type == "matching_page"
+                        else f"quantity-{label}"
+                    ),
+                    "label": label,
+                    "quantity": int(label),
+                    "assetRole": (
+                        "matching_quantity"
+                        if material_type == "matching_page"
+                        else "countable_object"
+                    ),
+                    "concept": concept,
+                    "prompt": base_prompt.format(concept=concept),
+                    "imageAltText": f"{label} countable {theme} themed objects.",
+                    "generationStatus": "not_started",
+                }
+                for label in count_labels
+            ]
+
+        role_by_type = {
+            "quantity_cards": "countable_object",
+            "scenario_cards": "scenario",
+            "sequence_cards": "sequence_step",
+            "social_narrative": "scenario",
+            "core_word_board": "communication_symbol",
+            "visual_schedule": "sequence_step",
+            "task_analysis_cards": "sequence_step",
+            "emotion_scale": "regulation_level",
+            "choice_board": "choice",
+            "first_then_board": "sequence_step",
+            "sorting_page": "sorting_item",
+            "matching_page": "matching_item",
+            "help_card": "communication_symbol",
+            "break_card": "communication_symbol",
+            "teacher_cue_card": "teacher_cue",
+            "token_board": "reinforcer",
+        }
+        role = role_by_type.get(material_type, "instructional_visual")
+        result: list[dict] = []
+        for index, label in enumerate(labels[:6]):
+            clean_label = " ".join(str(label).split())
+            if not clean_label:
+                continue
+            item_concept = f"{clean_label}, {theme} classroom context"
+            result.append(
+                {
+                    "id": f"{role}-{index + 1}",
+                    "label": clean_label,
+                    "assetRole": role,
+                    "concept": item_concept,
+                    "prompt": base_prompt.format(concept=item_concept),
+                    "imageAltText": f"Illustration representing {clean_label}.",
+                    "generationStatus": "not_started",
+                }
+            )
+        return result
+
+    @classmethod
+    def _material_labels(
+        cls,
+        material_type: str,
+        content: dict,
+        draft: LessonDesignDraftDto,
+    ) -> list[str]:
+        if material_type == "first_then_board":
+            return [
+                str(content.get("firstText") or "Practice the target skill"),
+                str(content.get("thenText") or "Teacher-confirmed reward"),
+            ]
+        keys = {
+            "scenario_cards": ("scenarios", "examples", "items"),
+            "sequence_cards": ("steps", "examples", "items"),
+            "social_narrative": ("responseOptions", "examples", "scenarios"),
+            "core_word_board": ("words", "options", "examples"),
+            "choice_board": ("options", "examples", "items"),
+            "sorting_page": ("items", "examples", "categories"),
+            "matching_page": ("items", "examples", "pairs"),
+            "visual_schedule": ("steps", "examples", "items"),
+            "task_analysis_cards": ("steps", "examples", "items"),
+            "emotion_scale": ("levels", "examples", "items"),
+        }.get(material_type, ())
+        for key in keys:
+            value = content.get(key)
+            if isinstance(value, list) and value:
+                return [str(item) for item in value]
+        if material_type in {
+            "scenario_cards",
+            "sequence_cards",
+            "social_narrative",
+            "core_word_board",
+            "choice_board",
+            "sorting_page",
+            "matching_page",
+            "visual_schedule",
+            "task_analysis_cards",
+            "emotion_scale",
+        } and draft.scenarios:
+            return [str(item) for item in draft.scenarios]
+        label = (
+            content.get("phrase")
+            or content.get("requestText")
+            or content.get("reward")
+            or content.get("instruction")
+            or draft.observableResponse
+            or draft.goalText
+        )
+        return [str(label)]
+
+    @staticmethod
+    def _counting_labels(text: str) -> list[str]:
+        import re
+
+        match = re.search(
+            r"\b(\d{1,2})\s+(?:to|through|-)\s+(\d{1,2})\b", text, re.I
+        )
+        if not match:
+            return []
+        start, end = int(match.group(1)), int(match.group(2))
+        if start < 1 or end < start or end > 10 or end - start > 9:
+            return []
+        return [str(number) for number in range(start, end + 1)]
+
+    @classmethod
+    def _default_material_definition(
+        cls, material_type: str, draft: LessonDesignDraftDto
+    ) -> dict:
+        counting_labels = cls._counting_labels(
+            " ".join(
+                (
+                    draft.goalText,
+                    draft.observableResponse,
+                    draft.theme,
+                )
+            )
+        )
+        blueprint = V2MaterialBlueprintService.blueprint(material_type)
+        content: dict = {
+            "instruction": draft.observableResponse or draft.goalText,
+            "examples": draft.scenarios,
+        }
+        if material_type == "quantity_cards":
+            labels = counting_labels or ["1", "2", "3", "4", "5"]
+            content.update(
+                {
+                    "range": {
+                        "start": int(labels[0]),
+                        "end": int(labels[-1]),
+                    },
+                    "instruction": "Count the objects, then identify the numeral.",
+                }
+            )
+        elif material_type == "matching_page" and counting_labels:
+            content.update(
+                {
+                    "instruction": "Match each numeral to the same quantity.",
+                    "pairs": [
+                        {"left": label, "right": f"{label} objects"}
+                        for label in counting_labels
+                    ],
+                    "answerKey": [
+                        f"{label} → {label} objects" for label in counting_labels
+                    ],
+                }
+            )
+        elif material_type == "token_board":
+            content.update(
+                {
+                    "tokenCount": 5,
+                    "rewardLabel": "Teacher-confirmed choice",
+                    "instruction": "Earn tokens, then access the selected reward.",
+                }
+            )
+        elif material_type == "sequence_cards":
+            content.update(
+                {
+                    "steps": draft.scenarios[:6]
+                    or ["Get ready", "Practice the target", "Finish"],
+                    "instruction": "Put the steps in order, then follow the sequence.",
+                }
+            )
+        elif material_type == "social_narrative":
+            content.update(
+                {
+                    "situation": draft.scenarios[0]
+                    if draft.scenarios
+                    else "A familiar teaching situation",
+                    "responseOptions": [
+                        draft.observableResponse or draft.goalText,
+                        "Ask for help, more time, or a break",
+                    ],
+                    "supportOptions": [
+                        "Use the learner's confirmed communication method",
+                        "Use the teacher-confirmed visual or wait-time support",
+                    ],
+                    "instruction": "Review the situation and available response options.",
+                }
+            )
+        elif material_type == "core_word_board":
+            content.update(
+                {
+                    "words": ["Help", "More", "Stop", "Break", "Yes", "No"],
+                    "responseModes": [
+                        draft.responseLevel
+                        or "Teacher-confirmed AAC, speech, sign, gesture, or pointing"
+                    ],
+                    "instruction": "Model and honor any intentional selection.",
+                }
+            )
+        elif material_type == "data_sheet":
+            content.update(
+                {
+                    "columns": [
+                        "Opportunity",
+                        "Independent",
+                        "Prompt level",
+                        "Outcome",
+                        "Notes",
+                    ],
+                    "summaryCalculation": (
+                        "Summarize independent and prompted outcomes separately."
+                    ),
+                }
+            )
+        elif material_type in {"summary_template", "session_summary"}:
+            content.update(
+                {
+                    "prompts": [
+                        "What worked?",
+                        "What support was used?",
+                        "What small win did you observe?",
+                        "What is the next step?",
+                    ]
+                }
+            )
         return {
             "type": material_type,
-            "title": material_type.replace("_", " ").title(),
-            "content": {
-                "instruction": draft.observableResponse or draft.goalText,
-                "examples": draft.scenarios,
-            },
+            "title": (
+                blueprint.display_name
+                if blueprint
+                else material_type.replace("_", " ").title()
+            ),
+            "content": content,
         }
 
     @staticmethod
     def _build_material_specification(
         material_type: str, content: dict, draft: LessonDesignDraftDto
     ):
+        blueprint = V2MaterialBlueprintService.blueprint(material_type)
         common = {
-            "purpose": f"Support the teacher-confirmed target: {draft.goalText}",
+            "purpose": (
+                blueprint.instructional_purpose
+                if blueprint
+                else f"Support the teacher-confirmed target: {draft.goalText}"
+            ),
             "audience": "learner",
             "pageSize": "Letter",
             "orientation": (
@@ -1007,7 +1522,16 @@ class V2LessonPackageService:
             "textLimit": "One short direction and brief labels",
             "imageNeed": (
                 "required"
-                if material_type in {"visual_card", "choice_board", "scenario_cards"}
+                if material_type
+                in {
+                    "quantity_cards",
+                    "visual_card",
+                    "choice_board",
+                    "scenario_cards",
+                    "sequence_cards",
+                    "social_narrative",
+                    "core_word_board",
+                }
                 else "optional"
             ),
             "contrastGuidance": "High contrast; do not rely on color alone",
@@ -1017,11 +1541,35 @@ class V2LessonPackageService:
                 "Print at actual size",
             ],
             "editableFields": ["title", "instruction", "examples"],
+            "requiredContent": list(blueprint.required_content) if blueprint else [],
+            "professionalRules": (
+                list(blueprint.professional_rules) if blueprint else []
+            ),
+            "teacherDirections": (
+                list(blueprint.teacher_directions) if blueprint else []
+            ),
             "altText": str(
                 content.get("imageAltText") or "Teacher-reviewed instructional support"
             ),
         }
         response = draft.responseLevel or draft.observableResponse or draft.goalText
+        if material_type == "quantity_cards":
+            labels = V2LessonPackageService._counting_labels(
+                " ".join(
+                    (
+                        draft.goalText,
+                        draft.observableResponse,
+                        draft.theme,
+                    )
+                )
+            ) or ["1", "2", "3", "4", "5"]
+            return QuantityCardsSpecification(
+                **common,
+                rangeStart=int(labels[0]),
+                rangeEnd=int(labels[-1]),
+                representationStyle="objects",
+                includeNumerals=True,
+            )
         if material_type == "visual_card":
             return VisualCardSpecification(
                 **common,
@@ -1060,6 +1608,82 @@ class V2LessonPackageService:
             return MatchingPageSpecification(**common, pairs=pairs)
         if material_type == "scenario_cards":
             return ScenarioCardsSpecification(**common, scenarios=draft.scenarios)
+        if material_type == "sequence_cards":
+            return SequenceCardsSpecification(
+                **common,
+                steps=(
+                    [str(item) for item in content.get("steps", [])]
+                    if isinstance(content.get("steps"), list)
+                    else []
+                )
+                or draft.scenarios[:6]
+                or ["Get ready", "Practice", "Finish"],
+                numbered=True,
+            )
+        if material_type == "social_narrative":
+            return SocialNarrativeSpecification(
+                **common,
+                situation=str(
+                    content.get("situation")
+                    or (draft.scenarios[0] if draft.scenarios else "Familiar situation")
+                ),
+                responseOptions=[
+                    str(item)
+                    for item in (
+                        content.get("responseOptions")
+                        if isinstance(content.get("responseOptions"), list)
+                        else [draft.observableResponse or draft.goalText]
+                    )
+                ],
+                supportOptions=[
+                    str(item)
+                    for item in (
+                        content.get("supportOptions")
+                        if isinstance(content.get("supportOptions"), list)
+                        else ["Use a teacher-confirmed support"]
+                    )
+                ],
+            )
+        if material_type == "core_word_board":
+            return CoreWordBoardSpecification(
+                **common,
+                words=[
+                    str(item)
+                    for item in (
+                        content.get("words")
+                        if isinstance(content.get("words"), list)
+                        else ["Help", "More", "Stop", "Break", "Yes", "No"]
+                    )
+                ],
+                responseModes=[
+                    str(item)
+                    for item in (
+                        content.get("responseModes")
+                        if isinstance(content.get("responseModes"), list)
+                        else [draft.responseLevel or "Teacher-confirmed response mode"]
+                    )
+                ],
+            )
+        if material_type == "visual_schedule":
+            return VisualScheduleSpecification(
+                **common,
+                steps=draft.scenarios[:6] or ["Start", "Practice", "Finish"],
+                completionCue="Move completed step to Done",
+            )
+        if material_type == "task_analysis_cards":
+            return TaskAnalysisCardsSpecification(
+                **common,
+                steps=draft.scenarios[:8] or ["Teacher confirms routine steps"],
+            )
+        if material_type == "emotion_scale":
+            return EmotionScaleSpecification(
+                **common,
+                levels=["Calm", "Uncomfortable", "Need support"],
+                regulationOptions=[
+                    "Ask for a break",
+                    "Use a teacher-confirmed regulation support",
+                ],
+            )
         if material_type == "teacher_cue_card":
             return TeacherCueCardSpecification(
                 **{**common, "audience": "teacher", "imageNeed": "none"},

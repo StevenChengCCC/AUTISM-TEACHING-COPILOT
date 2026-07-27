@@ -2,8 +2,10 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import {
   authConfig,
   beginLogin,
+  beginPasswordReset,
   completeLoginFromUrl,
   decodeTokenClaims,
+  getBearerToken,
   logout,
   readSession,
 } from "./authSession";
@@ -14,7 +16,8 @@ type AuthState = {
   user: AuthUser | null;
   error: string;
   signIn: (loginHint?: string) => Promise<void>;
-  signOut: () => void;
+  resetPassword: (loginHint?: string) => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -47,8 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       try {
         await completeLoginFromUrl();
+        const token = await getBearerToken();
         if (!active) return;
-        const nextUser = userFromSession();
+        const nextUser = token ? userFromSession() : null;
         setUser(nextUser);
         setStatus(nextUser ? "authenticated" : "anonymous");
       } catch (reason) {
@@ -69,8 +73,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let disposed = false;
+    let timer = 0;
+
+    const schedule = () => {
+      const session = readSession();
+      if (!session) return;
+      const delay = Math.max(5_000, session.expiresAt - Date.now() - 2 * 60 * 1000);
+      timer = window.setTimeout(() => void maintain(), delay);
+    };
+    const maintain = async () => {
+      window.clearTimeout(timer);
+      try {
+        const token = await getBearerToken();
+        if (disposed) return;
+        if (!token) {
+          setUser(null);
+          setStatus("expired");
+          return;
+        }
+        setUser(userFromSession());
+        setError("");
+        schedule();
+      } catch {
+        if (!disposed) {
+          // A transient network/provider failure must not destroy a valid local
+          // session. Retry shortly and let API calls surface a retryable error.
+          timer = window.setTimeout(() => void maintain(), 30_000);
+        }
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void maintain();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    schedule();
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [status]);
+
   const value = useMemo<AuthState>(
-    () => ({ status, user, error, signIn: beginLogin, signOut: logout }),
+    () => ({
+      status,
+      user,
+      error,
+      signIn: beginLogin,
+      resetPassword: beginPasswordReset,
+      signOut: logout,
+    }),
     [status, user, error],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

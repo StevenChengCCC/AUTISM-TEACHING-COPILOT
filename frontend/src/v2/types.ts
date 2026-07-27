@@ -250,6 +250,7 @@ export interface GeneratedMaterial {
   id: string;
   packageId: string;
   type:
+    | "quantity_cards"
     | "visual_card"
     | "choice_board"
     | "first_then_board"
@@ -259,6 +260,12 @@ export interface GeneratedMaterial {
     | "sorting_page"
     | "matching_page"
     | "scenario_cards"
+    | "sequence_cards"
+    | "social_narrative"
+    | "core_word_board"
+    | "visual_schedule"
+    | "task_analysis_cards"
+    | "emotion_scale"
     | "teacher_cue_card"
     | "data_sheet"
     | "session_summary"
@@ -293,6 +300,9 @@ export interface MaterialSpecification {
   contrastGuidance: string;
   printPreparation: string[];
   editableFields: string[];
+  requiredContent?: string[];
+  professionalRules?: string[];
+  teacherDirections?: string[];
   altText?: string | null;
   [key: string]: unknown;
 }
@@ -309,6 +319,7 @@ export interface LessonPackage {
   summaryTemplate: string;
   safetyReview?: SafetyReview | null;
   standardsChecks?: StandardsCheck[];
+  qualityScore?: LessonPackageQualityScore | null;
   documentContent?: Record<string, unknown>;
   aiProvider?: string | null;
   fallbackUsed?: boolean | null;
@@ -356,6 +367,29 @@ export interface StandardsCheck {
   evidenceLocation?: string;
   explanation?: string;
   recommendedEdit?: string;
+}
+
+export interface QualityScoreItem {
+  id: string;
+  label: string;
+  score: 0 | 1 | 2;
+  maxScore: 2;
+  status: "pass" | "needs_review" | "blocked";
+  explanation: string;
+  evidence: string[];
+  issues: string[];
+  recommendedEdits: string[];
+  critical: boolean;
+}
+
+export interface LessonPackageQualityScore {
+  totalScore: number;
+  maxScore: 16;
+  percentage: number;
+  overallStatus: "pass" | "needs_review" | "blocked";
+  items: QualityScoreItem[];
+  evaluatorVersion: string;
+  teacherReviewRequired: boolean;
 }
 
 export interface LessonPackageVersion {

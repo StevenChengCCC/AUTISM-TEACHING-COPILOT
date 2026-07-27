@@ -12,7 +12,7 @@ function isValidEmail(value: string): boolean {
 }
 
 export function LoginPage() {
-  const { status, error, signIn } = useAuth();
+  const { status, error, signIn, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [website, setWebsite] = useState("");
   const [formError, setFormError] = useState("");
@@ -47,6 +47,26 @@ export function LoginPage() {
     } catch (reason) {
       setSubmitting(false);
       setFormError(reason instanceof Error ? reason.message : "Sign-in could not be started.");
+    }
+  }
+
+  async function startPasswordReset() {
+    setFormError("");
+    const normalized = email.trim();
+    if (!isValidEmail(normalized)) {
+      setFormError("Enter your account email first, then choose Forgot password.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await resetPassword(normalized);
+    } catch (reason) {
+      setSubmitting(false);
+      setFormError(
+        reason instanceof Error
+          ? reason.message
+          : "Password reset could not be started.",
+      );
     }
   }
 
@@ -111,6 +131,14 @@ export function LoginPage() {
             <Button type="submit" fullWidth disabled={submitting || !email}>
               {submitting ? "Opening sign in…" : expired ? "Sign in again" : "Continue"}
             </Button>
+            <button
+              className="v2-forgot-password"
+              type="button"
+              onClick={() => void startPasswordReset()}
+              disabled={submitting}
+            >
+              Forgot password?
+            </button>
           </form>
         </Card>
       </main>

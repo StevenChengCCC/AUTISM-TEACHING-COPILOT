@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from base64 import b64decode
 from io import BytesIO
 
 import pytest
@@ -32,6 +33,7 @@ def _settings(tmp_path) -> Settings:
         LOCAL_PRIVATE_STORAGE_DIR=str(tmp_path / "private"),
         LOCAL_UPLOAD_SIGNING_SECRET="test-print-kit-signing-secret",
         PUBLIC_API_BASE_URL="http://testserver",
+        STORAGE_DIR=str(tmp_path / "public"),
         EXPORT_RETENTION_DAYS=7,
     )
 
@@ -159,6 +161,105 @@ def test_complete_printable_lesson_kit_is_one_real_multipage_pdf(tmp_path):
     assert downloaded == body
     assert content_type == "application/pdf"
     assert filename == "complete-lesson-kit.pdf"
+
+
+def test_complete_printable_lesson_kit_embeds_generated_image_url(tmp_path):
+    config = _settings(tmp_path)
+    repos = V2Repositories()
+    package, materials = _seed_package(repos)
+    image_path = tmp_path / "public" / "generated-images" / "counting.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(
+        b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+        )
+    )
+    visual = materials[0].model_copy(
+        update={
+            "content": {
+                **materials[0].content,
+                "imageUrl": "/storage/generated-images/counting.png",
+                "imageAltText": "Five countable classroom objects.",
+            }
+        }
+    )
+    updated_materials = [visual, *materials[1:]]
+    package = package.model_copy(update={"materials": updated_materials})
+    repos.lesson_packages.save(package)
+    repos.generated_materials.save(visual)
+
+    storage = LocalPrivateObjectStorage(config)
+    service = V2PrintableLessonKitService(repos, storage, config)
+    job = service.create(
+        package.id,
+        PrintableLessonKitRequest(
+            materialIds=[item.id for item in updated_materials],
+            pageSize="Letter",
+            reviewedConfirmation=True,
+        ),
+    )
+
+    body = storage.read_bytes(job.storageObjectKey, config.MAX_EXPORT_BYTES)
+    reader = PdfReader(BytesIO(body))
+    embedded_images = 0
+    for page in reader.pages:
+        resources = page.get("/Resources")
+        x_objects = resources.get("/XObject") if resources else None
+        if not x_objects:
+            continue
+        for item in x_objects.values():
+            resolved = item.get_object()
+            if resolved.get("/Subtype") == "/Image":
+                embedded_images += 1
+    assert embedded_images >= 1
+
+
+def test_printable_lesson_kit_rejects_incomplete_planned_visuals(tmp_path):
+    config = _settings(tmp_path)
+    repos = V2Repositories()
+    package, materials = _seed_package(repos)
+    visual = materials[0].model_copy(
+        update={
+            "content": {
+                **materials[0].content,
+                "visualItems": [
+                    {
+                        "id": "count-1",
+                        "label": "1",
+                        "quantity": 1,
+                        "generationStatus": "ready",
+                        "imageUrl": "/storage/generated-images/counting.png",
+                    },
+                    {
+                        "id": "count-2",
+                        "label": "2",
+                        "quantity": 2,
+                        "generationStatus": "pending",
+                        "imageUrl": None,
+                    },
+                ],
+            }
+        }
+    )
+    repos.generated_materials.save(visual)
+    repos.lesson_packages.save(
+        package.model_copy(update={"materials": [visual, *materials[1:]]})
+    )
+    service = V2PrintableLessonKitService(
+        repos, LocalPrivateObjectStorage(config), config
+    )
+
+    with pytest.raises(
+        ConflictError, match="Every planned classroom visual must be ready"
+    ):
+        service.create(
+            package.id,
+            PrintableLessonKitRequest(
+                materialIds=[item.id for item in [visual, *materials[1:]]],
+                pageSize="Letter",
+                reviewedConfirmation=True,
+            ),
+        )
 
 
 def test_printable_lesson_kit_requires_teacher_approved_materials(tmp_path):

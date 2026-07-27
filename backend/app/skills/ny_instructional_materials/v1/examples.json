@@ -1,0 +1,96 @@
+[
+  {
+    "input": {
+      "goal": "Count quantities 1 through 5",
+      "selectedMaterials": [
+        "quantity_cards",
+        "matching_page",
+        "token_board",
+        "data_sheet",
+        "summary_template"
+      ]
+    },
+    "outputCharacteristics": [
+      "A complete five-part numeracy kit, not only number cards",
+      "Five usable quantity cards",
+      "Programmatically rendered one-to-five countable objects and numerals",
+      "A usable matching page and answer key",
+      "A reinforcement board, goal-aligned data sheet, and brief summary page",
+      "No decorative-only image and no missing card"
+    ]
+  },
+  {
+    "input": {
+      "goal": "Request help",
+      "communicationMode": "AAC or gesture",
+      "selectedMaterials": [
+        "visual_card",
+        "help_card",
+        "scenario_cards",
+        "token_board",
+        "data_sheet"
+      ]
+    },
+    "outputCharacteristics": [
+      "Help card preserves AAC and gesture access",
+      "Brief age-respectful labels",
+      "Familiar generalization scenarios",
+      "No requirement to speak"
+    ]
+  },
+  {
+    "input": {
+      "goal": "Complete a hand-washing routine and transition to the next activity",
+      "selectedMaterials": [
+        "first_then_board",
+        "choice_board",
+        "visual_card",
+        "token_board",
+        "data_sheet"
+      ]
+    },
+    "outputCharacteristics": [
+      "First–Then board uses concrete attainable steps",
+      "Choice board contains only available choices",
+      "Visual support depicts the routine step directly",
+      "Reinforcement is confirmed and non-coercive",
+      "Data sheet records independence and prompt level"
+    ]
+  },
+  {
+    "input": {
+      "goal": "Use an AAC system to communicate help, stop, more, and break across activities",
+      "selectedMaterials": [
+        "core_word_board",
+        "help_card",
+        "choice_board",
+        "scenario_cards",
+        "data_sheet"
+      ]
+    },
+    "outputCharacteristics": [
+      "Vocabulary and symbol system remain teacher-confirmed",
+      "Stable word positions and multiple accessible response modes",
+      "Rejecting and stopping are available alongside requesting",
+      "Communication is modeled and honored without requiring imitation"
+    ]
+  },
+  {
+    "input": {
+      "goal": "Complete a classroom arrival routine with greater independence",
+      "selectedMaterials": [
+        "visual_schedule",
+        "task_analysis_cards",
+        "first_then_board",
+        "data_sheet",
+        "summary_template"
+      ]
+    },
+    "outputCharacteristics": [
+      "One observable action per step",
+      "Sequence and completion state are visually explicit",
+      "Prompt level and independence are recorded separately",
+      "Teacher confirms the exact routine before use"
+    ]
+  }
+]

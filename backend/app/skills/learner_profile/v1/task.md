@@ -3,3 +3,5 @@ Create a teacher-reviewable Student Learning Profile draft. Cover strengths, int
 For every proposed value, return a discrete signal with an evidence type, confidence, source record, source page or section and date when available, contradiction state, suggested value, and pending teacher-review state. Preserve contradictory and outdated evidence as separate signals. Paraphrase evidence briefly; never reproduce long source passages.
 
 Only set chronological age when it is explicitly supported by the supplied record text or a teacher-confirmed existing profile value. Use `0` when age is unknown. Never infer age from grade, skill level, writing style, or a demo default.
+
+Keep teacher-facing insights evidence-cautious. Do not predict mastery, treatment outcomes, or future performance from a single record. Avoid absolute wording such as essential, critical, always, or never. Do not repeat diagnoses or service labels in summary notes unless they are directly necessary for a teacher-selected instructional decision. Prefer wording such as "the record notes," "may support," and "teacher confirmation is required."

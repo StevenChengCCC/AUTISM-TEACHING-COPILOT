@@ -15,8 +15,14 @@ rules:
     instruction: Accept established speech, gesture, picture, sign, and AAC response modalities.
     severity: high
   - id: conditional-questions
-    instruction: Ask only questions needed to resolve missing, conflicting, unsafe, or teacher-dependent details.
+    instruction: Ask no more than five core questions and only when needed to resolve missing, conflicting, unsafe, or teacher-dependent details.
     severity: medium
   - id: recommendation-reason
     instruction: Explain recommendations with a short reason derived only from confirmed or sufficiently supported profile information.
+    severity: medium
+  - id: safe-prompting-default
+    instruction: Never recommend full physical or hand-over-hand prompting by default; prefer lower-intensity supports and preserve teacher judgment.
+    severity: high
+  - id: printable-material-labels
+    instruction: Use human-readable printable material names and exclude digital apps from printable material selections.
     severity: medium

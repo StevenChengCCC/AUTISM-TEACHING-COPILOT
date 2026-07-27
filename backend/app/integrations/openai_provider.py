@@ -365,6 +365,7 @@ class OpenAIV2AIProvider(V2AIProvider):
         self.last_fallback_used = False
         try:
             skill = self._registry.get("lesson_planning")
+            ny_material_skill = self._registry.get("ny_instructional_materials")
             result = self._request_json(
                 self._prompts.build(
                     skill,
@@ -374,6 +375,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                     },
                     trusted_input={"learner": build_ai_safe_profile(learner)},
                     untrusted_input={"teacherRequest": teacher_request},
+                    supplemental_skills=(ny_material_skill,),
                 ),
                 LessonPlanningResult,
                 model=self._settings.OPENAI_PLANNING_MODEL,
@@ -432,6 +434,7 @@ class OpenAIV2AIProvider(V2AIProvider):
         try:
             lesson_skill = self._registry.get("lesson_generation")
             material_skill = self._registry.get("material_generation")
+            ny_material_skill = self._registry.get("ny_instructional_materials")
             prompt = self._prompts.build(
                 lesson_skill,
                 output_contract={
@@ -444,7 +447,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                     "draft": draft.model_dump(by_alias=True),
                     "learnerContext": learner_context or {},
                 },
-                supplemental_skills=(material_skill,),
+                supplemental_skills=(material_skill, ny_material_skill),
             )
             result = self._request_json(
                 prompt,
@@ -501,6 +504,7 @@ class OpenAIV2AIProvider(V2AIProvider):
         self.last_fallback_used = False
         try:
             skill = self._registry.get("lesson_generation")
+            ny_material_skill = self._registry.get("ny_instructional_materials")
             result = self._request_json(
                 self._prompts.build(
                     skill,
@@ -518,6 +522,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                         "currentSectionText": current_text,
                         "teacherEditInstruction": instruction,
                     },
+                    supplemental_skills=(ny_material_skill,),
                 ),
                 _LessonSectionRevision,
                 model=self._settings.OPENAI_PACKAGE_MODEL,

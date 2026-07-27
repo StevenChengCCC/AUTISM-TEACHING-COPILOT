@@ -1,4 +1,9 @@
-import { clearSession, getBearerToken, refreshSession } from "../auth/authSession";
+import {
+  clearSession,
+  CognitoSessionError,
+  getBearerToken,
+  refreshSession,
+} from "../auth/authSession";
 
 export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000/api";
 
@@ -23,7 +28,20 @@ export class LessonKitApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}, hasRetried = false): Promise<T> {
-  const token = await getBearerToken();
+  let token: string | null;
+  try {
+    token = await getBearerToken();
+  } catch (reason) {
+    if (reason instanceof CognitoSessionError && reason.retryable) {
+      throw new LessonKitApiError(
+        reason.message,
+        503,
+        "session_refresh_unavailable",
+        true,
+      );
+    }
+    throw reason;
+  }
   const requestId = crypto.randomUUID();
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -38,7 +56,20 @@ async function request<T>(path: string, options: RequestOptions = {}, hasRetried
   });
 
   if (response.status === 401 && !hasRetried && token) {
-    const refreshed = await refreshSession();
+    let refreshed;
+    try {
+      refreshed = await refreshSession();
+    } catch (reason) {
+      if (reason instanceof CognitoSessionError && reason.retryable) {
+        throw new LessonKitApiError(
+          reason.message,
+          503,
+          "session_refresh_unavailable",
+          true,
+        );
+      }
+      throw reason;
+    }
     if (refreshed) return request<T>(path, options, true);
     clearSession();
     window.dispatchEvent(new Event("lessonkit:session-expired"));

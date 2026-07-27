@@ -10,6 +10,7 @@ ACTIVE_LESSON_PLANNING_SKILL_VERSION=v1
 ACTIVE_LESSON_GENERATION_SKILL_VERSION=v1
 ACTIVE_MATERIAL_GENERATION_SKILL_VERSION=v1
 ACTIVE_IMAGE_GENERATION_SKILL_VERSION=v1
+ACTIVE_NY_INSTRUCTIONAL_MATERIALS_SKILL_VERSION=v1
 ```
 
 The registry never selects a version through lexical sorting. An unsupported or missing configured version produces `skill_configuration_error`. `/health/ready` reports the skill registry unavailable in strict environments without exposing filesystem paths.

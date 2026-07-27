@@ -13,6 +13,7 @@ export function AIQuestionBlock({ question,onAnswer }:{ question:AIQuestion;onAn
   };
   return <div className="v2-question"><div className="v2-bot">✦</div><div className="v2-question-body">
     <div className="v2-question-title"><strong>{question.prompt}</strong></div>
+    {question.helperText&&<p className="v2-question-helper">{question.helperText}</p>}
     {question.inputType!=="free_text"&&<div className="v2-option-list">{question.options.map((option)=><OptionChip key={option.id} option={option} selected={question.selectedOptionIds.includes(option.id)} onToggle={()=>toggle(option.id)}/>)}{question.allowCustomAnswer&&<button className={showCustom?"is-custom":""} onClick={()=>setShowCustom(true)}>＋ Add custom answer</button>}</div>}
     {(showCustom||question.inputType==="free_text")&&<div className="v2-custom-answer"><input value={question.customAnswer} onChange={(event)=>onAnswer(question.selectedOptionIds.filter((id)=>!id.startsWith("custom-")),event.target.value)} placeholder="Type a custom answer"/>{question.customAnswer&&<Tag tone="purple">Teacher custom</Tag>}</div>}
   </div></div>;

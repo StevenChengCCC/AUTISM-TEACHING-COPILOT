@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     ACTIVE_LESSON_GENERATION_SKILL_VERSION: str = "v1"
     ACTIVE_MATERIAL_GENERATION_SKILL_VERSION: str = "v1"
     ACTIVE_IMAGE_GENERATION_SKILL_VERSION: str = "v1"
+    ACTIVE_NY_INSTRUCTIONAL_MATERIALS_SKILL_VERSION: str = "v1"
 
     AZURE_OPENAI_ENDPOINT: str | None = None
     AZURE_OPENAI_API_KEY: SecretStr | None = None
@@ -212,6 +213,9 @@ class Settings(BaseSettings):
             "lesson_generation": self.ACTIVE_LESSON_GENERATION_SKILL_VERSION,
             "material_generation": self.ACTIVE_MATERIAL_GENERATION_SKILL_VERSION,
             "image_generation": self.ACTIVE_IMAGE_GENERATION_SKILL_VERSION,
+            "ny_instructional_materials": (
+                self.ACTIVE_NY_INSTRUCTIONAL_MATERIALS_SKILL_VERSION
+            ),
         }
 
     @property

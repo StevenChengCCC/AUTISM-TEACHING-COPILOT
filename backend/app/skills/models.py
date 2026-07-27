@@ -7,6 +7,23 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class SkillSourceReference(BaseModel):
+    """A reviewed public source that informed a versioned skill.
+
+    The classification distinguishes enforceable process requirements from
+    non-binding guidance and optional instructional frameworks.
+    """
+
+    model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
+
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    authority: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    classification: Literal["requirement", "guidance", "framework"]
+    reviewed_on: str = Field(alias="reviewedOn", min_length=1)
+
+
 class SkillManifest(BaseModel):
     model_config = ConfigDict(frozen=True, populate_by_name=True, extra="forbid")
 
@@ -24,6 +41,10 @@ class SkillManifest(BaseModel):
         alias="sourceReviewStatus"
     )
     prompt_components: tuple[str, ...] = Field(alias="promptComponents", min_length=1)
+    jurisdiction: str | None = None
+    source_references: tuple[SkillSourceReference, ...] = Field(
+        alias="sourceReferences", default=()
+    )
 
 
 class QualityRule(BaseModel):

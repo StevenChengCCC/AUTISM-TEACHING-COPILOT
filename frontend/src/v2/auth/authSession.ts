@@ -9,6 +9,18 @@ export type BrowserSession = {
 
 const SESSION_KEY = "autism-teaching-copilot.auth-session";
 const PKCE_KEY = "autism-teaching-copilot.pkce";
+const REFRESH_EARLY_MS = 2 * 60 * 1000;
+let refreshInFlight: Promise<BrowserSession | null> | null = null;
+
+export class CognitoSessionError extends Error {
+  constructor(
+    message: string,
+    public retryable: boolean,
+  ) {
+    super(message);
+    this.name = "CognitoSessionError";
+  }
+}
 
 export const authConfig = {
   mode: (import.meta.env.VITE_AUTH_MODE ?? "demo") as AuthMode,
@@ -48,9 +60,17 @@ export function readSession(): BrowserSession | null {
   if (!value) return null;
   try {
     const session = JSON.parse(value) as BrowserSession;
+    if (
+      !session.accessToken ||
+      !session.idToken ||
+      !Number.isFinite(session.expiresAt)
+    ) {
+      clearSession();
+      return null;
+    }
     return session;
   } catch {
-    sessionStorage.removeItem(SESSION_KEY);
+    clearSession();
     return null;
   }
 }
@@ -75,11 +95,7 @@ export function decodeTokenClaims(token: string): Record<string, unknown> {
   }
 }
 
-export async function beginLogin(loginHint = ""): Promise<void> {
-  if (authConfig.mode === "demo") {
-    window.location.assign(authConfig.redirectUri);
-    return;
-  }
+async function authorizationQuery(loginHint = ""): Promise<URLSearchParams> {
   requireCognitoConfig();
   const verifier = randomValue();
   const state = randomValue(24);
@@ -95,17 +111,56 @@ export async function beginLogin(loginHint = ""): Promise<void> {
     code_challenge: challenge,
   });
   if (loginHint.trim()) query.set("login_hint", loginHint.trim());
+  return query;
+}
+
+export async function beginLogin(loginHint = ""): Promise<void> {
+  if (authConfig.mode === "demo") {
+    window.location.assign(authConfig.redirectUri);
+    return;
+  }
+  const query = await authorizationQuery(loginHint);
   window.location.assign(`${authConfig.domain}/oauth2/authorize?${query}`);
+}
+
+export async function beginPasswordReset(loginHint = ""): Promise<void> {
+  if (authConfig.mode === "demo") return;
+  const query = await authorizationQuery(loginHint);
+  window.location.assign(`${authConfig.domain}/forgotPassword?${query}`);
 }
 
 async function exchangeToken(body: URLSearchParams): Promise<BrowserSession> {
   requireCognitoConfig();
-  const response = await fetch(`${authConfig.domain}/oauth2/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-  });
-  if (!response.ok) throw new Error("Cognito could not complete the sign-in request.");
+  let response: Response;
+  try {
+    response = await fetch(`${authConfig.domain}/oauth2/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+  } catch {
+    throw new CognitoSessionError(
+      "The sign-in service could not be reached. Check your connection and retry.",
+      true,
+    );
+  }
+  if (!response.ok) {
+    let providerError = "";
+    try {
+      providerError = String(((await response.json()) as { error?: string }).error ?? "");
+    } catch {
+      // Keep a sanitized message when Cognito did not return JSON.
+    }
+    const invalidSession =
+      response.status === 400 &&
+      ["invalid_grant", "invalid_client", "unauthorized_client"].includes(providerError);
+    throw new CognitoSessionError(
+      invalidSession
+        ? "Your sign-in session is no longer valid. Sign in again to continue."
+        : "The sign-in service is temporarily unavailable. Please retry.",
+      !invalidSession,
+    );
+  }
   const payload = (await response.json()) as {
     access_token: string;
     id_token: string;
@@ -151,34 +206,66 @@ export async function completeLoginFromUrl(): Promise<BrowserSession | null> {
 }
 
 export async function refreshSession(): Promise<BrowserSession | null> {
+  if (refreshInFlight) return refreshInFlight;
   const current = readSession();
   if (!current?.refreshToken) return null;
-  try {
-    return await exchangeToken(
-      new URLSearchParams({
-        grant_type: "refresh_token",
-        client_id: authConfig.clientId,
-        refresh_token: current.refreshToken,
-      }),
-    );
-  } catch {
-    clearSession();
-    return null;
-  }
+  refreshInFlight = (async () => {
+    try {
+      return await exchangeToken(
+        new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: authConfig.clientId,
+          refresh_token: current.refreshToken,
+        }),
+      );
+    } catch (reason) {
+      if (reason instanceof CognitoSessionError && !reason.retryable) {
+        clearSession();
+        return null;
+      }
+      throw reason;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
 }
 
 export async function getBearerToken(): Promise<string | null> {
   if (authConfig.mode !== "cognito") return null;
   let current = readSession();
   if (!current) return null;
-  if (current.expiresAt <= Date.now() + 30_000) current = await refreshSession();
+  if (current.expiresAt <= Date.now() + REFRESH_EARLY_MS) {
+    current = await refreshSession();
+  }
   // The ID token carries verified profile and custom organization claims. The
   // backend validates its signature, issuer, app-client audience, and expiry.
   return current?.idToken ?? null;
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
+  const current = readSession();
   clearSession();
+  if (
+    authConfig.mode === "cognito" &&
+    authConfig.domain &&
+    authConfig.clientId &&
+    current?.refreshToken
+  ) {
+    try {
+      await fetch(`${authConfig.domain}/oauth2/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          token: current.refreshToken,
+          client_id: authConfig.clientId,
+        }),
+        keepalive: true,
+      });
+    } catch {
+      // Local state is already cleared. Cognito hosted logout still follows.
+    }
+  }
   if (authConfig.mode !== "cognito" || !authConfig.domain || !authConfig.clientId) {
     window.location.assign(authConfig.logoutUri);
     return;

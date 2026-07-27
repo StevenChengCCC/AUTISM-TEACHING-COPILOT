@@ -1,4 +1,4 @@
-# Lesson Kit Studio end-to-end staging demo
+# Autism Teaching Copilot end-to-end staging demo
 
 Use only synthetic/de-identified learner content. This script verifies the Round 7 experience; it is not a privacy, security, accessibility, or legal certification.
 
@@ -37,4 +37,3 @@ Use only synthetic/de-identified learner content. This script verifies the Round
 ## Acceptance record
 
 Record the Amplify build ID, Elastic Beanstalk application version, migration revision, UTC test time, synthetic account identifier, and pass/fail notes. Never record passwords, tokens, source learner documents, complete prompts, or complete model responses.
-

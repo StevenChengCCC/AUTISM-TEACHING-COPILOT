@@ -52,7 +52,7 @@ export function TopNav({ page, onNavigate }: Props) {
         {menuOpen&&<div className="v2-account-menu" id="teacher-account-menu" role="menu">
           <strong>{user?.displayName ?? "Teacher"}</strong>
           {user?.email&&<span>{user.email}</span>}
-          <button role="menuitem" onClick={signOut}>Sign out</button>
+          <button role="menuitem" onClick={() => void signOut()}>Sign out</button>
         </div>}
       </div>
     </header>

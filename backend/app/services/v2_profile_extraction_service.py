@@ -77,7 +77,7 @@ class V2ProfileExtractionService:
         return LearnerProfileExtractionDto(
             learner=self.learners.to_dto(saved),
             records=[self.records.to_dto(record) for record in records],
-            insights=provider_result.insights,
+            insights=self._build_review_insights(saved),
             profileSignals=saved.profile_signals,
             unknownFields=saved.unknown_fields,
             analyzedRecordCount=len(eligible_records),
@@ -98,15 +98,7 @@ class V2ProfileExtractionService:
         records: list,
         analyzed_record_count: int,
     ) -> LearnerProfileExtractionDto:
-        insights = [
-            signal.summary or signal.label
-            for signal in learner.profile_signals
-            if signal.status != "rejected" and (signal.summary or signal.label)
-        ][:6]
-        if not insights:
-            insights = [
-                "Saved learner information is ready for teacher review."
-            ]
+        insights = self._build_review_insights(learner)
         return LearnerProfileExtractionDto(
             learner=self.learners.to_dto(learner),
             records=[self.records.to_dto(record) for record in records],
@@ -116,6 +108,48 @@ class V2ProfileExtractionService:
             analyzedRecordCount=analyzed_record_count,
             status="complete",
         )
+
+    @staticmethod
+    def _build_review_insights(learner: LearnerProfile) -> list[str]:
+        """Create concise, evidence-cautious notes instead of repeating AI claims."""
+
+        notes: list[str] = []
+
+        def add(prefix: str, value: str) -> None:
+            clean = " ".join(value.split()).strip(" .")
+            replacements = {
+                "approaching mastery": "showing documented progress",
+                "Approaching mastery": "Showing documented progress",
+                "mastery": "documented performance",
+                "Mastery": "Documented performance",
+                "critical": "potentially useful",
+                "Critical": "Potentially useful",
+                "essential": "potentially useful",
+                "Essential": "Potentially useful",
+            }
+            for source, target in replacements.items():
+                clean = clean.replace(source, target)
+            if clean:
+                notes.append(f"{prefix}: {clean}. Teacher confirmation is required.")
+
+        if learner.strengths:
+            add("Record suggests a relative strength", learner.strengths[0])
+        if learner.emerging_skills:
+            add("Record identifies an emerging skill", learner.emerging_skills[0])
+        if learner.communication_mode:
+            add("Record notes a communication mode", learner.communication_mode)
+        for support in learner.support_needs[:2]:
+            add("Record indicates this support may be useful", support)
+        if learner.reinforcement_preferences and len(notes) < 4:
+            add(
+                "Record identifies a possible engagement support",
+                learner.reinforcement_preferences[0],
+            )
+        if not notes:
+            notes.append(
+                "Saved learner information is ready for teacher review; unsupported details remain unknown."
+            )
+        return notes[:4]
 
     @staticmethod
     def _merge_profile(

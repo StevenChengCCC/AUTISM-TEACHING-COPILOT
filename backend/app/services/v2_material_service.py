@@ -210,6 +210,53 @@ class V2MaterialService:
             self.repos.generated_materials.save(updated)
         return True
 
+    def attach_visual_assets(
+        self,
+        material_id: str,
+        visual_items: list[dict],
+        *,
+        overall_status: str,
+    ) -> GeneratedMaterialDto:
+        """Persist a material's complete visual asset set.
+
+        Top-level image fields are retained as a compatibility thumbnail, while
+        ``visualItems`` is the source of truth for material-specific layout.
+        """
+
+        material = self._get_generated_dto(material_id)
+        content = dict(material.content)
+        content["visualItems"] = visual_items
+        content["imageGenerationStatus"] = overall_status
+        first = next(
+            (
+                item
+                for item in visual_items
+                if isinstance(item, dict)
+                and (item.get("imageUrl") or item.get("imageBase64"))
+            ),
+            None,
+        )
+        if first:
+            content.update(
+                {
+                    "imageConcept": first.get("concept"),
+                    "imageAssetId": first.get("imageAssetId"),
+                    "imageUrl": first.get("imageUrl"),
+                    "imageBase64": first.get("imageBase64"),
+                    "imageAltText": first.get("imageAltText"),
+                    "imageSourceType": first.get("imageSourceType"),
+                    "imageLicenseInfo": first.get("imageLicenseInfo"),
+                    "imageSafetyStatus": first.get("imageSafetyStatus"),
+                }
+            )
+        if overall_status not in {"failed", "processing", "pending"}:
+            content.pop("imageGenerationMessage", None)
+        return self._save_generated(
+            material.model_copy(
+                update={"content": content, "status": "teacher_review_needed"}
+            )
+        )
+
     def create_export_job(
         self, package_id: str, payload: LessonPackageExportRequest
     ) -> LessonPackageExportJobDto:

@@ -94,8 +94,11 @@ export function AutismTeachingCopilotApp() {
   };
   const startExistingLearnerFlow = (id: string) => { setLearnerId(id); navigateTo("reviewLearnerExisting"); };
   const startNewLearnerFlow = () => {
+    const randomValues = new Uint16Array(1);
+    crypto.getRandomValues(randomValues);
+    const shortCode = 100 + (randomValues[0] % 900);
     void lessonKitApi.createLearner({
-      code:`Learner N-${String(Date.now()).slice(-6)}`,
+      code:`Learner N-${shortCode}`,
       age:0,
       avatar:"🧒🏻",
       tags:[],

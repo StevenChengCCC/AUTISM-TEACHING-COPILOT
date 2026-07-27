@@ -206,24 +206,16 @@ def test_lesson_planning_questions_are_dynamic_and_require_teacher_confirmation(
         "I want to teach asking for help.",
     )
     fields = {question.field for question in state.questions}
-    assert len(state.questions) > 5
-    assert {
+    assert len(state.questions) == 5
+    assert fields == {
         "goalText",
         "baseline",
         "responseLevel",
         "scenarios",
-        "opportunities",
-        "duration",
-        "promptingStart",
-        "promptingLimits",
-        "reinforcementPlan",
-        "errorCorrection",
         "selectedMaterials",
-        "dataCollection",
-        "generalizationPlan",
-        "teacherConstraints",
-    }.issubset(fields)
+    }
     assert state.can_generate is False
+    assert all(not question.selected_option_ids for question in state.questions)
     assert all(
         option.description
         for question in state.questions
@@ -239,6 +231,23 @@ def test_lesson_planning_questions_are_dynamic_and_require_teacher_confirmation(
         state.conversation_id,
         "baseline",
         QuestionAnswerUpdate(selected_option_ids=["baseline-prompted"]),
+    )
+    state = service.update_answer(
+        state.conversation_id,
+        "response-level",
+        QuestionAnswerUpdate(selected_option_ids=["short-phrase"]),
+    )
+    state = service.update_answer(
+        state.conversation_id,
+        "scenarios",
+        QuestionAnswerUpdate(selected_option_ids=["toy-car"]),
+    )
+    state = service.update_answer(
+        state.conversation_id,
+        "materials",
+        QuestionAnswerUpdate(
+            selected_option_ids=["visual-cards", "data-sheet"]
+        ),
     )
     assert state.can_generate is True
     assert state.draft.baseline == "Responds with prompting"
@@ -271,10 +280,17 @@ def test_package_is_typed_evaluated_and_versioned_through_teacher_approval():
     assert package.generationMetadata is not None
     assert package.generationMetadata.skillId == "lesson_generation"
     assert package.safetyReview and package.safetyReview.status == "pass"
-    assert len(package.standardsChecks) == 13
-    assert all(
-        check.version == "instructional-quality-v1" for check in package.standardsChecks
+    assert len(package.standardsChecks) == 18
+    assert any(
+        check.skillId == "ny_instructional_materials"
+        for check in package.standardsChecks
     )
+    assert {
+        check.version for check in package.standardsChecks
+    } == {
+        "instructional-quality-v1",
+        "ny-instructional-materials-evaluator-v1",
+    }
     assert all(step.expectedLearnerResponse for step in package.teachingFlow)
     assert all(step.dataToRecord for step in package.teachingFlow)
     assert package.promptingPlan and package.promptingPlan.teacherOverride
@@ -421,6 +437,9 @@ def test_selected_records_to_teacher_approved_package_end_to_end():
     for question_id, option_id in (
         ("target-response", "confirm-target"),
         ("baseline", "baseline-prompted"),
+        ("response-level", "short-phrase"),
+        ("scenarios", "toy-car"),
+        ("materials", "visual-cards"),
     ):
         chat = chat_service.update_answer(
             chat.conversation_id,

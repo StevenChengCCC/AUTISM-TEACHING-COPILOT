@@ -10,7 +10,13 @@ Backend v2 loads instructional behavior from immutable, explicitly selected skil
 - `prompt_builder.py` assembles a trusted system message and a separate untrusted data message.
 - AI providers obtain skills through dependency-injectable registries. The OpenAI provider has no embedded instructional system prompts.
 
-The active v1 skills are learner profile extraction, lesson planning, lesson generation, printable material generation, and image generation. Their `sourceReviewStatus` is `pending`: this infrastructure is functional, but Round 5 will complete instructional source review and content rules.
+The active v1 skills are learner profile extraction, lesson planning, lesson
+generation, printable material generation, image generation, and the
+supplemental `ny_instructional_materials` quality skill. The New York skill
+records reviewed public sources and labels each source as a requirement,
+guidance document, or optional framework. It improves generation and
+deterministic quality checks but does not certify legal, IEP, district, or
+program compliance.
 
 ## Failure behavior
 

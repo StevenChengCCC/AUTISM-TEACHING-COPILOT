@@ -1,0 +1,74 @@
+skillId: ny_instructional_materials
+version: v1
+status: active
+intendedUse:
+  - Improve teacher-confirmed lesson kits and printable materials for New York special education classrooms
+  - Evaluate material completeness, access, dignity, instructional alignment, and print readiness
+prohibitedUse:
+  - Claiming legal, IEP, district, or New York State compliance
+  - Creating or changing an IEP, placement, diagnosis, behavior plan, service, or accommodation
+  - Replacing teacher, CSE or CPSE, family, related-service provider, or BCBA judgment
+  - Recommending restrictive, punitive, coercive, or aversive practices
+inputSchemaVersion: ny-instructional-materials-input-v1
+outputSchemaVersion: ny-instructional-materials-output-v1
+promptTemplateVersion: ny-instructional-materials-prompt-v1
+evaluatorVersion: ny-instructional-materials-evaluator-v1
+teacherReviewRequired: true
+sourceReviewStatus: reviewed
+promptComponents: [system.md, task.md, quality_rules.yaml, examples.json]
+jurisdiction: New York State and New York City instructional guidance
+sourceReferences:
+  - id: nysed-part-200-4
+    title: Section 200.4 Procedures for Referral, Evaluation, IEP Development, Placement and Review
+    authority: New York State Education Department
+    url: https://www.nysed.gov/special-education/section-2004-procedures-referral-evaluation-iep-development-placement-and-review
+    classification: requirement
+    reviewedOn: "2026-07-27"
+  - id: nysed-quality-iep
+    title: Guide to Quality Individualized Education Program Development and Implementation
+    authority: New York State Education Department
+    url: https://www.nysed.gov/sites/default/files/programs/special-education/guide-to-quality-iep-development-and-implementation.pdf
+    classification: guidance
+    reviewedOn: "2026-07-27"
+  - id: nysed-blueprint
+    title: Blueprint for Improved Results for Students with Disabilities
+    authority: New York State Education Department
+    url: https://www.nysed.gov/special-education/blueprint-improved-results-students-disabilities
+    classification: guidance
+    reviewedOn: "2026-07-27"
+  - id: nysed-crs
+    title: Culturally Responsive-Sustaining Education Framework
+    authority: New York State Education Department
+    url: https://www.nysed.gov/crs/framework
+    classification: framework
+    reviewedOn: "2026-07-27"
+  - id: nysed-assistive-technology
+    title: Assistive Technology for Students with Disabilities
+    authority: New York State Education Department
+    url: https://www.nysed.gov/special-education/assistive-technology-students-disabilities
+    classification: guidance
+    reviewedOn: "2026-07-27"
+  - id: nycps-autism-programs
+    title: Specialized Programs for Students with Disabilities
+    authority: New York City Public Schools
+    url: https://www.schools.nyc.gov/learning/special-education/school-settings/specialized-programs
+    classification: guidance
+    reviewedOn: "2026-07-27"
+  - id: cast-udl-3
+    title: CAST Universal Design for Learning Guidelines 3.0
+    authority: CAST
+    url: https://udlguidelines.cast.org/
+    classification: framework
+    reviewedOn: "2026-07-27"
+  - id: cec-hlp
+    title: High-Leverage Practices in Special Education
+    authority: Council for Exceptional Children and CEEDAR Center
+    url: https://highleveragepractices.org/four-areas-practice-k-12/instruction
+    classification: framework
+    reviewedOn: "2026-07-27"
+  - id: ncaep-afirm
+    title: Autism Focused Intervention Resources and Modules
+    authority: UNC Frank Porter Graham Child Development Institute
+    url: https://afirm.fpg.unc.edu/afirm-modules/
+    classification: framework
+    reviewedOn: "2026-07-27"

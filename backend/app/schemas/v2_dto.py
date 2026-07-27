@@ -455,6 +455,7 @@ class PrintLayout(V2Model):
 
 MaterialStatus = Literal["ready", "approved"]
 GeneratedMaterialType = Literal[
+    "quantity_cards",
     "visual_card",
     "choice_board",
     "first_then_board",
@@ -464,6 +465,12 @@ GeneratedMaterialType = Literal[
     "sorting_page",
     "matching_page",
     "scenario_cards",
+    "sequence_cards",
+    "social_narrative",
+    "core_word_board",
+    "visual_schedule",
+    "task_analysis_cards",
+    "emotion_scale",
     "teacher_cue_card",
     "data_sheet",
     "session_summary",
@@ -778,7 +785,18 @@ class MaterialSpecificationBase(V2Model):
         default_factory=lambda: ["Review at actual size", "Check print margins"]
     )
     editableFields: list[str] = Field(default_factory=list)
+    requiredContent: list[str] = Field(default_factory=list)
+    professionalRules: list[str] = Field(default_factory=list)
+    teacherDirections: list[str] = Field(default_factory=list)
     altText: str | None = None
+
+
+class QuantityCardsSpecification(MaterialSpecificationBase):
+    type: Literal["quantity_cards"] = "quantity_cards"
+    rangeStart: int = Field(default=1, ge=0, le=20)
+    rangeEnd: int = Field(default=5, ge=1, le=20)
+    representationStyle: Literal["objects", "dots", "mixed"] = "objects"
+    includeNumerals: bool = True
 
 
 class VisualCardSpecification(MaterialSpecificationBase):
@@ -831,6 +849,42 @@ class ScenarioCardsSpecification(MaterialSpecificationBase):
     scenarios: list[str]
 
 
+class SequenceCardsSpecification(MaterialSpecificationBase):
+    type: Literal["sequence_cards"] = "sequence_cards"
+    steps: list[str]
+    numbered: bool = True
+
+
+class SocialNarrativeSpecification(MaterialSpecificationBase):
+    type: Literal["social_narrative"] = "social_narrative"
+    situation: str
+    responseOptions: list[str]
+    supportOptions: list[str]
+
+
+class CoreWordBoardSpecification(MaterialSpecificationBase):
+    type: Literal["core_word_board"] = "core_word_board"
+    words: list[str]
+    responseModes: list[str]
+
+
+class VisualScheduleSpecification(MaterialSpecificationBase):
+    type: Literal["visual_schedule"] = "visual_schedule"
+    steps: list[str]
+    completionCue: str = "Move completed step to Done"
+
+
+class TaskAnalysisCardsSpecification(MaterialSpecificationBase):
+    type: Literal["task_analysis_cards"] = "task_analysis_cards"
+    steps: list[str]
+
+
+class EmotionScaleSpecification(MaterialSpecificationBase):
+    type: Literal["emotion_scale"] = "emotion_scale"
+    levels: list[str]
+    regulationOptions: list[str]
+
+
 class TeacherCueCardSpecification(MaterialSpecificationBase):
     type: Literal["teacher_cue_card"] = "teacher_cue_card"
     cueSteps: list[str]
@@ -853,7 +907,8 @@ class HandoffNoteSpecification(MaterialSpecificationBase):
 
 
 MaterialSpecification = (
-    VisualCardSpecification
+    QuantityCardsSpecification
+    | VisualCardSpecification
     | ChoiceBoardSpecification
     | FirstThenBoardSpecification
     | HelpCardSpecification
@@ -862,6 +917,12 @@ MaterialSpecification = (
     | SortingPageSpecification
     | MatchingPageSpecification
     | ScenarioCardsSpecification
+    | SequenceCardsSpecification
+    | SocialNarrativeSpecification
+    | CoreWordBoardSpecification
+    | VisualScheduleSpecification
+    | TaskAnalysisCardsSpecification
+    | EmotionScaleSpecification
     | TeacherCueCardSpecification
     | DataSheetMaterialSpecification
     | SessionSummarySpecification
@@ -973,6 +1034,29 @@ class StandardsCheckDto(V2Model):
     recommendedEdit: str = ""
 
 
+class QualityScoreItemDto(V2Model):
+    id: str
+    label: str
+    score: int = Field(ge=0, le=2)
+    maxScore: int = 2
+    status: Literal["pass", "needs_review", "blocked"]
+    explanation: str
+    evidence: list[str] = Field(default_factory=list)
+    issues: list[str] = Field(default_factory=list)
+    recommendedEdits: list[str] = Field(default_factory=list)
+    critical: bool = False
+
+
+class LessonPackageQualityScoreDto(V2Model):
+    totalScore: int = Field(ge=0, le=16)
+    maxScore: int = 16
+    percentage: int = Field(ge=0, le=100)
+    overallStatus: Literal["pass", "needs_review", "blocked"]
+    items: list[QualityScoreItemDto] = Field(default_factory=list)
+    evaluatorVersion: str = "lesson-package-quality-v1"
+    teacherReviewRequired: bool = True
+
+
 class LessonPackageDto(V2Model):
     id: str
     learnerId: str
@@ -986,6 +1070,7 @@ class LessonPackageDto(V2Model):
     summaryTemplate: str
     safetyReview: SafetyReviewDto | None = None
     standardsChecks: list[StandardsCheckDto] = Field(default_factory=list)
+    qualityScore: LessonPackageQualityScoreDto | None = None
     documentContent: dict[str, Any] = Field(default_factory=dict)
     aiProvider: str | None = None
     fallbackUsed: bool | None = None

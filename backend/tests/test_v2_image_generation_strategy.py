@@ -37,6 +37,18 @@ class CountingImageProvider(MockV2AIProvider):
         }
 
 
+class MissingImageFieldsProvider(CountingImageProvider):
+    """Simulate valid provider material copy that omitted image metadata."""
+
+    def generate_lesson_package(self, draft, learner_context=None):
+        generated = super().generate_lesson_package(draft, learner_context)
+        for material in generated["materials"]:
+            material.pop("imageConcept", None)
+            material.pop("imagePrompt", None)
+            material.pop("imageAltText", None)
+        return generated
+
+
 class OneResultExternalProvider:
     provider_name = "test-external"
 
@@ -85,7 +97,59 @@ def lesson_draft() -> LessonDesignDraftDto:
     )
 
 
-def test_generate_first_adds_three_reviewable_images_and_reuses_cache(tmp_path):
+def counting_draft() -> LessonDesignDraftDto:
+    return LessonDesignDraftDto(
+        id="draft-counting-kit",
+        learnerId="a102",
+        goalText="Learner will count from 1 to 5.",
+        observableResponse="Learner will count objects from 1 to 5.",
+        responseLevel="Point and count",
+        scenarios=["Table work"],
+        selectedMaterials=["Visual Cards"],
+        theme="Vehicles",
+        duration="8 minutes",
+        customNotes="Use the learner's interests.",
+    )
+
+
+def test_counting_cards_use_repeated_personalized_object_not_generic_dots(tmp_path):
+    repos = V2Repositories()
+    provider = CountingImageProvider()
+    config = Settings(
+        _env_file=None,
+        IMAGE_ASSET_STRATEGY="generate_first",
+        STORAGE_DIR=str(tmp_path),
+    )
+    images = V2ImageAssetService(
+        repos, external_providers=[], ai=provider, config=config
+    )
+    packages = V2LessonPackageService(repos, ai=provider, images=images)
+
+    package = packages.generate_product(counting_draft())
+    visual = next(item for item in package.materials if item.type == "quantity_cards")
+    planned = visual.content["visualItems"]
+    assert [item["quantity"] for item in planned] == [1, 2, 3, 4, 5]
+    assert all(item["assetRole"] == "countable_object" for item in planned)
+
+    packages.queue_product_images(package.id)
+    packages.prepare_product_images(package.id)
+    visual = next(
+        item
+        for item in packages.get_product(package.id).materials
+        if item.type == "quantity_cards"
+    )
+    completed = visual.content["visualItems"]
+    visual_calls = [
+        call
+        for call in provider.image_calls
+        if call["materialType"] == "quantity cards"
+    ]
+    assert len(visual_calls) == 1
+    assert len({item["imageAssetId"] for item in completed}) == 1
+    assert all(item["imageUrl"] for item in completed)
+
+
+def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp_path):
     repos = V2Repositories()
     provider = CountingImageProvider()
     config = Settings(
@@ -114,8 +178,8 @@ def test_generate_first_adds_three_reviewable_images_and_reuses_cache(tmp_path):
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == 3
-    visual_types = {"visual_card", "help_card", "token_board"}
+    assert len(provider.image_calls) == 5
+    visual_types = {"visual_card", "help_card", "token_board", "scenario_cards"}
     for package in (first, second):
         for material in package.materials:
             if material.type in visual_types:
@@ -132,7 +196,7 @@ def test_generate_first_adds_three_reviewable_images_and_reuses_cache(tmp_path):
             else:
                 assert "imageAssetId" not in material.content
     generated_files = list((tmp_path / "generated-images").glob("*.png"))
-    assert len(generated_files) == 3
+    assert len(generated_files) == 5
     prompts = " ".join(call["prompt"] for call in provider.image_calls)
     assert "Learner A-102" not in prompts
     assert "visual prompts and concise instructions" not in prompts
@@ -157,12 +221,50 @@ def test_failed_generation_still_builds_package_and_caches_fallback():
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == 3
+    assert len(provider.image_calls) == 5
     assert first.lessonBrief and second.lessonBrief
     for material in first.materials:
-        if material.type in {"visual_card", "help_card", "token_board"}:
+        if material.type in {"visual_card", "help_card", "token_board", "scenario_cards"}:
             assert material.content["imageSourceType"] in {"internal", "mock"}
             assert material.content["imageAssetId"]
+
+
+def test_visual_materials_do_not_silently_skip_images_when_provider_omits_concept(
+    tmp_path,
+):
+    repos = V2Repositories()
+    provider = MissingImageFieldsProvider()
+    config = Settings(
+        _env_file=None,
+        IMAGE_ASSET_STRATEGY="generate_first",
+        STORAGE_DIR=str(tmp_path),
+    )
+    images = V2ImageAssetService(
+        repos, external_providers=[], ai=provider, config=config
+    )
+    packages = V2LessonPackageService(repos, ai=provider, images=images)
+
+    package = packages.generate_product(lesson_draft())
+    visual_materials = [
+        material
+        for material in package.materials
+        if material.type in packages.image_material_types
+    ]
+
+    assert visual_materials
+    assert all(material.content.get("imageConcept") for material in visual_materials)
+    assert all(material.content.get("imagePrompt") for material in visual_materials)
+
+    packages.queue_product_images(package.id)
+    packages.prepare_product_images(package.id)
+    completed = packages.get_product(package.id)
+
+    assert provider.image_calls
+    assert all(
+        material.content.get("imageUrl")
+        for material in completed.materials
+        if material.type in packages.image_material_types
+    )
 
 
 def test_reuse_search_generate_uses_external_candidate_before_generation():

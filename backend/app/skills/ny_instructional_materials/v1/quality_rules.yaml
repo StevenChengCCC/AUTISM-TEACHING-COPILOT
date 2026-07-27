@@ -1,0 +1,88 @@
+rules:
+  - id: teacher-confirmed-iep-boundary
+    instruction: Use the IEP, present levels, accommodations, goals, and services only when supplied and teacher-confirmed; never invent, replace, or reinterpret a CSE or CPSE decision.
+    severity: high
+  - id: observable-instructional-target
+    instruction: Connect the material to one observable learner response and a concrete opportunity definition; distinguish a lesson objective from an annual IEP goal.
+    severity: high
+  - id: curriculum-access
+    instruction: Support access to age- and grade-relevant New York learning expectations; if grade, subject, or standard is unknown, mark alignment for teacher confirmation rather than guessing.
+    severity: high
+  - id: specially-designed-instruction
+    instruction: Adapt content, method, response format, and delivery using confirmed learner strengths and needs while preserving the instructional target.
+    severity: high
+  - id: question-economy
+    instruction: Ask only unanswered decisions that materially change the kit, recommend a safe editable default, avoid duplicate questions, and limit one planning turn to four concise decision groups.
+    severity: high
+  - id: complete-material-kit
+    instruction: Generate the complete content of every selected material now, including learner pages and brief teacher directions; never use placeholders or prose describing a material that was not created.
+    severity: high
+  - id: goal-family-bundle
+    instruction: Select the complete function-based bundle defined in task.md for numeracy, communication, transition or self-care, regulation, following directions, social participation, independent routines, AAC, literacy, classification, play, or community and vocational instruction; do not return a single generic visual when a complete kit is required.
+    severity: high
+  - id: internal-state-boundary
+    instruction: Regulation materials may support communication, choice, breaks, recovery, and teacher observation, but must not reward, punish, or claim to measure an inferred internal emotional state.
+    severity: high
+  - id: social-situation-neutrality
+    instruction: Social situation guides must use factual nonjudgmental language, provide multiple acceptable response options, and never prescribe thoughts, eye contact, masking, or one compliance script.
+    severity: high
+  - id: safety-sensitive-review
+    instruction: Community safety, personal care, and vocational task materials require teacher or team review of the exact sequence, environment, and permitted prompting before use.
+    severity: high
+  - id: professional-material-blueprint
+    instruction: Build each card or worksheet from its material-specific instructional purpose, required fields, implementation directions, accessibility rules, and print layout; changing artwork alone does not create a new or complete teaching material.
+    severity: high
+  - id: material-first-density
+    instruction: Keep learner-facing materials low density and immediately usable; put rationale, implementation notes, and source explanations in a separate concise teacher guide.
+    severity: high
+  - id: explicit-instruction
+    instruction: When applicable include a brief model, guided opportunity, independent opportunity, action-oriented feedback, and a clear stopping point.
+    severity: medium
+  - id: communication-access
+    instruction: Preserve teacher-confirmed speech, AAC, picture, sign, gesture, pointing, writing, or device responses without treating speech as inherently superior.
+    severity: high
+  - id: assistive-technology-access
+    instruction: Keep required assistive technology and accessible response tools available throughout learner directions, practice, and data collection.
+    severity: high
+  - id: prompting-safeguards
+    instruction: State wait time, least intrusive permitted support, fading criteria, and teacher override; never default to physical prompting without explicit teacher confirmation.
+    severity: high
+  - id: positive-proactive-support
+    instruction: Use proactive, positive, non-coercive engagement and reinforcement; do not use deprivation, forced compliance, shame, response blocking, extinction, or aversive procedures as generic material advice.
+    severity: high
+  - id: generalization
+    instruction: Include a small number of familiar examples that vary people, materials, settings, or wording while keeping the target response stable.
+    severity: medium
+  - id: udl-representation
+    instruction: Pair concise language with meaningful visuals or objects and highlight the critical feature without adding decorative distractions.
+    severity: medium
+  - id: udl-action-expression
+    instruction: Offer accessible ways to perceive, navigate, and respond when those options do not change the teacher-confirmed target.
+    severity: medium
+  - id: culturally-linguistically-responsive
+    instruction: Treat home language, culture, identity, family knowledge, and disability as assets; avoid stereotypes, deficit framing, and automatic English-only assumptions.
+    severity: high
+  - id: age-and-identity-dignity
+    instruction: Match visual style and wording to chronological age and confirmed interests; never infantilize or use an identifiable learner likeness.
+    severity: high
+  - id: visual-semantic-accuracy
+    instruction: Every image must directly represent its label or action; generate art without embedded text and render labels, sequences, numerals, and symbols deterministically.
+    severity: high
+  - id: exact-academic-content
+    instruction: When exact academic content is part of a selected material, render quantities, numerals, equations, sequences, matching pairs, answer keys, and data fields programmatically and verify them; never rely on an image model for exact academic content.
+    severity: high
+  - id: visual-set-completeness
+    instruction: A multi-card, sequence, choice, or quantity activity is incomplete until every required visual item is ready; do not silently export missing, duplicate, or fallback artwork.
+    severity: high
+  - id: print-readiness
+    instruction: Use print-safe margins, high contrast, readable type, cut lines where needed, no color-only meaning, consistent page size, and a final actual-size review.
+    severity: high
+  - id: goal-aligned-data
+    instruction: Data sheets must measure the same observable response and distinguish independence, prompt level, incorrect response, no response, and brief notes when relevant.
+    severity: high
+  - id: privacy-minimization
+    instruction: Exclude learner names, codes, diagnoses, source-record text, school identifiers, and private notes from learner-facing materials and image prompts.
+    severity: high
+  - id: teacher-review
+    instruction: Mark AI-assisted content for teacher review and keep all wording, examples, visuals, prompts, reinforcement, and print settings editable.
+    severity: high

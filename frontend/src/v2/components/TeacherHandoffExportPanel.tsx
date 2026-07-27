@@ -13,18 +13,17 @@ const defaultSections: HandoffSectionSelection = {
   learnerOverview: true,
   teachingStrategies: true,
   activeGoals: true,
-  progress: true,
+  progress: false,
   recentSessions: true,
   lessonPackages: true,
   approvedMaterials: true,
   transitionNotes: true,
 };
 
-const sectionLabels: Record<keyof HandoffSectionSelection, string> = {
+const sectionLabels: Partial<Record<keyof HandoffSectionSelection, string>> = {
   learnerOverview: "Approved learner overview",
   teachingStrategies: "Approved teaching strategies",
   activeGoals: "Active goals",
-  progress: "Progress data",
   recentSessions: "Recent sessions",
   lessonPackages: "Approved lesson package",
   approvedMaterials: "Approved materials",
@@ -41,8 +40,8 @@ export function TeacherHandoffExportPanel({
   onFeedback: (message: string) => void;
 }) {
   const [sections, setSections] = useState(defaultSections);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const startDate = "";
+  const endDate = "";
   const [notes, setNotes] = useState("");
   const [pageSize, setPageSize] = useState<"Letter" | "A4">("Letter");
   const [includePrintables, setIncludePrintables] = useState(true);
@@ -200,8 +199,6 @@ export function TeacherHandoffExportPanel({
       </fieldset>
 
       <div className="v2-handoff-fields">
-        <label>Progress from<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-        <label>Through<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
         <label>Page size<select value={pageSize} onChange={(event) => setPageSize(event.target.value as "Letter" | "A4")}><option>Letter</option><option>A4</option></select></label>
       </div>
       <label className="v2-handoff-notes">Transition notes<textarea value={notes} maxLength={5000} onChange={(event) => setNotes(event.target.value)} placeholder="Add teacher-authored context for the receiving team." /></label>
@@ -219,8 +216,8 @@ export function TeacherHandoffExportPanel({
       </details>
       <div className="v2-handoff-preview">
         <strong>Bundle preview</strong>
-        <small>{Object.values(sections).filter(Boolean).length} sections · {selectedMaterialIds.length} approved materials · {startDate || "all dates"}{endDate ? ` to ${endDate}` : ""}</small>
-        <span>handoff-summary.pdf</span><span>progress-data.csv</span><span>handoff-data.json</span><span>README.txt</span>
+        <small>{Object.values(sections).filter(Boolean).length} sections · {selectedMaterialIds.length} approved materials</small>
+        <span>handoff-summary.pdf</span><span>handoff-data.json</span><span>README.txt</span>
       </div>
       <label className="v2-handoff-confirm">
         <input type="checkbox" checked={confirmed} onChange={() => setConfirmed((value) => !value)} />

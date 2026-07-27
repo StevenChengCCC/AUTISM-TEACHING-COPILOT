@@ -140,7 +140,15 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
     chat = service.submit_request(
         initial.conversation_id, "I want to teach Learner A-102 to ask for help."
     )
-    assert len(chat.questions) > 5
+    assert len(chat.questions) == 5
+    assert {question.field for question in chat.questions} == {
+        "goalText",
+        "baseline",
+        "responseLevel",
+        "scenarios",
+        "selectedMaterials",
+    }
+    assert all(not question.selected_option_ids for question in chat.questions)
     assert chat.can_generate is False
     assert chat.draft.selected_materials == [
         "Visual Cards",
@@ -226,6 +234,9 @@ def test_lesson_package_document_update_preserves_materials_and_quality_data():
     ] == original_materials
     assert updated.safetyReview == package.safetyReview
     assert updated.standardsChecks == package.standardsChecks
+    assert updated.qualityScore is not None
+    assert len(updated.qualityScore.items) == 8
+    assert updated.qualityScore.maxScore == 16
 
 
 def test_v2_repository_seed_is_deterministic_and_multidimensional():
@@ -326,11 +337,15 @@ def test_v2_learner_record_and_extraction_http_contracts():
 
     extraction = client.get("/api/v2/learners/n501/profile-extraction")
     assert extraction.status_code == 200
-    assert extraction.json()["insights"] == [
-        "Use visual supports",
-        "Keep activities short",
-        "Add multiple examples",
-    ]
+    assert 1 <= len(extraction.json()["insights"]) <= 4
+    assert all(
+        "Teacher confirmation is required" in insight
+        for insight in extraction.json()["insights"]
+    )
+    assert all(
+        "mastery" not in insight.casefold()
+        for insight in extraction.json()["insights"]
+    )
     assert extraction.json()["analyzedRecordCount"] == 5
     assert extraction.json()["status"] == "complete"
 
@@ -357,22 +372,15 @@ def test_v2_lesson_chat_product_http_flow():
     )
     assert generated.status_code == 200
     state = generated.json()
-    assert {question["field"] for question in state["questions"]} >= {
+    assert len(state["questions"]) == 5
+    assert {question["field"] for question in state["questions"]} == {
         "goalText",
         "baseline",
         "responseLevel",
         "scenarios",
-        "opportunities",
-        "duration",
-        "promptingStart",
-        "promptingLimits",
-        "reinforcementPlan",
-        "errorCorrection",
         "selectedMaterials",
-        "dataCollection",
-        "generalizationPlan",
-        "teacherConstraints",
     }
+    assert all(not question["selectedOptionIds"] for question in state["questions"])
     assert state["draft"]["goalText"] == (
         "Learner will ask for help using a short phrase."
     )
@@ -424,17 +432,19 @@ def test_v2_lesson_chat_product_http_flow():
     assert scenario_question["options"][-1]["source"] == "teacher_custom"
     assert updated["draft"]["scenarios"] == ["Toy car stuck", "Snack container"]
 
-    prompting = client.patch(
+    materials = client.patch(
         f"/api/v2/lesson-chat/{state['conversationId']}/answers",
         json={
-            "questionId": "prompting-strategy",
-            "selectedOptionIds": ["wait-time", "fade-verbal"],
-            "customAnswer": "Pause for five seconds",
+            "questionId": "materials",
+            "selectedOptionIds": ["visual-cards", "data-sheet"],
+            "customAnswer": "",
         },
     )
-    assert prompting.status_code == 200
-    assert "Wait time before prompt" in prompting.json()["draft"]["promptingStart"]
-    assert "Pause for five seconds" in prompting.json()["draft"]["promptingStart"]
+    assert materials.status_code == 200
+    assert materials.json()["draft"]["selectedMaterials"] == [
+        "Visual Cards",
+        "Data Sheet",
+    ]
 
     cleared = client.post(f"/api/v2/lesson-chat/{state['conversationId']}/clear")
     assert cleared.status_code == 200
@@ -463,11 +473,17 @@ def test_v2_product_lesson_package_pipeline_http_contract():
     assert package["safetyReview"]["status"] == "pass"
     assert package["safetyReview"]["riskLevel"] == "low"
     assert package["safetyReview"]["issues"] == []
-    assert len(package["standardsChecks"]) == 13
-    assert all(
-        check["version"] == "instructional-quality-v1"
+    assert len(package["standardsChecks"]) == 18
+    assert any(
+        check["skillId"] == "ny_instructional_materials"
         for check in package["standardsChecks"]
     )
+    assert {
+        check["version"] for check in package["standardsChecks"]
+    } == {
+        "instructional-quality-v1",
+        "ny-instructional-materials-evaluator-v1",
+    }
     assert [step["title"] for step in package["teachingFlow"]] == [
         "Warm-up and motivation",
         "Model asking for help",
@@ -478,9 +494,9 @@ def test_v2_product_lesson_package_pipeline_http_contract():
     assert [material["title"] for material in package["materials"]] == [
         "Visual Card",
         "Help Card",
-        "Token Board",
+        "Scenario Cards",
+        "Reinforcement Board",
         "Data Sheet",
-        "Summary Template",
     ]
     token_board = next(
         material

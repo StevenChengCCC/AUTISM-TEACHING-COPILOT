@@ -1,6 +1,6 @@
 # Round 7 — Amazon Cognito staging setup
 
-This is the exact staging checklist for Lesson Kit Studio's browser-based teacher login. It creates public-client OIDC configuration; it does not create an enterprise tenant administrator.
+This is the exact staging checklist for Autism Teaching Copilot's browser-based teacher login. It creates public-client OIDC configuration; it does not create an enterprise tenant administrator.
 
 ## 1. Create the user pool
 
@@ -28,10 +28,10 @@ Create an app client named `lesson-kit-studio-web`:
 - Do not enable implicit grant.
 - Configure the Cognito managed login domain or a custom domain.
 
-Configure exact URLs (replace the examples):
+Configure the public product URLs:
 
-- Callback: `https://staging.example.amplifyapp.com`
-- Sign-out: `https://staging.example.amplifyapp.com`
+- Callback: `https://autismteachingcopilot.com`
+- Sign-out: `https://autismteachingcopilot.com`
 - Local callback/sign-out, only on a development app client: `http://localhost:5173`
 
 Do not use wildcard callback or logout URLs.
@@ -71,4 +71,3 @@ Create `teacher-demo@example.test` or another controlled non-deliverable/synthet
 4. Confirm an expired token produces `401` with code `session_expired`.
 5. Confirm a token from another app client or user pool is rejected.
 6. Confirm an unauthenticated request to `/api/v2/learners` is rejected while `/health/live` remains public.
-

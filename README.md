@@ -1,6 +1,6 @@
-# Lesson Kit Studio
+# Autism Teaching Copilot
 
-An AI teaching copilot for autism special education teachers. The product helps teachers plan structured 1:1 sessions, manage generalization, choose reinforcement strategies, assemble teaching packages, and track progress over time.
+AI lesson planning for special educators. Autism Teaching Copilot helps teachers plan structured 1:1 sessions, manage generalization, choose reinforcement strategies, assemble teaching packages, and track progress over time.
 
 This is not a PowerPoint generator, generic lesson planner, or chatbot. The teacher remains the decision maker; the system is a planning and execution assistant.
 
@@ -26,7 +26,7 @@ backend/app/
 
 frontend/src/v2/
 ├── api/              # Backend v2 client and product API façade
-├── components/       # reusable Lesson Kit Studio UI
+├── components/       # reusable Autism Teaching Copilot UI
 ├── pages/            # learner, lesson, output, session, and material views
 └── types.ts          # frontend product contracts
 ```
@@ -77,8 +77,12 @@ DEV_ALLOW_ANON_TEACHER=true
 DEV_ANON_TEACHER_ID=1
 OPENAI_API_KEY=
 OPENAI_TEXT_MODEL=gpt-5.5
+OPENAI_PROFILE_MODEL=gpt-4.1-mini
 OPENAI_IMAGE_MODEL=gpt-image-2
 OPENAI_TIMEOUT_SECONDS=60
+OPENAI_PROFILE_TIMEOUT_SECONDS=45
+OPENAI_MAX_RETRIES=0
+OPENAI_REASONING_EFFORT=low
 AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_DEPLOYMENT=
@@ -94,7 +98,23 @@ Frontend:
 ```text
 VITE_API_BASE=http://localhost:8000/api
 VITE_USE_LOCAL_MOCK=false
+VITE_AUTH_MODE=demo
+VITE_COGNITO_REDIRECT_URI=http://localhost:5173
+VITE_COGNITO_LOGOUT_URI=http://localhost:5173
 ```
+
+Amplify production public configuration:
+
+```text
+VITE_API_BASE=https://api.autismteachingcopilot.com/api
+VITE_AUTH_MODE=cognito
+VITE_COGNITO_REDIRECT_URI=https://autismteachingcopilot.com
+VITE_COGNITO_LOGOUT_URI=https://autismteachingcopilot.com
+```
+
+These are browser-visible endpoints and auth settings, not secrets. OpenAI keys,
+database credentials, AWS secret keys, and Cognito app-client secrets must never
+be configured in the frontend.
 
 The browser calls Backend v2 through `VITE_API_BASE`; the backend owns AI
 provider selection, credentials, safety checks, and learner-data handling.
@@ -268,7 +288,10 @@ Step 2: edit `backend/.env.local`:
 AI_PROVIDER=openai
 OPENAI_API_KEY=your_key_here
 OPENAI_TEXT_MODEL=gpt-5.5
+OPENAI_PROFILE_MODEL=gpt-4.1-mini
 OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_MAX_RETRIES=0
+OPENAI_REASONING_EFFORT=low
 ```
 
 Step 3: restart the backend.
@@ -370,8 +393,8 @@ secrets, learner records, documents, prompts, or model responses.
 ## AWS staging baseline
 
 The backend source is packaged from `backend/` and starts through its `Procfile`.
-The Elastic Beanstalk staging environment must eventually provide an HTTPS API
-domain such as `https://api-staging.<YOUR_DOMAIN>` and set `APP_ENV=staging`.
+The Elastic Beanstalk environment should expose the HTTPS API domain
+`https://api.autismteachingcopilot.com` and set the appropriate `APP_ENV`.
 Staging readiness remains 503 until every required capability is configured.
 PostgreSQL repositories, private S3 adapters, and durable teacher-handoff export
 metadata now exist. Production identity and the remaining operational hardening
@@ -382,14 +405,17 @@ an Amplify monorepo application. Configure the Amplify branch with:
 
 ```text
 AMPLIFY_MONOREPO_APP_ROOT=frontend
-VITE_API_BASE=https://api-staging.<YOUR_DOMAIN>/api
+VITE_API_BASE=https://api.autismteachingcopilot.com/api
 VITE_USE_LOCAL_MOCK=false
+VITE_AUTH_MODE=cognito
+VITE_COGNITO_REDIRECT_URI=https://autismteachingcopilot.com
+VITE_COGNITO_LOGOUT_URI=https://autismteachingcopilot.com
 ```
 
 `VITE_API_BASE` is public configuration. Never add database, AWS, Cognito client
-secrets, or AI provider keys to Amplify variables. The expected staging frontend
-domain is `https://staging.<YOUR_DOMAIN>` (or the Amplify-provided HTTPS domain),
-and that exact origin must be the backend `ALLOWED_ORIGINS` value.
+secrets, or AI provider keys to Amplify variables. The public frontend domain is
+`https://autismteachingcopilot.com`, and that exact origin must be included in
+the backend `ALLOWED_ORIGINS` value.
 
 The staging architecture expects RDS PostgreSQL, a private S3 bucket, Cognito
 OIDC, Secrets Manager injection, explicit CORS, and fail-closed AI behavior.

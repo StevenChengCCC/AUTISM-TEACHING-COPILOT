@@ -1,6 +1,6 @@
 # Teacher Handoff Export
 
-Lesson Kit Studio creates a curated educational handoff, not a database dump. The website remains the source of truth. A teacher chooses the relevant approved sections, reviews the exclusions, adds transition notes, confirms the intended authorized handoff, and generates a private ZIP.
+Autism Teaching Copilot creates a curated educational handoff, not a database dump. The website remains the source of truth. A teacher chooses the relevant approved sections, reviews the exclusions, adds transition notes, confirms the intended authorized handoff, and generates a private ZIP.
 
 ## Bundle
 
@@ -48,4 +48,3 @@ Values whose trimmed form begins with `=`, `+`, `-`, or `@` are prefixed with an
 - PDF rendering supports approved embedded base64 images when available. Remote images are not fetched during export.
 - Authentication remains subject to the repository’s documented deployment-mode constraints.
 - Automatic jurisdiction-specific redaction and legal-retention policy are not claimed.
-

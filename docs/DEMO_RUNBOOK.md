@@ -1,4 +1,4 @@
-# Lesson Kit Studio 8–12 minute demo runbook
+# Autism Teaching Copilot 8–12 minute demo runbook
 
 Use synthetic learner, teacher, record, lesson, and progress data only. This
 script demonstrates a teacher-assistive workflow and its technical reliability;
@@ -21,7 +21,7 @@ certification, or district-scale production readiness.
 ## 0:00–1:00 — Teacher pain point
 
 “Special-education teachers often prepare individualized, printable supports
-across scattered records and tools. Lesson Kit Studio keeps the teacher as the
+across scattered records and tools. Autism Teaching Copilot keeps the teacher as the
 decision maker: AI proposes, the teacher reviews, edits, and approves.”
 
 Sign in with the synthetic Cognito teacher. Point out the low-density workflow:
@@ -123,4 +123,3 @@ Conclude:
 
 After the demo, delete downloaded artifacts from the presenter device and clean
 up synthetic records according to the demo retention plan.
-

@@ -12,6 +12,8 @@ from app.schemas.v2_dto import (
     StandardsCheckDto,
     StandardsReport,
 )
+from app.skills.registry import SkillRegistry, get_skill_registry
+from app.services.v2_material_blueprint_service import V2MaterialBlueprintService
 
 
 QualityContext = tuple[LessonDesignDraftDto, list[GeneratedMaterialDto], dict]
@@ -81,6 +83,23 @@ class V2StandardsSkillService:
     """Versioned deterministic instructional quality evaluator."""
 
     evaluator_version = "instructional-quality-v1"
+    ny_skill_id = "ny_instructional_materials"
+    image_material_types = {
+        "quantity_cards",
+        "visual_card",
+        "choice_board",
+        "first_then_board",
+        "help_card",
+        "break_card",
+        "token_board",
+        "sorting_page",
+        "matching_page",
+        "scenario_cards",
+        "visual_schedule",
+        "task_analysis_cards",
+        "emotion_scale",
+        "teacher_cue_card",
+    }
     rules = (
         InstructionalQualityRule(
             "observable-goal",
@@ -105,7 +124,6 @@ class V2StandardsSkillService:
             "Practice and data collection must measure the confirmed target response.",
             "Align opportunity definitions and data columns to the observable response.",
             lambda c: bool(c[2].get("teachingFlow"))
-            and "data" in " ".join(c[0].selectedMaterials).casefold()
             and bool(c[0].dataCollection.strip()),
         ),
         InstructionalQualityRule(
@@ -240,6 +258,153 @@ class V2StandardsSkillService:
         ),
     )
 
+    def __init__(self, registry: SkillRegistry | None = None) -> None:
+        self._registry = registry or get_skill_registry()
+        self._ny_skill = self._registry.get(self.ny_skill_id)
+
+    def _ny_check(
+        self,
+        *,
+        check_id: str,
+        label: str,
+        description: str,
+        severity: str,
+        status: str,
+        recommendation: str,
+        evidence_location: str,
+    ) -> StandardsCheckDto:
+        manifest = self._ny_skill.manifest
+        return StandardsCheckDto(
+            id=check_id,
+            skillId=manifest.skill_id,
+            label=label,
+            description=description,
+            severity=severity,
+            status=status,
+            recommendation=recommendation,
+            version=manifest.evaluator_version,
+            evidenceLocation=evidence_location,
+            explanation=description,
+            recommendedEdit=recommendation,
+        )
+
+    def _evaluate_ny_materials(
+        self,
+        draft: LessonDesignDraftDto,
+        materials: list[GeneratedMaterialDto],
+    ) -> list[StandardsCheckDto]:
+        material_types = {material.type for material in materials}
+        missing_bundle_items = V2MaterialBlueprintService.missing_from_bundle(
+            draft, material_types
+        )
+        has_complete_specs = bool(materials) and all(
+            material.specification is not None for material in materials
+        ) and not missing_bundle_items
+        completeness_status = (
+            "not_applicable"
+            if not materials
+            else ("pass" if has_complete_specs else "blocked")
+        )
+        visual_materials = [
+            material
+            for material in materials
+            if material.type in self.image_material_types
+        ]
+        has_visual_plans = not visual_materials or all(
+            isinstance(material.content.get("visualItems"), list)
+            and bool(material.content["visualItems"])
+            for material in visual_materials
+        )
+        print_ready = bool(materials) and all(
+            material.specification is not None
+            and bool(material.specification.printPreparation)
+            and bool(material.specification.contrastGuidance.strip())
+            and bool(material.specification.margins.strip())
+            for material in materials
+        )
+        return [
+            self._ny_check(
+                check_id="ny-complete-material-kit",
+                label="Complete classroom material kit",
+                description=(
+                    "Every goal-family kit needs all required materials plus a typed, "
+                    "editable classroom-ready specification for each item."
+                ),
+                severity="high",
+                status=completeness_status,
+                recommendation=(
+                    "Generate the complete goal-family bundle and concise teacher "
+                    "directions for every material. Missing: "
+                    + (", ".join(missing_bundle_items) or "none")
+                ),
+                evidence_location="materials",
+            ),
+            self._ny_check(
+                check_id="ny-visual-set-plan",
+                label="Complete visual set plan",
+                description=(
+                    "Each visual material needs an explicit item-level artwork plan so "
+                    "multi-card and sequence activities cannot silently omit images."
+                ),
+                severity="high",
+                status="pass" if has_visual_plans else "blocked",
+                recommendation=(
+                    "Create one planned visual item for every card, choice, sequence "
+                    "step, or countable unit before image generation."
+                ),
+                evidence_location="materials.visualItems",
+            ),
+            self._ny_check(
+                check_id="ny-print-readiness",
+                label="Print-ready specifications",
+                description=(
+                    "Material specifications need margins, contrast guidance, and "
+                    "actual-size print preparation."
+                ),
+                severity="medium",
+                status=(
+                    "not_applicable"
+                    if not materials
+                    else ("pass" if print_ready else "needs_review")
+                ),
+                recommendation=(
+                    "Add print-safe margins, high-contrast guidance, and an actual-size "
+                    "review step."
+                ),
+                evidence_location="materials.specification",
+            ),
+            self._ny_check(
+                check_id="ny-communication-and-at-access",
+                label="Communication and access preserved",
+                description=(
+                    "The confirmed response mode and assistive access must remain "
+                    "available in instruction and materials."
+                ),
+                severity="high",
+                status="pass" if bool(draft.responseLevel.strip()) else "blocked",
+                recommendation=(
+                    "Confirm and preserve speech, AAC, picture, sign, gesture, writing, "
+                    "or device access as appropriate."
+                ),
+                evidence_location="responseLevel,materials",
+            ),
+            self._ny_check(
+                check_id="ny-curriculum-alignment-review",
+                label="New York curriculum alignment",
+                description=(
+                    "Grade, subject, and New York learning-standard alignment require "
+                    "teacher confirmation and must not be guessed from disability data."
+                ),
+                severity="medium",
+                status="needs_review",
+                recommendation=(
+                    "Let the teacher select or confirm the relevant New York standard "
+                    "when standards alignment is needed."
+                ),
+                evidence_location="teacher_review",
+            ),
+        ]
+
     def evaluate(
         self, draft: LessonDesignDraft, jurisdiction: str = "generic-us"
     ) -> StandardsReport:
@@ -269,4 +434,7 @@ class V2StandardsSkillService:
         generated_content: dict | None = None,
     ) -> list[StandardsCheckDto]:
         context = (draft, materials, generated_content or {})
-        return [rule.evaluate(context) for rule in self.rules]
+        return [
+            *(rule.evaluate(context) for rule in self.rules),
+            *self._evaluate_ny_materials(draft, materials),
+        ]

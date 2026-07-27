@@ -17,3 +17,9 @@ rules:
   - id: personalization-threshold
     instruction: Do not use low-confidence interests or motivators as personalization facts.
     severity: high
+  - id: no-mastery-prediction
+    instruction: Do not infer mastery, treatment outcomes, or future performance from record extraction.
+    severity: high
+  - id: cautious-teacher-language
+    instruction: Avoid absolute support claims and present record-derived notes as suggestions requiring teacher confirmation.
+    severity: high
