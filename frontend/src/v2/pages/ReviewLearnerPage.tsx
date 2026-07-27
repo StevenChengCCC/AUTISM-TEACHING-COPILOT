@@ -4,6 +4,7 @@ import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
 import { lessonKitApi } from "../api/lessonKitApi";
 import type { LearnerProfile,LearnerProfileExtraction,LearnerRecord } from "../types";
+import "./ReviewLearnerPage.css";
 
 type EditableProfile={ code:string;age:string;communication:string;supportNeeds:string;interests:string;reinforcement:string;activityFormats:string;notes:string };
 const emptyProfile:EditableProfile={code:"",age:"",communication:"",supportNeeds:"",interests:"",reinforcement:"",activityFormats:"",notes:""};
@@ -30,7 +31,7 @@ function RecordCard({ record,onFeedback }:{ record:LearnerRecord;onFeedback:(mes
 }
 
 export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback }:{ learnerId:string;isNew:boolean;onContinue:()=>void;onBack?:()=>void;onFeedback:(message:string)=>void }) {
-  const [extraction,setExtraction]=useState<LearnerProfileExtraction|null>(null);const [form,setForm]=useState<EditableProfile>(emptyProfile);const [isLoading,setIsLoading]=useState(true);const [isSavingProfile,setIsSavingProfile]=useState(false);const [loadError,setLoadError]=useState<string|null>(null);const [formError,setFormError]=useState<string|null>(null);
+  const [extraction,setExtraction]=useState<LearnerProfileExtraction|null>(null);const [form,setForm]=useState<EditableProfile>(emptyProfile);const [isLoading,setIsLoading]=useState(true);const [isSavingProfile,setIsSavingProfile]=useState(false);const [isEditing,setIsEditing]=useState(false);const [loadError,setLoadError]=useState<string|null>(null);const [formError,setFormError]=useState<string|null>(null);
   const loadExtraction=useCallback(async()=>{setIsLoading(true);setLoadError(null);try{const value=await lessonKitApi.getExtractedLearnerProfile(learnerId);setExtraction(value);setForm(profileFromLearner(value.learner));}catch(error){setExtraction(null);setLoadError(error instanceof Error?error.message:"Learner information is temporarily unavailable.");}finally{setIsLoading(false);}},[learnerId]);
   useEffect(()=>{void loadExtraction();},[loadExtraction]);
   if(isLoading)return <div className="v2-loading" role="status" aria-live="polite">Preparing learner information…</div>;
@@ -52,11 +53,46 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
     finally{setIsSavingProfile(false);}
   };
   const replaceFirstRecord=()=>{setExtraction((current)=>current?{...current,records:current.records.map((record,index)=>index===0?{...record,fileName:"Replacement learner summary.pdf",uploadedAt:"Just now",status:"ready"}:record)}:current);onFeedback("The first source record was replaced.");};
-  return <section><div className="v2-page-heading"><h1>{isNew?"Review Uploaded Learner Information":"Review & Update Learner Information"}</h1><p>{isNew?`AI extracted key details from the uploaded records for ${learner.code}. Edit anything before planning the lesson.`:`Check current records, upload supplemental files, and update the profile for ${learner.code}.`}</p></div><div className="v2-review-layout">
-    <Card className="v2-review-sources">{isNew?<><h2>Uploaded records</h2>{extraction.records.map((record)=><RecordCard record={record} onFeedback={onFeedback} key={record.id}/>) }<button className="v2-source-action" onClick={replaceFirstRecord}>↻ &nbsp; Replace file</button><button className="v2-source-action" onClick={()=>void addRecord("Additional family notes.txt")}>＋ &nbsp; Add another file</button></>:<><div className="v2-review-learner"><span>{learner.avatar}</span><div><h2>{learner.code} <small>· {learner.age>0?`Age ${learner.age}`:"Age to confirm"}</small></h2><p>{learner.interests.length?`Likes ${learner.interests[0].toLowerCase()}`:"Interests to confirm"}{learner.supportNeeds.length?` · ${learner.supportNeeds.join(" · ")}`:""}</p></div></div><hr/><h3>Current records</h3>{extraction.records.map((record)=><RecordCard record={record} onFeedback={onFeedback} key={record.id}/>)}<button className="v2-supplemental" onClick={()=>void addRecord("Supplemental classroom record.txt")}>⇧<strong>Upload supplemental record</strong><small>PDF, DOCX, or image (Max 20MB)</small></button></>}</Card>
-    <Card className="v2-profile-editor"><h2>{isNew?"Extracted Learner Profile":"Editable Learner Profile"}</h2><div className="v2-form-row v2-form-row--split"><label>Learner code<input value={form.code} onChange={(event)=>update("code",event.target.value)}/></label><label>Age<input type="number" min="1" max="30" inputMode="numeric" value={form.age} placeholder="Confirm" onChange={(event)=>update("age",event.target.value)}/></label></div><ProfileField label="Primary communication" value={form.communication} onChange={(value)=>update("communication",value)}/><ProfileField label="Support needs" value={form.supportNeeds} onChange={(value)=>update("supportNeeds",value)} pills/><ProfileField label="Interests" value={form.interests} onChange={(value)=>update("interests",value)} pills/><ProfileField label={isNew?"Best activity formats":"Reinforcement preferences"} value={isNew?form.activityFormats:form.reinforcement} onChange={(value)=>update(isNew?"activityFormats":"reinforcement",value)}/><div className="v2-form-row"><label>Notes<textarea value={form.notes} onChange={(event)=>update("notes",event.target.value)}/></label></div>{formError&&<p className="v2-inline-error" role="alert">{formError}</p>}<div className="v2-editor-actions">{isNew?<Button variant="secondary" onClick={onBack}>Back</Button>:<Button variant="secondary" onClick={()=>{setForm(profileFromLearner(learner));setFormError(null);}}>Reset changes</Button>}<Button disabled={isSavingProfile} onClick={()=>void saveAndContinue()}>{isSavingProfile?"Saving…":isNew?"Confirm & Continue":"Save & Continue"}</Button></div></Card>
-    <Card className="v2-review-insights">{isNew?<><div className="v2-snapshot-heading"><div><small>AI draft from {extraction.analyzedRecordCount} {extraction.analyzedRecordCount===1?"record":"records"}</small><h2>Teaching snapshot</h2></div><Tag tone="green">Teacher review</Tag></div><p className="v2-insight-disclaimer">Use these as planning cues. Confirm the editable profile before continuing.</p><div className="v2-teaching-snapshot">{extraction.insights.slice(0,3).map((insight,index)=><div className="v2-insight" key={insight}><span>{["◉","◷","▱"][index]}</span><strong>{conciseInsight(insight)}</strong></div>)}</div>{extraction.insights.length>3&&<details className="v2-evidence-details"><summary>View {extraction.insights.length-3} more record notes</summary><ul>{extraction.insights.slice(3).map((insight)=><li key={insight}>{insight}</li>)}</ul></details>}<div className="v2-extraction-complete">✓ &nbsp; Ready for teacher confirmation</div></>:<><h2>Profile Summary</h2><div className="v2-profile-summary"><h3>{form.code} · {form.age?`Age ${form.age}`:"Age to confirm"}</h3><dl><div><dt>Communication</dt><dd>{conciseInsight(form.communication)||"Confirm with teacher"}</dd></div><div><dt>Supports</dt><dd>{shortList(form.supportNeeds)}</dd></div><div><dt>Interests</dt><dd>{shortList(form.interests)}</dd></div><div><dt>Motivators</dt><dd>{shortList(form.reinforcement)}</dd></div></dl></div><h3>Planning cues</h3>{[["◯","One step at a time","Keep directions brief."],["▧","Show, then tell","Pair words with a visual."],["⌁","Offer choices","Use 2–3 clear options."]].map(([icon,title,copy])=><div className="v2-suggestion" key={title}><span>{icon}</span><div><strong>{title}</strong><small>{copy}</small></div></div>)}<Button variant="secondary" fullWidth onClick={()=>onFeedback("Profile values are ready to compare with source records.")}>Compare source records</Button></>}</Card>
-  </div></section>;
+  const summaryItems=[
+    ["Communication",conciseInsight(form.communication)||"Needs confirmation"],
+    ["Supports",shortList(form.supportNeeds,3)],
+    ["Interests",shortList(form.interests,3)],
+    [isNew?"Learning format":"Motivators",conciseInsight(isNew?form.activityFormats:form.reinforcement)||"Needs confirmation"],
+  ];
+  return <section className="v2-review-page">
+    <div className="v2-page-heading"><h1>Review learner summary</h1><p>Confirm the essentials before planning the lesson.</p></div>
+    <Card className="v2-learner-summary-card">
+      <header className="v2-learner-summary-header">
+        <div className="v2-learner-identity"><span aria-hidden="true">{form.code.replace(/^Learner\s*/i,"").charAt(0)||"L"}</span><div><h2>{form.code||learner.code}</h2><p>{form.age?`Age ${form.age}`:"Age needs confirmation"} · {extraction.records.length} {extraction.records.length===1?"record":"records"}</p></div></div>
+        <Button variant="secondary" onClick={()=>setIsEditing((value)=>!value)}>{isEditing?"Close editing":"Edit details"}</Button>
+      </header>
+
+      {!isEditing&&<>
+        <div className="v2-summary-grid">{summaryItems.map(([label,value])=><div key={label}><small>{label}</small><strong title={value}>{value}</strong></div>)}</div>
+        {form.notes&&<details className="v2-summary-details"><summary>View learner notes</summary><p>{conciseInsight(form.notes)}</p></details>}
+        {isNew&&extraction.insights.length>0&&<div className="v2-summary-cues"><small>Key teaching notes</small><ul>{extraction.insights.slice(0,3).map((insight)=><li key={insight}>{conciseInsight(insight)}</li>)}</ul></div>}
+      </>}
+
+      {isEditing&&<div className="v2-compact-profile-editor">
+        <div className="v2-form-row v2-form-row--split"><label>Learner code<input value={form.code} onChange={(event)=>update("code",event.target.value)}/></label><label>Age<input type="number" min="1" max="30" inputMode="numeric" value={form.age} placeholder="Confirm" onChange={(event)=>update("age",event.target.value)}/></label></div>
+        <ProfileField label="Primary communication" value={form.communication} onChange={(value)=>update("communication",value)}/>
+        <ProfileField label="Support needs" value={form.supportNeeds} onChange={(value)=>update("supportNeeds",value)} pills/>
+        <ProfileField label="Interests" value={form.interests} onChange={(value)=>update("interests",value)} pills/>
+        <ProfileField label={isNew?"Best activity formats":"Reinforcement preferences"} value={isNew?form.activityFormats:form.reinforcement} onChange={(value)=>update(isNew?"activityFormats":"reinforcement",value)}/>
+        <div className="v2-form-row"><label>Notes<textarea value={form.notes} onChange={(event)=>update("notes",event.target.value)}/></label></div>
+        <button className="v2-reset-link" onClick={()=>{setForm(profileFromLearner(learner));setFormError(null);}}>Reset changes</button>
+      </div>}
+
+      <div className="v2-summary-records">
+        <div><div><h3>Source records</h3><p>{isNew?"Uploaded for this profile":"Records currently on file"}</p></div><button onClick={()=>void addRecord(isNew?"Additional family notes.txt":"Supplemental classroom record.txt")}>＋ Add record</button></div>
+        <div className="v2-summary-record-list">{extraction.records.map((record)=><RecordCard record={record} onFeedback={onFeedback} key={record.id}/>)}</div>
+        {isNew&&extraction.records.length>0&&<button className="v2-replace-link" onClick={replaceFirstRecord}>Replace first file</button>}
+      </div>
+
+      {formError&&<p className="v2-inline-error" role="alert">{formError}</p>}
+      <footer className="v2-summary-actions">{onBack&&<Button variant="secondary" onClick={onBack}>Back</Button>}<Button disabled={isSavingProfile} onClick={()=>void saveAndContinue()}>{isSavingProfile?"Saving…":"Confirm & Continue"}</Button></footer>
+    </Card>
+  </section>;
 }
 
 function ProfileField({ label,value,onChange,pills=false }:{ label:string;value:string;onChange:(value:string)=>void;pills?:boolean }) {
