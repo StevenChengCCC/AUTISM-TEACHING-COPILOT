@@ -1,8 +1,9 @@
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
-from app.core.exceptions import ValidationError
+from app.core.exceptions import AIProviderUnavailableError, ValidationError
 from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerProfileExtractionDto,
+    GenerationStatus,
     GenerationMetadataDto,
     ProfileExtractionResult,
     ProfileSignal,
@@ -62,7 +63,19 @@ class V2ProfileExtractionService:
             )
             for record in eligible_records
         ]
-        provider_result = self.ai.extract_profile(learner, records_for_ai)
+        try:
+            provider_result = self.ai.extract_profile(learner, records_for_ai)
+        except AIProviderUnavailableError:
+            # A saved learner profile remains useful when the optional AI
+            # enrichment provider is temporarily unavailable.  Do not replace
+            # it with realistic mock claims and do not turn a read page into a
+            # blocking 503.
+            return self._current_extraction(
+                learner,
+                records,
+                len(eligible_records),
+                generation_status="provider_failure",
+            )
         if isinstance(provider_result, tuple):
             # Compatibility for locally implemented providers using the earlier contract.
             extracted, insights = provider_result
@@ -97,6 +110,7 @@ class V2ProfileExtractionService:
         learner: LearnerProfile,
         records: list,
         analyzed_record_count: int,
+        generation_status: GenerationStatus | None = None,
     ) -> LearnerProfileExtractionDto:
         insights = self._build_review_insights(learner)
         return LearnerProfileExtractionDto(
@@ -107,6 +121,7 @@ class V2ProfileExtractionService:
             unknownFields=learner.unknown_fields,
             analyzedRecordCount=analyzed_record_count,
             status="complete",
+            generationStatus=generation_status,
         )
 
     @staticmethod

@@ -148,14 +148,17 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
         "scenarios",
         "selectedMaterials",
     }
-    assert all(not question.selected_option_ids for question in chat.questions)
+    answers = {question.field: question.selected_option_ids for question in chat.questions}
+    assert answers["goalText"] == []
+    assert answers["scenarios"] == []
+    assert len(answers["selectedMaterials"]) >= 4
     assert chat.can_generate is False
     assert chat.draft.selected_materials == [
-        "Visual Cards",
+        "Visual Card",
         "Help Card",
-        "Token Board",
+        "Scenario Cards",
+        "Reinforcement Board",
         "Data Sheet",
-        "Summary Template",
     ]
     payload = chat.model_dump(mode="json", by_alias=True)
     assert "conversationId" in payload
@@ -495,7 +498,13 @@ def test_v2_lesson_chat_product_http_flow():
         "scenarios",
         "selectedMaterials",
     }
-    assert all(not question["selectedOptionIds"] for question in state["questions"])
+    answers = {
+        question["field"]: question["selectedOptionIds"]
+        for question in state["questions"]
+    }
+    assert answers["goalText"] == []
+    assert answers["scenarios"] == []
+    assert len(answers["selectedMaterials"]) >= 4
     assert state["draft"]["goalText"] == (
         "Learner will ask for help using a short phrase."
     )

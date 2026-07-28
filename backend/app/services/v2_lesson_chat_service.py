@@ -203,6 +203,12 @@ class V2LessonChatService:
                 draft=draft,
             )
             chat.draft = self._prepare_draft(draft)
+            # The material bundle is an AI recommendation that the teacher can
+            # remove from, not an empty form the teacher must build.  Apply the
+            # preselected complete bundle to the draft before it is persisted.
+            for question in chat.questions:
+                if question.field == "selectedMaterials":
+                    self._apply_answer(chat.draft, question)
             if generation_metadata is not None:
                 chat.generation_status = generation_metadata.status
                 chat.generation_metadata = GenerationMetadataDto.model_validate(
@@ -473,9 +479,74 @@ class V2LessonChatService:
                 require_fresh_confirmation=require_fresh_confirmation,
                 draft=draft,
             )
+        # Provider output is untrusted and may omit a question.  A missing
+        # material question previously produced a one-page Token Board package.
+        # Fill only the three product decisions, using deterministic suggestions
+        # that stay editable by the teacher.
+        for field in cls.core_question_fields:
+            if field not in by_field:
+                by_field[field] = cls._prepare_question(
+                    cls._fallback_question(field, draft),
+                    require_fresh_confirmation=require_fresh_confirmation,
+                    draft=draft,
+                )
         return [
             by_field[field] for field in cls.core_question_fields if field in by_field
         ][:3]
+
+    @classmethod
+    def _fallback_question(
+        cls, field: str, draft: LessonDesignDraft | None
+    ) -> AIQuestion:
+        if field == "goalText":
+            goal = (draft.goal_text if draft else "").strip() or (
+                "Learner practices the requested skill in an observable way."
+            )
+            return AIQuestion(
+                id="goalText",
+                prompt="What should the learner practice?",
+                field="goalText",
+                inputType="hybrid",
+                options=[],
+                customAnswer=goal,
+                allowCustomAnswer=True,
+                maxSelections=1,
+            )
+        if field == "scenarios":
+            labels = list(dict.fromkeys((draft.scenarios if draft else []) or [
+                "One-to-one teaching",
+                "Small-group lesson",
+                "A familiar daily routine",
+            ]))[:3]
+            return AIQuestion(
+                id="scenarios",
+                prompt="Where will the learner practice?",
+                field="scenarios",
+                inputType="multi_select",
+                options=[
+                    AIQuestionOption(
+                        id=f"scenario-{index + 1}",
+                        label=label,
+                        value=label,
+                        icon="▧",
+                        recommended=index < 2,
+                    )
+                    for index, label in enumerate(labels)
+                ],
+                selectedOptionIds=[
+                    f"scenario-{index + 1}" for index in range(min(2, len(labels)))
+                ],
+                allowCustomAnswer=True,
+                maxSelections=2,
+            )
+        return AIQuestion(
+            id="selectedMaterials",
+            prompt="Which pages should AI generate?",
+            field="selectedMaterials",
+            inputType="multi_select",
+            options=cls._material_options_for_draft(draft),
+            allowCustomAnswer=True,
+        )
 
     @classmethod
     def _prepare_question(
@@ -495,14 +566,20 @@ class V2LessonChatService:
                     ),
                     "input_type": "multi_select",
                     "options": material_options,
+                    # Start with the complete recommended kit.  The teacher may
+                    # remove any page, but never has to discover and select five
+                    # separate components just to get a usable package.
                     "selected_option_ids": (
-                        []
+                        [option.id for option in material_options]
                         if require_fresh_confirmation
-                        else [
-                            item
-                            for item in question.selected_option_ids
-                            if item in {option.id for option in material_options}
-                        ]
+                        else (
+                            [
+                                item
+                                for item in question.selected_option_ids
+                                if item in {option.id for option in material_options}
+                            ]
+                            or [option.id for option in material_options]
+                        )
                     ),
                     "custom_answer": "",
                     "allow_custom_answer": True,
@@ -665,11 +742,27 @@ class V2LessonChatService:
             "visual number cards": "Visual Cards",
             "number cards": "Visual Cards",
             "number cards 1 to 5": "Visual Cards",
+            "quantity cards": "Quantity Cards",
+            "matching practice": "Matching Practice",
+            "matching page": "Matching Practice",
             "help card": "Help Card",
+            "scenario cards": "Scenario Cards",
             "token board": "Token Board",
+            "reinforcement board": "Reinforcement Board",
             "data sheet": "Data Sheet",
             "tally sheet": "Data Sheet",
             "summary template": "Summary Template",
+            "first then board": "First–Then Board",
+            "first–then board": "First–Then Board",
+            "choice board": "Choice Board",
+            "sequence cards": "Sequence Cards",
+            "visual schedule": "Visual Schedule",
+            "task analysis cards": "Task Analysis Cards",
+            "emotion scale": "Emotion Scale",
+            "break card": "Break Card",
+            "core word board": "Core Word Board",
+            "social narrative": "Social Narrative",
+            "sorting practice": "Sorting Practice",
         }
         materials: list[str] = []
         for item in draft.selected_materials:

@@ -205,14 +205,22 @@ export function PrintableMaterialCanvas({
   const count = tokenCount ?? Number(content.tokens ?? content.tokenCount ?? 5);
   const tokenImage = itemImage(plannedVisuals[0]) ?? legacyImageUrl;
   return <div className="v2-printable-canvas v2-printable-canvas--tokens">
-    <h2>{heading}</h2><p>{direction || "Earn tokens, then choose a reward."}</p>
-    {tokenImage
-      ? <img src={tokenImage} alt={plannedVisuals[0]?.imageAltText ?? String(content.imageAltText ?? heading)} />
-      : imageStatus === "pending" || imageStatus === "processing"
-        ? <div className="v2-image-generation-state" role="status">Artwork is generating…</div>
-        : null}
-    <div>{Array.from({ length: Math.min(Math.max(count, 2), 10) }, (_, index) => <span key={index} />)}</div>
-    <strong>Reward: {reward || String(content.reward ?? content.rewardLabel ?? "Teacher-confirmed choice")}</strong>
+    <header><small>MY MOTIVATION BOARD</small><h2>{heading}</h2><p>{direction || "Finish each step. Add a star. Then choose your reward."}</p></header>
+    <div className="v2-token-board-body">
+      <section className="v2-token-stars" aria-label={`${count} token spaces`}>
+        {Array.from({ length: Math.min(Math.max(count, 2), 10) }, (_, index) =>
+          <span key={index}><b>★</b><small>{index + 1}</small></span>)}
+      </section>
+      <aside>
+        <small>WORKING FOR</small>
+        {tokenImage
+          ? <img src={tokenImage} alt={plannedVisuals[0]?.imageAltText ?? String(content.imageAltText ?? heading)} />
+          : imageStatus === "pending" || imageStatus === "processing"
+            ? <div className="v2-image-generation-state" role="status">Artwork is generating…</div>
+            : <span className="v2-token-reward-placeholder">★</span>}
+        <strong>{reward || String(content.reward ?? content.rewardLabel ?? "My choice")}</strong>
+      </aside>
+    </div>
     {artwork && <small>{artwork}</small>}
   </div>;
 }

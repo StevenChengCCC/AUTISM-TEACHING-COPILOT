@@ -1039,7 +1039,11 @@ class V2LessonPackageService:
             return "quantity_cards"
         if "first then" in normalized or "first-then" in normalized:
             return "first_then_board"
-        if "token" in normalized or "reward" in normalized:
+        if (
+            "token" in normalized
+            or "reward" in normalized
+            or "reinforcement board" in normalized
+        ):
             return "token_board"
         if "choice" in normalized:
             return "choice_board"
@@ -1113,6 +1117,30 @@ class V2LessonPackageService:
                 if isinstance(definition.get(key), str):
                     content[key] = definition[key]
             content = self._ensure_visual_content(material_type, content, draft)
+            content.setdefault(
+                "designVariants",
+                [
+                    {
+                        "id": "calm-blue",
+                        "label": "Calm blue",
+                        "color": "blue",
+                        "description": "Clear, calm, and low-distraction.",
+                    },
+                    {
+                        "id": "playful-green",
+                        "label": "Playful green",
+                        "color": "green",
+                        "description": "Friendly color with soft contrast.",
+                    },
+                    {
+                        "id": "warm-gold",
+                        "label": "Warm gold",
+                        "color": "gold",
+                        "description": "Warm, motivating classroom style.",
+                    },
+                ],
+            )
+            content.setdefault("selectedDesignVariant", "calm-blue")
             materials.append(
                 GeneratedMaterialDto(
                     id=self.repos.next_id("material"),

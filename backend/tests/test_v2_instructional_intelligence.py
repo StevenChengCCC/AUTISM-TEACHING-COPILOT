@@ -213,7 +213,10 @@ def test_lesson_planning_questions_are_dynamic_and_require_teacher_confirmation(
         "selectedMaterials",
     }
     assert state.can_generate is False
-    assert all(not question.selected_option_ids for question in state.questions)
+    answers = {question.field: question.selected_option_ids for question in state.questions}
+    assert answers["goalText"] == []
+    assert answers["scenarios"] == []
+    assert len(answers["selectedMaterials"]) >= 4
     assert all(
         option.description
         for question in state.questions
