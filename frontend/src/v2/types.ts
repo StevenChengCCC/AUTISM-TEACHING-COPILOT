@@ -251,6 +251,7 @@ export interface GeneratedMaterial {
   packageId: string;
   type:
     | "quantity_cards"
+    | "number_cards"
     | "visual_card"
     | "choice_board"
     | "first_then_board"

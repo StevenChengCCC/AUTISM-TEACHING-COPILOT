@@ -147,11 +147,30 @@ class V2MaterialService:
         material = self._get_generated_dto(material_id)
         content = dict(material.content)
         if payload.action == "simplify_wording":
-            content["instruction"] = "Ask for help."
+            original = str(
+                content.get("instruction")
+                or content.get("direction")
+                or content.get("phrase")
+                or ""
+            ).strip()
+            if original:
+                first_sentence = original.split(".", 1)[0].strip()
+                words = first_sentence.split()
+                shortened = " ".join(words[:12]).rstrip(",;:")
+                content["instruction"] = (
+                    f"{shortened}." if shortened else original
+                )
+            else:
+                content["instruction"] = "Follow the visual, then try the skill."
         elif payload.action == "regenerate_artwork":
             content["artwork"] = "Updated classroom artwork"
         else:
-            content["reward"] = "Choice activity"
+            current = str(content.get("reward") or "").lower()
+            rewards = ["Choice activity", "Movement break", "Preferred item"]
+            content["reward"] = next(
+                (reward for reward in rewards if reward.lower() != current),
+                rewards[0],
+            )
         return self._save_generated(
             material.model_copy(
                 update={
@@ -191,7 +210,13 @@ class V2MaterialService:
                 "imageLicenseInfo": asset.licenseInfo,
                 "imageSafetyStatus": asset.safetyStatus,
                 "imageGenerationStatus": (
-                    "ready" if asset.sourceType == "generated" else "fallback"
+                    "ready"
+                    if asset.sourceType in {"generated", "internal"}
+                    else (
+                        "needs_review"
+                        if asset.sourceType in {"pexels", "pixabay", "unsplash"}
+                        else "failed"
+                    )
                 ),
             }
         )

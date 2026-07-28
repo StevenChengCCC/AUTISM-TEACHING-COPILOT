@@ -140,12 +140,12 @@ External image search is optional and follows internal approved asset lookup.
 no external results and never prevent the backend from starting. These keys stay
 in backend environment variables and are never returned to the frontend.
 
-`IMAGE_ASSET_STRATEGY=generate_first` is the demo default: reusable generated
-or approved assets are checked first, then key visual materials request a new
-teacher-reviewable image, with external and internal assets as safe fallbacks.
-Set `IMAGE_ASSET_STRATEGY=reuse_search_generate` for a lower-cost mode that
-prefers reusable and external candidates before generation. Package generation
-never creates images for data sheets or summary templates.
+`IMAGE_ASSET_STRATEGY=reuse_search_generate` is the product default: it reuses
+an exact approved internal asset first, then optional external search, and then
+AI generation. Generated assets are cached for later materials. Set
+`IMAGE_ASSET_STRATEGY=generate_first` only when every new unmatched material
+should attempt a custom AI image before reviewed fallback sources. Package
+generation never creates images for data sheets or summary templates.
 
 ## Using AWS RDS PostgreSQL
 

@@ -214,6 +214,23 @@ def test_complete_printable_lesson_kit_embeds_generated_image_url(tmp_path):
     assert embedded_images >= 1
 
 
+def test_selected_material_design_controls_print_palette():
+    blue = V2PrintableLessonKitService._design_palette(
+        {"selectedDesignVariant": "calm-blue"}
+    )
+    green = V2PrintableLessonKitService._design_palette(
+        {"selectedDesignVariant": "playful-green"}
+    )
+    gold = V2PrintableLessonKitService._design_palette(
+        {"selectedDesignVariant": "warm-gold"}
+    )
+
+    assert blue["accent"].hexval() == "0x2563eb"
+    assert green["accent"].hexval() == "0x16a34a"
+    assert gold["accent"].hexval() == "0xd97706"
+    assert len({blue["soft"].hexval(), green["soft"].hexval(), gold["soft"].hexval()}) == 3
+
+
 def test_printable_lesson_kit_rejects_incomplete_planned_visuals(tmp_path):
     config = _settings(tmp_path)
     repos = V2Repositories()

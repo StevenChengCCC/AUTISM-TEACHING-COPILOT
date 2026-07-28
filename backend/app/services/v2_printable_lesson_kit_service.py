@@ -250,15 +250,30 @@ class V2PrintableLessonKitService:
         styles: dict[str, Any],
     ) -> list[Any]:
         content = self._material_content(material)
+        palette = self._design_palette(content)
         title = escape(material.title)
         header: list[Any] = [
-            Paragraph(title, styles["MaterialTitle"]),
+            Table(
+                [[Paragraph(title, styles["MaterialTitle"])]],
+                colWidths=[6.8 * inch],
+                style=TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, -1), palette["soft"]),
+                        ("BOX", (0, 0), (-1, -1), 1.4, palette["accent"]),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
+                        ("TOPPADDING", (0, 0), (-1, -1), 10),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                    ]
+                ),
+            ),
             Paragraph("Cut, laminate, or use as a full-page support.", styles["Kicker"]),
             Spacer(1, 10),
         ]
         image = self._embedded_image(content)
         card_types = {
             "quantity_cards",
+            "number_cards",
             "visual_card",
             "scenario_cards",
             "sequence_cards",
@@ -300,7 +315,7 @@ class V2PrintableLessonKitService:
                 colWidths=[1.0 * inch, 0.5 * inch, 5.2 * inch],
                 rowHeights=[0.9 * inch] * len(rows),
             )
-            table.setStyle(self._card_table_style())
+            table.setStyle(self._card_table_style(palette))
             return [*header, table]
 
         if material.type in card_types:
@@ -339,7 +354,7 @@ class V2PrintableLessonKitService:
                 colWidths=[3.45 * inch, 3.45 * inch],
                 rowHeights=[2.0 * inch] * ((len(cells) + 1) // 2),
             )
-            table.setStyle(self._card_table_style())
+            table.setStyle(self._card_table_style(palette))
             return [*header, table]
 
         if material.type in {"help_card", "break_card", "teacher_cue_card"}:
@@ -355,7 +370,7 @@ class V2PrintableLessonKitService:
                     [[Paragraph(escape(phrase), styles["BigCard"])]],
                     colWidths=[6.8 * inch],
                     rowHeights=[4.4 * inch],
-                    style=self._card_table_style(),
+                    style=self._card_table_style(palette),
                 ),
             ]
 
@@ -398,7 +413,7 @@ class V2PrintableLessonKitService:
                     colWidths=[3.35 * inch, 3.35 * inch],
                     rowHeights=[4.0 * inch],
                 )
-            table.setStyle(self._card_table_style())
+            table.setStyle(self._card_table_style(palette))
             return [*header, table]
 
         if material.type == "token_board":
@@ -418,7 +433,7 @@ class V2PrintableLessonKitService:
                     styles["BigInstruction"],
                 ),
                 Spacer(1, 22),
-                self._token_row(count),
+                self._token_row(count, palette),
                 Spacer(1, 28),
                 Paragraph(f"Reward: <b>{reward}</b>", styles["BigInstruction"]),
             ]
@@ -438,8 +453,9 @@ class V2PrintableLessonKitService:
             table.setStyle(
                 TableStyle(
                     [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DBEAFE")),
-                        ("GRID", (0, 0), (-1, -1), 0.8, colors.HexColor("#64748B")),
+                        ("BACKGROUND", (0, 0), (-1, 0), palette["soft"]),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), palette["dark"]),
+                        ("GRID", (0, 0), (-1, -1), 0.8, palette["border"]),
                         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                         ("FONTSIZE", (0, 0), (-1, -1), 8),
                     ]
@@ -460,14 +476,14 @@ class V2PrintableLessonKitService:
                 [
                     Paragraph(escape(str(prompt)), styles["Heading3"]),
                     Table([[""]], colWidths=[6.8 * inch], rowHeights=[0.65 * inch],
-                          style=TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.7, colors.HexColor("#94A3B8"))])),
+                          style=TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.7, palette["border"])])),
                     Spacer(1, 9),
                 ]
             )
         return result
 
     @staticmethod
-    def _token_row(count: int) -> Drawing:
+    def _token_row(count: int, palette: dict[str, colors.Color]) -> Drawing:
         width = 6.7 * inch
         height = 0.8 * inch
         drawing = Drawing(width, height)
@@ -479,9 +495,9 @@ class V2PrintableLessonKitService:
                     spacing * (index + 0.5),
                     height / 2,
                     radius,
-                    strokeColor=colors.HexColor("#2563EB"),
+                    strokeColor=palette["accent"],
                     strokeWidth=2,
-                    fillColor=colors.white,
+                    fillColor=palette["soft"],
                 )
             )
         return drawing
@@ -663,13 +679,41 @@ class V2PrintableLessonKitService:
         return table
 
     @staticmethod
-    def _card_table_style() -> TableStyle:
+    def _design_palette(content: dict[str, Any]) -> dict[str, colors.Color]:
+        variant = str(content.get("selectedDesignVariant") or "calm-blue")
+        palettes = {
+            "calm-blue": {
+                "accent": colors.HexColor("#2563EB"),
+                "dark": colors.HexColor("#1E3A8A"),
+                "soft": colors.HexColor("#EFF6FF"),
+                "border": colors.HexColor("#93C5FD"),
+            },
+            "playful-green": {
+                "accent": colors.HexColor("#16A34A"),
+                "dark": colors.HexColor("#166534"),
+                "soft": colors.HexColor("#F0FDF4"),
+                "border": colors.HexColor("#86EFAC"),
+            },
+            "warm-gold": {
+                "accent": colors.HexColor("#D97706"),
+                "dark": colors.HexColor("#92400E"),
+                "soft": colors.HexColor("#FFFBEB"),
+                "border": colors.HexColor("#FCD34D"),
+            },
+        }
+        return palettes.get(variant, palettes["calm-blue"])
+
+    @staticmethod
+    def _card_table_style(
+        palette: dict[str, colors.Color] | None = None,
+    ) -> TableStyle:
+        palette = palette or V2PrintableLessonKitService._design_palette({})
         return TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 1.4, colors.HexColor("#2563EB")),
+                ("GRID", (0, 0), (-1, -1), 1.4, palette["accent"]),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("BACKGROUND", (0, 0), (-1, -1), palette["soft"]),
                 ("LEFTPADDING", (0, 0), (-1, -1), 12),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 12),
                 ("TOPPADDING", (0, 0), (-1, -1), 12),

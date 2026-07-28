@@ -275,7 +275,7 @@ def test_incomplete_provider_structure_uses_safe_templates_for_custom_materials(
     assert package.fallbackUsed is True
     assert len(package.teachingFlow) == 5
     assert {item.type for item in package.materials} == {
-        "quantity_cards",
+        "number_cards",
         "token_board",
     }
 

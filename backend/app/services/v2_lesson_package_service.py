@@ -48,6 +48,7 @@ from app.schemas.v2_dto import (
     SocialNarrativeSpecification,
     SortingPageSpecification,
     MatchingPageSpecification,
+    NumberCardsSpecification,
     TeachingStep,
     TeachingStepDto,
     TeacherAdaptationPlanDto,
@@ -81,6 +82,7 @@ logger = logging.getLogger(__name__)
 class V2LessonPackageService:
     image_material_types = {
         "quantity_cards",
+        "number_cards",
         "visual_card",
         "scenario_cards",
         "sequence_cards",
@@ -545,17 +547,29 @@ class V2LessonPackageService:
                     "imageLicenseInfo": asset.licenseInfo,
                     "imageSafetyStatus": asset.safetyStatus,
                     "generationStatus": (
-                        "ready" if asset.sourceType == "generated" else "fallback"
+                        "ready"
+                        if asset.sourceType in {"generated", "internal"}
+                        else (
+                            "needs_review"
+                            if asset.sourceType
+                            in {"pexels", "pixabay", "unsplash"}
+                            else "failed"
+                        )
                     ),
                 }
             )
             completed_items.append(item)
         if not completed_items:
             raise ValidationError("No classroom visual assets could be prepared")
+        item_statuses = {
+            str(item.get("generationStatus") or "") for item in completed_items
+        }
         overall_status = (
-            "ready"
-            if all(item.get("generationStatus") == "ready" for item in completed_items)
-            else "fallback"
+            "failed"
+            if "failed" in item_statuses
+            else "needs_review"
+            if "needs_review" in item_statuses
+            else "ready"
         )
         material_service.attach_visual_assets(
             material.id,
@@ -993,9 +1007,9 @@ class V2LessonPackageService:
         exact = {
             "quantity cards": "quantity_cards",
             "quantity card": "quantity_cards",
-            "number cards": "quantity_cards",
-            "number card": "quantity_cards",
-            "visual number cards": "quantity_cards",
+            "number cards": "number_cards",
+            "number card": "number_cards",
+            "visual number cards": "number_cards",
             "counting cards": "quantity_cards",
             "visual cards": "visual_card",
             "visual card": "visual_card",
@@ -1035,7 +1049,9 @@ class V2LessonPackageService:
         }.get(normalized)
         if exact:
             return exact
-        if ("quantity" in normalized or "number" in normalized) and "card" in normalized:
+        if "number" in normalized and "card" in normalized:
+            return "number_cards"
+        if "quantity" in normalized and "card" in normalized:
             return "quantity_cards"
         if "first then" in normalized or "first-then" in normalized:
             return "first_then_board"
@@ -1125,18 +1141,39 @@ class V2LessonPackageService:
                         "label": "Calm blue",
                         "color": "blue",
                         "description": "Clear, calm, and low-distraction.",
+                        "background": "#f5f9ff",
+                        "surface": "#ffffff",
+                        "border": "#2563eb",
+                        "accent": "#dbeafe",
+                        "typography": "high-legibility",
+                        "layout": "spacious-grid",
+                        "artworkTreatment": "large isolated illustration",
                     },
                     {
                         "id": "playful-green",
                         "label": "Playful green",
                         "color": "green",
                         "description": "Friendly color with soft contrast.",
+                        "background": "#f4fbf6",
+                        "surface": "#ffffff",
+                        "border": "#16a34a",
+                        "accent": "#dcfce7",
+                        "typography": "rounded-friendly",
+                        "layout": "soft-card-grid",
+                        "artworkTreatment": "framed themed illustration",
                     },
                     {
                         "id": "warm-gold",
                         "label": "Warm gold",
                         "color": "gold",
                         "description": "Warm, motivating classroom style.",
+                        "background": "#fffaf0",
+                        "surface": "#ffffff",
+                        "border": "#d97706",
+                        "accent": "#fef3c7",
+                        "typography": "bold-classroom",
+                        "layout": "banner-and-cards",
+                        "artworkTreatment": "warm poster illustration",
                     },
                 ],
             )
@@ -1211,6 +1248,7 @@ class V2LessonPackageService:
         context = scenario or theme
         if material_type in {
             "quantity_cards",
+            "number_cards",
             "visual_card",
             "scenario_cards",
             "sequence_cards",
@@ -1315,6 +1353,7 @@ class V2LessonPackageService:
 
         role_by_type = {
             "quantity_cards": "countable_object",
+            "number_cards": "theme_cue",
             "scenario_cards": "scenario",
             "sequence_cards": "sequence_step",
             "social_narrative": "scenario",
@@ -1358,6 +1397,19 @@ class V2LessonPackageService:
         content: dict,
         draft: LessonDesignDraftDto,
     ) -> list[str]:
+        if material_type == "number_cards":
+            return cls._counting_labels(
+                " ".join(
+                    str(value)
+                    for value in (
+                        draft.goalText,
+                        draft.observableResponse,
+                        draft.theme,
+                        content.get("instruction"),
+                    )
+                    if value
+                )
+            ) or ["1", "2", "3", "4", "5"]
         if material_type == "first_then_board":
             return [
                 str(content.get("firstText") or "Practice the target skill"),
@@ -1434,7 +1486,7 @@ class V2LessonPackageService:
             "instruction": draft.observableResponse or draft.goalText,
             "examples": draft.scenarios,
         }
-        if material_type == "quantity_cards":
+        if material_type in {"quantity_cards", "number_cards"}:
             labels = counting_labels or ["1", "2", "3", "4", "5"]
             content.update(
                 {
@@ -1442,7 +1494,11 @@ class V2LessonPackageService:
                         "start": int(labels[0]),
                         "end": int(labels[-1]),
                     },
-                    "instruction": "Count the objects, then identify the numeral.",
+                    "instruction": (
+                        "Identify or order the numerals."
+                        if material_type == "number_cards"
+                        else "Count the objects, then identify the numeral."
+                    ),
                 }
             )
         elif material_type == "matching_page" and counting_labels:
@@ -1561,6 +1617,7 @@ class V2LessonPackageService:
                 if material_type
                 in {
                     "quantity_cards",
+                    "number_cards",
                     "visual_card",
                     "choice_board",
                     "scenario_cards",
@@ -1589,7 +1646,7 @@ class V2LessonPackageService:
             ),
         }
         response = draft.responseLevel or draft.observableResponse or draft.goalText
-        if material_type == "quantity_cards":
+        if material_type in {"quantity_cards", "number_cards"}:
             labels = V2LessonPackageService._counting_labels(
                 " ".join(
                     (
@@ -1599,6 +1656,13 @@ class V2LessonPackageService:
                     )
                 )
             ) or ["1", "2", "3", "4", "5"]
+            if material_type == "number_cards":
+                return NumberCardsSpecification(
+                    **common,
+                    rangeStart=int(labels[0]),
+                    rangeEnd=int(labels[-1]),
+                    includeThemeCue=True,
+                )
             return QuantityCardsSpecification(
                 **common,
                 rangeStart=int(labels[0]),

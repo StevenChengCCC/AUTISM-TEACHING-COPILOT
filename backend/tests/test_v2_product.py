@@ -157,8 +157,10 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
         "Visual Card",
         "Help Card",
         "Scenario Cards",
+        "Choice Board",
         "Reinforcement Board",
         "Data Sheet",
+        "Lesson Summary",
     ]
     payload = chat.model_dump(mode="json", by_alias=True)
     assert "conversationId" in payload
@@ -237,7 +239,7 @@ def test_v2_chat_material_choice_allows_every_recommended_page_and_cancels():
     )
 
     assert materials.max_selections is None
-    assert len(materials.options) == 5
+    assert len(materials.options) == 7
     assert materials.helper_text == (
         "Select all or only what you need. Printing choices come later."
     )
@@ -677,12 +679,17 @@ def test_v2_generated_material_editing_and_export_http_contract():
     visual = next(item for item in package["materials"] if item["type"] == "visual_card")
     help_card = next(item for item in package["materials"] if item["type"] == "help_card")
     token = next(item for item in package["materials"] if item["type"] == "token_board")
+    assert all(len(item["content"]["designVariants"]) == 3 for item in package["materials"])
 
     updated = client.patch(
         f"/api/v2/generated-materials/{visual['id']}",
         json={
             "title": "My Visual Card",
-            "content": {"instruction": "Please help."},
+            "content": {
+                **visual["content"],
+                "instruction": "Please help.",
+                "selectedDesignVariant": "playful-green",
+            },
             "printLayout": {
                 "pageSize": "A4",
                 "orientation": "portrait",
@@ -692,12 +699,21 @@ def test_v2_generated_material_editing_and_export_http_contract():
     )
     assert updated.status_code == 200
     assert updated.json()["status"] == "teacher_review_needed"
+    persisted_design = next(
+        item
+        for item in client.get(
+            f"/api/v2/lesson-packages/{package_id}/materials"
+        ).json()
+        if item["id"] == visual["id"]
+    )
+    assert persisted_design["content"]["selectedDesignVariant"] == "playful-green"
+    assert persisted_design["printLayout"]["color"] == "green"
 
     simplified = client.post(
         f"/api/v2/generated-materials/{visual['id']}/quick-edit",
         json={"action": "simplify_wording"},
     )
-    assert simplified.json()["content"]["instruction"] == "Ask for help."
+    assert simplified.json()["content"]["instruction"] == "Please help."
     artwork = client.post(
         f"/api/v2/generated-materials/{help_card['id']}/quick-edit",
         json={"action": "regenerate_artwork"},
@@ -717,7 +733,8 @@ def test_v2_generated_material_editing_and_export_http_contract():
     )
     assert refreshed_help_card["content"]["imageGenerationStatus"] in {
         "ready",
-        "fallback",
+        "needs_review",
+        "failed",
     }
     assert refreshed_help_card["content"]["imageAssetId"]
     reward = client.post(

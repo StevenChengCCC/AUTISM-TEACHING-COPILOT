@@ -26,7 +26,9 @@ def test_core_goal_families_resolve_to_complete_professional_bundles():
         _draft("Learner will count quantities from 1 to 5.")
     ) == [
         "quantity_cards",
+        "number_cards",
         "matching_page",
+        "sorting_page",
         "token_board",
         "data_sheet",
         "summary_template",
@@ -37,23 +39,29 @@ def test_core_goal_families_resolve_to_complete_professional_bundles():
         "visual_card",
         "help_card",
         "scenario_cards",
+        "choice_board",
         "token_board",
         "data_sheet",
+        "summary_template",
     ]
     assert V2MaterialBlueprintService.recommended_bundle(
         _draft("Learner will complete a self-care routine and transition.")
     ) == [
         "first_then_board",
+        "sequence_cards",
         "choice_board",
         "visual_card",
+        "task_analysis_cards",
         "token_board",
         "data_sheet",
+        "summary_template",
     ]
 
 
 def test_material_catalog_defines_professional_construction_rules():
     for material_type in {
         "quantity_cards",
+        "number_cards",
         "matching_page",
         "token_board",
         "data_sheet",
@@ -84,47 +92,47 @@ def test_material_catalog_defines_professional_construction_rules():
         (
             "Learner will identify a feeling and request a break.",
             "emotional_regulation",
-            ["emotion_scale", "break_card", "choice_board", "visual_card", "data_sheet"],
+            ["emotion_scale", "break_card", "choice_board", "scenario_cards", "first_then_board", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will follow a two-step direction.",
             "following_directions",
-            ["visual_card", "first_then_board", "sequence_cards", "token_board", "data_sheet"],
+            ["visual_card", "first_then_board", "sequence_cards", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will take turns with a peer during a game.",
             "social_participation",
-            ["social_narrative", "scenario_cards", "choice_board", "visual_card", "data_sheet"],
+            ["social_narrative", "scenario_cards", "choice_board", "visual_card", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will complete the classroom arrival routine independently.",
             "routine_independence",
-            ["visual_schedule", "task_analysis_cards", "first_then_board", "data_sheet", "summary_template"],
+            ["visual_schedule", "task_analysis_cards", "first_then_board", "choice_board", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will use core words to say stop, more, and help.",
             "functional_aac",
-            ["core_word_board", "help_card", "choice_board", "scenario_cards", "data_sheet"],
+            ["core_word_board", "help_card", "choice_board", "scenario_cards", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will match letters to sounds during phonics practice.",
             "early_literacy",
-            ["visual_card", "matching_page", "sequence_cards", "data_sheet", "summary_template"],
+            ["visual_card", "matching_page", "sequence_cards", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will sort classroom objects by category.",
             "concepts_classification",
-            ["sorting_page", "matching_page", "visual_card", "data_sheet", "summary_template"],
+            ["sorting_page", "matching_page", "visual_card", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will join a familiar play activity.",
             "play_leisure",
-            ["choice_board", "scenario_cards", "visual_card", "token_board", "data_sheet"],
+            ["choice_board", "scenario_cards", "visual_card", "token_board", "data_sheet", "summary_template"],
         ),
         (
             "Learner will follow the community bus safety routine.",
             "community_safety_vocational",
-            ["task_analysis_cards", "visual_schedule", "scenario_cards", "help_card", "data_sheet"],
+            ["task_analysis_cards", "visual_schedule", "scenario_cards", "help_card", "token_board", "data_sheet", "summary_template"],
         ),
     ],
 )

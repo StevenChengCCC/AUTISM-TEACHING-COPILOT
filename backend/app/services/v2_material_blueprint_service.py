@@ -28,7 +28,9 @@ class V2MaterialBlueprintService:
     CORE_BUNDLES: dict[str, tuple[str, ...]] = {
         "counting": (
             "quantity_cards",
+            "number_cards",
             "matching_page",
+            "sorting_page",
             "token_board",
             "data_sheet",
             "summary_template",
@@ -37,22 +39,30 @@ class V2MaterialBlueprintService:
             "visual_card",
             "help_card",
             "scenario_cards",
+            "choice_board",
             "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "transition_self_care": (
             "first_then_board",
+            "sequence_cards",
             "choice_board",
             "visual_card",
+            "task_analysis_cards",
             "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "emotional_regulation": (
             "emotion_scale",
             "break_card",
             "choice_board",
-            "visual_card",
+            "scenario_cards",
+            "first_then_board",
+            "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "following_directions": (
             "visual_card",
@@ -60,18 +70,23 @@ class V2MaterialBlueprintService:
             "sequence_cards",
             "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "social_participation": (
             "social_narrative",
             "scenario_cards",
             "choice_board",
             "visual_card",
+            "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "routine_independence": (
             "visual_schedule",
             "task_analysis_cards",
             "first_then_board",
+            "choice_board",
+            "token_board",
             "data_sheet",
             "summary_template",
         ),
@@ -80,12 +95,15 @@ class V2MaterialBlueprintService:
             "help_card",
             "choice_board",
             "scenario_cards",
+            "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "early_literacy": (
             "visual_card",
             "matching_page",
             "sequence_cards",
+            "token_board",
             "data_sheet",
             "summary_template",
         ),
@@ -93,6 +111,7 @@ class V2MaterialBlueprintService:
             "sorting_page",
             "matching_page",
             "visual_card",
+            "token_board",
             "data_sheet",
             "summary_template",
         ),
@@ -102,13 +121,16 @@ class V2MaterialBlueprintService:
             "visual_card",
             "token_board",
             "data_sheet",
+            "summary_template",
         ),
         "community_safety_vocational": (
             "task_analysis_cards",
             "visual_schedule",
             "scenario_cards",
             "help_card",
+            "token_board",
             "data_sheet",
+            "summary_template",
         ),
     }
 
@@ -129,6 +151,23 @@ class V2MaterialBlueprintService:
             teacher_directions=(
                 "Present one card at a time before mixing the set.",
                 "Accept the teacher-confirmed response mode.",
+            ),
+        ),
+        "number_cards": MaterialBlueprint(
+            material_type="number_cards",
+            display_name="Number Cards",
+            instructional_purpose=(
+                "Provide a clean numeral set for recognition, ordering, matching, "
+                "and classroom response practice."
+            ),
+            required_content=("range", "visualItems", "instruction"),
+            professional_rules=(
+                "Render every numeral programmatically rather than asking an image model to draw it.",
+                "Keep one large numeral per card with consistent size and spacing.",
+                "Use theme artwork only as a secondary cue that never obscures the numeral.",
+            ),
+            teacher_directions=(
+                "Use the cards for identification, ordering, or numeral-to-quantity matching.",
             ),
         ),
         "matching_page": MaterialBlueprint(

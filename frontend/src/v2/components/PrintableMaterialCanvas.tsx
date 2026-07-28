@@ -114,6 +114,7 @@ export function PrintableMaterialCanvas({
 
   if (
     material.type === "quantity_cards"
+    || material.type === "number_cards"
     || material.type === "visual_card"
     || material.type === "scenario_cards"
     || material.type === "sequence_cards"

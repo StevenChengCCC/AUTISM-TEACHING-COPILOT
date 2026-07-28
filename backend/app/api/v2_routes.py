@@ -604,6 +604,18 @@ def send_lesson_chat_message(
     )
 
 
+@router.get(
+    "/lesson-chat/{conversation_id}",
+    response_model=AIChatStateDto,
+)
+def get_lesson_chat(conversation_id: str) -> AIChatStateDto:
+    """Return the latest persisted draft for optimistic-conflict recovery."""
+
+    return V2LessonChatService().to_dto(
+        V2LessonChatService().get(conversation_id)
+    )
+
+
 @router.patch("/lesson-chat/{conversation_id}/answers", response_model=AIChatStateDto)
 def update_lesson_chat_answer(
     conversation_id: str, payload: UpdateAIQuestionAnswerRequest

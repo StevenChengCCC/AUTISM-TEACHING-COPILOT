@@ -456,6 +456,7 @@ class PrintLayout(V2Model):
 MaterialStatus = Literal["ready", "approved"]
 GeneratedMaterialType = Literal[
     "quantity_cards",
+    "number_cards",
     "visual_card",
     "choice_board",
     "first_then_board",
@@ -799,6 +800,13 @@ class QuantityCardsSpecification(MaterialSpecificationBase):
     includeNumerals: bool = True
 
 
+class NumberCardsSpecification(MaterialSpecificationBase):
+    type: Literal["number_cards"] = "number_cards"
+    rangeStart: int = Field(default=1, ge=0, le=20)
+    rangeEnd: int = Field(default=5, ge=1, le=20)
+    includeThemeCue: bool = True
+
+
 class VisualCardSpecification(MaterialSpecificationBase):
     type: Literal["visual_card"] = "visual_card"
     label: str
@@ -908,6 +916,7 @@ class HandoffNoteSpecification(MaterialSpecificationBase):
 
 MaterialSpecification = (
     QuantityCardsSpecification
+    | NumberCardsSpecification
     | VisualCardSpecification
     | ChoiceBoardSpecification
     | FirstThenBoardSpecification

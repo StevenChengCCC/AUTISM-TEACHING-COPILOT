@@ -47,6 +47,7 @@ export function AutismTeachingCopilotApp() {
   const [page, setPage] = useState<StudioPage>(storedPage && resumablePages.includes(storedPage) ? storedPage : "home");
   const [learnerId, setLearnerId] = useState(sessionStorage.getItem("autism-teaching-copilot.learner-id") ?? "");
   const [lessonPackage, setLessonPackage] = useState<LessonPackage | null>(null);
+  const [reviewMaterialId, setReviewMaterialId] = useState("");
   const [resumeLessonChat, setResumeLessonChat] = useState(storedPage === "planWithAIChat");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [restoring, setRestoring] = useState(true);
@@ -138,9 +139,9 @@ export function AutismTeachingCopilotApp() {
       {page === "reviewLearnerExisting" && <ReviewLearnerPage learnerId={learnerId} isNew={false} onContinue={() => openLessonChat(false)} onFeedback={setFeedbackMessage} />}
       {page === "reviewLearnerNew" && <ReviewLearnerPage learnerId={learnerId} isNew onBack={() => navigateTo("uploadRecords")} onContinue={() => openLessonChat(false)} onFeedback={setFeedbackMessage} />}
       {page === "planWithAIChat" && <PlanWithAIChatPage learnerId={learnerId} resumeExisting={resumeLessonChat} onGenerate={(value) => { savePackage(value); navigateTo("lessonPackageReady"); }} onViewProfile={() => navigateTo("reviewLearnerExisting")} onChangeLearner={() => navigateTo("home")} onFeedback={setFeedbackMessage} />}
-      {page === "lessonPackageReady" && <LessonPackageReadyPage lessonPackage={lessonPackage} onModify={() => navigateTo("modifyLessonContent")} onReview={() => navigateTo("reviewPrintableContent")} onEdit={() => openLessonChat(true)} onStartOver={() => { savePackage(null); navigateTo("home"); }} onSave={savePackage} onFeedback={setFeedbackMessage} />}
+      {page === "lessonPackageReady" && <LessonPackageReadyPage lessonPackage={lessonPackage} onModify={() => navigateTo("modifyLessonContent")} onReview={(materialId) => { setReviewMaterialId(materialId ?? ""); navigateTo("reviewPrintableContent"); }} onEdit={() => openLessonChat(true)} onStartOver={() => { savePackage(null); navigateTo("home"); }} onSave={savePackage} onFeedback={setFeedbackMessage} />}
       {page === "modifyLessonContent" && <ModifyLessonContentPage lessonPackage={lessonPackage} onBack={() => navigateTo("lessonPackageReady")} onContinue={() => navigateTo("reviewPrintableContent")} onSave={savePackage} onFeedback={setFeedbackMessage} />}
-      {page === "reviewPrintableContent" && <ReviewPrintableContentPage lessonPackage={lessonPackage} onBack={() => { if (!lessonPackage) { navigateTo("lessonPackageReady"); return; } void lessonKitApi.getLessonPackage(lessonPackage.id).then((value) => { savePackage(value); navigateTo("lessonPackageReady"); }); }} onFeedback={setFeedbackMessage} />}
+      {page === "reviewPrintableContent" && <ReviewPrintableContentPage lessonPackage={lessonPackage} initialSelectedId={reviewMaterialId} onBack={() => { if (!lessonPackage) { navigateTo("lessonPackageReady"); return; } void lessonKitApi.getLessonPackage(lessonPackage.id).then((value) => { savePackage(value); navigateTo("lessonPackageReady"); }); }} onFeedback={setFeedbackMessage} />}
       {page === "students" && <StudentsPage onStartLesson={startExistingLearnerFlow} onCreateLearner={startNewLearnerFlow} onFeedback={setFeedbackMessage} />}
       {page === "sessions" && <SessionsPage onNewSession={() => navigateTo("home")} onResume={(session) => void resumeSession(session)} onFeedback={setFeedbackMessage} />}
       {page === "materials" && <MaterialsPage onUseInLesson={() => learnerId ? openLessonChat(false) : navigateTo("home")} onCreateMaterial={() => setFeedbackMessage("Custom material template created.")} onFeedback={setFeedbackMessage} />}

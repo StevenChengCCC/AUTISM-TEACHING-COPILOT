@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     )
     IMAGE_SEARCH_TIMEOUT_SECONDS: int = 10
     IMAGE_ASSET_STRATEGY: Literal["generate_first", "reuse_search_generate"] = (
-        "generate_first"
+        "reuse_search_generate"
     )
 
     MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024

@@ -215,6 +215,7 @@ class V2ImageAssetService:
     ) -> ImageAssetDto:
         normalized_concept = _normalize(concept)
         normalized_material_type = _normalize(material_type)
+        reuse_first = self.config.IMAGE_ASSET_STRATEGY == "reuse_search_generate"
         if not force_generation:
             cached = self._find_cached_asset(
                 normalized_concept, normalized_material_type
@@ -223,17 +224,30 @@ class V2ImageAssetService:
                 self._attach_if_present(material_id, cached)
                 return cached
 
-        if (
-            allow_external_search
-            and not force_generation
-            and self.config.IMAGE_ASSET_STRATEGY == "reuse_search_generate"
-        ):
-            external = self._first_external_candidate(
-                normalized_concept, normalized_material_type
+            # Reuse an approved internal asset only for an exact concept match.
+            # A generic classroom image must not masquerade as a customized,
+            # finished visual for an unrelated concept.
+            internal = (
+                self._find_exact_internal_candidate(
+                    normalized_concept, normalized_material_type
+                )
+                if reuse_first
+                else None
             )
-            if external:
-                self._attach_if_present(material_id, external)
-                return external
+            if internal is not None:
+                reusable = self._cache_fallback_for_material(
+                    internal, normalized_concept, normalized_material_type
+                )
+                self._attach_if_present(material_id, reusable)
+                return reusable
+
+            if reuse_first and allow_external_search:
+                external = self._first_external_candidate(
+                    normalized_concept, normalized_material_type
+                )
+                if external:
+                    self._attach_if_present(material_id, external)
+                    return external
 
         if allow_generation:
             generated = self._generate_asset(
@@ -248,23 +262,25 @@ class V2ImageAssetService:
                 self._attach_if_present(material_id, generated)
                 return generated
 
-        if allow_external_search:
-            external = self._first_external_candidate(
+        # Explicit generate-first mode still gets reviewed fallbacks after a
+        # provider failure. A final mock placeholder remains visibly failed.
+        if not force_generation and not reuse_first:
+            if allow_external_search:
+                external = self._first_external_candidate(
+                    normalized_concept, normalized_material_type
+                )
+                if external:
+                    self._attach_if_present(material_id, external)
+                    return external
+            internal = self._find_exact_internal_candidate(
                 normalized_concept, normalized_material_type
             )
-            if external:
-                self._attach_if_present(material_id, external)
-                return external
-
-        internal = self.find_internal_candidates(
-            normalized_concept, normalized_material_type, 1
-        )
-        if internal:
-            reusable = self._cache_fallback_for_material(
-                internal[0], normalized_concept, normalized_material_type
-            )
-            self._attach_if_present(material_id, reusable)
-            return reusable
+            if internal is not None:
+                reusable = self._cache_fallback_for_material(
+                    internal, normalized_concept, normalized_material_type
+                )
+                self._attach_if_present(material_id, reusable)
+                return reusable
 
         fallback = self._create_mock_fallback(
             normalized_concept, normalized_material_type
@@ -305,6 +321,16 @@ class V2ImageAssetService:
                 asset.id,
             )
         )
+        return matches[0] if matches else None
+
+    def _find_exact_internal_candidate(
+        self, concept: str, material_type: str
+    ) -> ImageAssetDto | None:
+        matches = [
+            asset
+            for asset in self.find_internal_candidates(concept, material_type, 6)
+            if _normalize(asset.concept) == concept
+        ]
         return matches[0] if matches else None
 
     def _generate_asset(

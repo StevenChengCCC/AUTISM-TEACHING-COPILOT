@@ -22,6 +22,7 @@ class V2LessonPackageQualityService:
     evaluator_version = "lesson-package-quality-v1"
     visual_material_types = {
         "quantity_cards",
+        "number_cards",
         "visual_card",
         "scenario_cards",
         "sequence_cards",
@@ -59,7 +60,7 @@ class V2LessonPackageQualityService:
         critical_zero = any(item.critical and item.score == 0 for item in items)
         if critical_zero or total < 10:
             status = "blocked"
-        elif total == 16:
+        elif total >= 14:
             status = "pass"
         else:
             status = "needs_review"

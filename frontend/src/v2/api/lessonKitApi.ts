@@ -69,6 +69,7 @@ export const lessonKitApi = {
     finally{if(pendingChatStarts.get(key)===request)pendingChatStarts.delete(key);}
   },
   submitLessonRequest: (conversationId:string,learnerId:string,message:string,currentDraft?:LessonDesignDraft,signal?:AbortSignal):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.submitLessonRequest(conversationId,message) : backendClient.post("/v2/lesson-chat/message",{conversationId,learnerId,message,currentDraft},{signal}),
+  getLessonChat: (conversationId:string):Promise<AIChatState> => backendClient.get(`/v2/lesson-chat/${conversationId}`),
   updateAIQuestionAnswer: (conversationId:string,questionId:string,selectedOptionIds:string[],customAnswer=""):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.updateAIQuestionAnswer(conversationId,questionId,selectedOptionIds,customAnswer) : backendClient.patch(`/v2/lesson-chat/${conversationId}/answers`,{questionId,selectedOptionIds,customAnswer}),
   clearLessonChat: (conversationId:string):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.clearLessonChat(conversationId) : backendClient.post(`/v2/lesson-chat/${conversationId}/clear`),
   cancelLessonRequest: (conversationId:string):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.clearLessonChat(conversationId) : backendClient.post(`/v2/lesson-chat/${conversationId}/cancel`),

@@ -299,11 +299,15 @@ class V2StandardsSkillService:
         )
         has_complete_specs = bool(materials) and all(
             material.specification is not None for material in materials
-        ) and not missing_bundle_items
+        )
         completeness_status = (
             "not_applicable"
             if not materials
-            else ("pass" if has_complete_specs else "blocked")
+            else (
+                "pass"
+                if has_complete_specs and not missing_bundle_items
+                else "needs_review"
+            )
         )
         visual_materials = [
             material
@@ -330,7 +334,7 @@ class V2StandardsSkillService:
                     "Every goal-family kit needs all required materials plus a typed, "
                     "editable classroom-ready specification for each item."
                 ),
-                severity="high",
+                severity="medium",
                 status=completeness_status,
                 recommendation=(
                     "Generate the complete goal-family bundle and concise teacher "

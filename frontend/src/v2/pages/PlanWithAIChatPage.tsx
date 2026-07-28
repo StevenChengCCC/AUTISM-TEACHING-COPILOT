@@ -6,6 +6,7 @@ import { Card } from "../components/Card";
 import { LearnerContextBar } from "../components/LearnerContextBar";
 import { Tag } from "../components/Tag";
 import { lessonKitApi } from "../api/lessonKitApi";
+import { LessonKitApiError } from "../api/backendClient";
 import type { AIChatState,LearnerProfile,LessonPackage } from "../types";
 
 export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,onViewProfile,onChangeLearner,onFeedback }:{ learnerId:string;resumeExisting?:boolean;onGenerate:(value:LessonPackage)=>void;onViewProfile:()=>void;onChangeLearner:()=>void;onFeedback:(message:string)=>void }) {
@@ -32,7 +33,19 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
     setChatError(null);
     setSavingQuestionId(questionId);
     try{setChat(await lessonKitApi.updateAIQuestionAnswer(chat.conversationId,questionId,ids,customAnswer));}
-    catch(error){setChatError(error instanceof Error?error.message:"This answer could not be saved.");}
+    catch(error){
+      if(error instanceof LessonKitApiError&&error.status===409){
+        try{
+          const latest=await lessonKitApi.getLessonChat(chat.conversationId);
+          const questionStillExists=latest.questions.some((question)=>question.id===questionId);
+          if(!questionStillExists){setChat(latest);setChatError("The lesson suggestions changed. Review the refreshed choices.");return;}
+          setChat(await lessonKitApi.updateAIQuestionAnswer(latest.conversationId,questionId,ids,customAnswer));
+          setChatError("Your latest choice was saved after refreshing the lesson draft.");
+          return;
+        }catch(retryError){setChatError(retryError instanceof Error?retryError.message:"The refreshed choice could not be saved.");return;}
+      }
+      setChatError(error instanceof Error?error.message:"This answer could not be saved.");
+    }
     finally{setSavingQuestionId(null);}
   }
   async function generate(){
