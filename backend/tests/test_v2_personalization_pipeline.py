@@ -277,9 +277,6 @@ def test_incomplete_provider_structure_uses_safe_templates_for_custom_materials(
     assert {item.type for item in package.materials} == {
         "quantity_cards",
         "token_board",
-        "matching_page",
-        "data_sheet",
-        "summary_template",
     }
 
 

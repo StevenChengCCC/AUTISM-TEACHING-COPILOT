@@ -105,7 +105,13 @@ def counting_draft() -> LessonDesignDraftDto:
         observableResponse="Learner will count objects from 1 to 5.",
         responseLevel="Point and count",
         scenarios=["Table work"],
-        selectedMaterials=["Visual Cards"],
+        selectedMaterials=[
+            "Quantity Cards",
+            "Matching Practice",
+            "Reinforcement Board",
+            "Data Sheet",
+            "Lesson Summary",
+        ],
         theme="Vehicles",
         duration="8 minutes",
         customNotes="Use the learner's interests.",
@@ -178,7 +184,7 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == 5
+    assert len(provider.image_calls) == 3
     visual_types = {"visual_card", "help_card", "token_board", "scenario_cards"}
     for package in (first, second):
         for material in package.materials:
@@ -196,7 +202,7 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
             else:
                 assert "imageAssetId" not in material.content
     generated_files = list((tmp_path / "generated-images").glob("*.png"))
-    assert len(generated_files) == 5
+    assert len(generated_files) == 3
     prompts = " ".join(call["prompt"] for call in provider.image_calls)
     assert "Learner A-102" not in prompts
     assert "visual prompts and concise instructions" not in prompts
@@ -221,7 +227,7 @@ def test_failed_generation_still_builds_package_and_caches_fallback():
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == 5
+    assert len(provider.image_calls) == 3
     assert first.lessonBrief and second.lessonBrief
     for material in first.materials:
         if material.type in {"visual_card", "help_card", "token_board", "scenario_cards"}:

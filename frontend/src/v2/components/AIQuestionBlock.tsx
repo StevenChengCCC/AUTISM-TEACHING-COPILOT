@@ -15,10 +15,13 @@ export function AIQuestionBlock({ question,onAnswer,busy=false }:{ question:AIQu
     const next=onlyOne?(selected?[]:[id]):selected?withoutCustom.filter((item)=>item!==id):[...withoutCustom,id];
     void onAnswer(next,onlyOne?"":question.customAnswer);
   };
+  const selectableIds=question.options.filter((option)=>option.source!=="teacher_custom").map((option)=>option.id);
+  const canSelectAll=question.inputType==="multi_select"&&question.maxSelections==null&&selectableIds.length>1;
+  const allSelected=canSelectAll&&selectableIds.every((id)=>question.selectedOptionIds.includes(id));
   return <div className="v2-question"><div className="v2-bot">✦</div><div className="v2-question-body">
     <div className="v2-question-title"><strong>{question.prompt}</strong></div>
     {question.helperText&&<p className="v2-question-helper">{question.helperText}</p>}
-    {question.inputType!=="free_text"&&<div className="v2-option-list">{question.options.map((option)=><OptionChip key={option.id} option={option} selected={question.selectedOptionIds.includes(option.id)} disabled={busy} onToggle={()=>toggle(option.id)}/>)}{question.allowCustomAnswer&&<button type="button" disabled={busy} className={showCustom?"is-custom":""} onClick={()=>setShowCustom(true)}>＋ Write my own</button>}</div>}
+    {question.inputType!=="free_text"&&<div className="v2-option-list">{question.options.map((option)=><OptionChip key={option.id} option={option} selected={question.selectedOptionIds.includes(option.id)} disabled={busy} onToggle={()=>toggle(option.id)}/>)}{canSelectAll&&<button type="button" disabled={busy} className={allSelected?"is-custom":""} onClick={()=>void onAnswer(allSelected?[]:selectableIds,"")}>{allSelected?"Clear all":"✓ Select all"}</button>}{question.allowCustomAnswer&&<button type="button" disabled={busy} className={showCustom?"is-custom":""} onClick={()=>setShowCustom(true)}>＋ Write my own</button>}</div>}
     {(showCustom||question.inputType==="free_text")&&<div className="v2-custom-answer"><input value={customDraft} disabled={busy} onChange={(event)=>setCustomDraft(event.target.value)} onKeyDown={(event)=>{if(event.key==="Enter"&&customDraft.trim()){event.preventDefault();void onAnswer(question.maxSelections===1?[]:question.selectedOptionIds.filter((id)=>!id.startsWith("custom-")),customDraft.trim());}}} placeholder="Write a short answer"/><button type="button" disabled={busy||!customDraft.trim()||customDraft.trim()===question.customAnswer.trim()} onClick={()=>void onAnswer(question.maxSelections===1?[]:question.selectedOptionIds.filter((id)=>!id.startsWith("custom-")),customDraft.trim())}>{busy?"Saving…":"Use answer"}</button>{question.customAnswer&&<Tag tone="purple">Your answer</Tag>}</div>}
   </div></div>;
 }

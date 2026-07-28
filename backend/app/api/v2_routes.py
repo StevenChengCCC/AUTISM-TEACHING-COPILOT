@@ -623,6 +623,11 @@ def clear_lesson_chat(conversation_id: str) -> AIChatStateDto:
     return V2LessonChatService().clear_dto(conversation_id)
 
 
+@router.post("/lesson-chat/{conversation_id}/cancel", response_model=AIChatStateDto)
+def cancel_lesson_chat_request(conversation_id: str) -> AIChatStateDto:
+    return V2LessonChatService().cancel_request_dto(conversation_id)
+
+
 @router.post("/lesson-chats", response_model=AIChatState, status_code=201)
 def start_chat(payload: LessonChatRequest) -> AIChatState:
     return V2LessonChatService().start(payload.learner_id)

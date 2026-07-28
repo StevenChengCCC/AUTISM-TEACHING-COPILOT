@@ -37,10 +37,28 @@ def test_round7_demo_journey_from_learner_to_private_handoff():
         },
     )
     assert planned.status_code == 200
-    assert planned.json()["questions"]
+    planned_state = planned.json()
+    assert planned_state["questions"]
+    for question in planned_state["questions"]:
+        selected = (
+            [option["id"] for option in question["options"]]
+            if question["field"] == "selectedMaterials"
+            else [question["options"][0]["id"]]
+        )
+        answered = client.patch(
+            f"/api/v2/lesson-chat/{planned_state['conversationId']}/answers",
+            json={
+                "questionId": question["id"],
+                "selectedOptionIds": selected,
+                "customAnswer": "",
+            },
+        )
+        assert answered.status_code == 200
+        planned_state = answered.json()
+    assert planned_state["canGenerate"] is True
 
     generated = client.post(
-        "/api/v2/lesson-packages/generate", json=planned.json()["draft"]
+        "/api/v2/lesson-packages/generate", json=planned_state["draft"]
     )
     assert generated.status_code == 201
     package = generated.json()

@@ -68,11 +68,12 @@ export const lessonKitApi = {
     try{return await request;}
     finally{if(pendingChatStarts.get(key)===request)pendingChatStarts.delete(key);}
   },
-  submitLessonRequest: (conversationId:string,learnerId:string,message:string,currentDraft?:LessonDesignDraft):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.submitLessonRequest(conversationId,message) : backendClient.post("/v2/lesson-chat/message",{conversationId,learnerId,message,currentDraft}),
+  submitLessonRequest: (conversationId:string,learnerId:string,message:string,currentDraft?:LessonDesignDraft,signal?:AbortSignal):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.submitLessonRequest(conversationId,message) : backendClient.post("/v2/lesson-chat/message",{conversationId,learnerId,message,currentDraft},{signal}),
   updateAIQuestionAnswer: (conversationId:string,questionId:string,selectedOptionIds:string[],customAnswer=""):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.updateAIQuestionAnswer(conversationId,questionId,selectedOptionIds,customAnswer) : backendClient.patch(`/v2/lesson-chat/${conversationId}/answers`,{questionId,selectedOptionIds,customAnswer}),
   clearLessonChat: (conversationId:string):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.clearLessonChat(conversationId) : backendClient.post(`/v2/lesson-chat/${conversationId}/clear`),
+  cancelLessonRequest: (conversationId:string):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.clearLessonChat(conversationId) : backendClient.post(`/v2/lesson-chat/${conversationId}/cancel`),
 
-  generateLessonPackageFromDraft: (draft:LessonDesignDraft):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.generateLessonPackageFromDraft(draft) : backendClient.post("/v2/lesson-packages/generate",draft),
+  generateLessonPackageFromDraft: (draft:LessonDesignDraft,signal?:AbortSignal):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.generateLessonPackageFromDraft(draft) : backendClient.post("/v2/lesson-packages/generate",draft,{signal}),
   getLessonPackage: (id:string):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.getLessonPackage(id) : backendClient.get(`/v2/lesson-packages/${id}`),
   getLessonPackages: (learnerId?:string):Promise<LessonPackage[]> => useLocalMock ? Promise.resolve([]) : backendClient.get(`/v2/lesson-packages${learnerId?`?learnerId=${encodeURIComponent(learnerId)}`:""}`),
   updateLessonPackage: (id:string,payload:LessonPackageUpdateInput):Promise<LessonPackage> => useLocalMock ? lessonKitMockApi.updateLessonPackage(id,payload) : backendClient.patch(`/v2/lesson-packages/${id}`,payload),

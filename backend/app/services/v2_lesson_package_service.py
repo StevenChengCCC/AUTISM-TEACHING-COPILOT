@@ -983,7 +983,13 @@ class V2LessonPackageService:
 
     @staticmethod
     def _material_type_for_selection(value: str) -> str | None:
-        normalized = " ".join(value.replace("_", " ").casefold().split())
+        normalized = " ".join(
+            value.replace("_", " ")
+            .replace("–", "-")
+            .replace("—", "-")
+            .casefold()
+            .split()
+        )
         exact = {
             "quantity cards": "quantity_cards",
             "quantity card": "quantity_cards",
@@ -1002,8 +1008,10 @@ class V2LessonPackageService:
             "break card": "break_card",
             "token boards": "token_board",
             "token board": "token_board",
+            "reinforcement board": "token_board",
             "sorting page": "sorting_page",
             "matching page": "matching_page",
+            "matching practice": "matching_page",
             "scenario cards": "scenario_cards",
             "sequence cards": "sequence_cards",
             "sequencing cards": "sequence_cards",
@@ -1022,6 +1030,7 @@ class V2LessonPackageService:
             "session summary": "session_summary",
             "summary templates": "summary_template",
             "summary template": "summary_template",
+            "lesson summary": "summary_template",
             "handoff note": "handoff_note",
         }.get(normalized)
         if exact:
@@ -1081,11 +1090,10 @@ class V2LessonPackageService:
             )
             if material_type
         ]
-        selected_types = [
-            *self._recommended_material_types(draft),
-            *teacher_selected_types,
-        ]
-        selected_types = list(dict.fromkeys(selected_types))
+        # The material question is a teacher decision, not a decorative filter.
+        # Generate exactly the confirmed pages; the later print review controls
+        # which of those generated pages are included in a combined PDF.
+        selected_types = list(dict.fromkeys(teacher_selected_types))
         definitions = generated if isinstance(generated, list) else []
         fallback_by_type = {item["type"]: item for item in fallback}
         generated_by_type = {

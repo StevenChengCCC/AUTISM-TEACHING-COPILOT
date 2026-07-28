@@ -156,18 +156,34 @@ def test_extended_goal_families_resolve_to_complete_bundles(
 def test_extended_bundles_generate_typed_materials(
     goal: str, expected_types: list[str]
 ):
-    package = V2LessonPackageService(V2Repositories()).generate_product(_draft(goal))
+    selected = [
+        V2MaterialBlueprintService.blueprint(material_type).display_name
+        for material_type in expected_types
+    ]
+    package = V2LessonPackageService(V2Repositories()).generate_product(
+        _draft(goal).model_copy(update={"selectedMaterials": selected})
+    )
     assert [material.type for material in package.materials[:5]] == expected_types
     assert all(material.specification is not None for material in package.materials[:5])
 
 
 def test_counting_package_contains_exact_quantity_and_matching_structures():
+    selected = [
+        V2MaterialBlueprintService.blueprint(material_type).display_name
+        for material_type in (
+            "quantity_cards",
+            "matching_page",
+            "token_board",
+            "data_sheet",
+            "summary_template",
+        )
+    ]
     package = V2LessonPackageService(V2Repositories()).generate_product(
         _draft(
             "Learner will count quantities from 1 to 5.",
             theme="Construction vehicles",
             scenarios=["Table practice"],
-        )
+        ).model_copy(update={"selectedMaterials": selected})
     )
 
     assert [material.type for material in package.materials] == [

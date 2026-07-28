@@ -421,13 +421,22 @@ def test_selected_records_to_teacher_approved_package_end_to_end():
     for question_id, option_id in (
         ("target-response", "confirm-target"),
         ("scenarios", "toy-car"),
-        ("materials", "visual-cards"),
     ):
         chat = chat_service.update_answer(
             chat.conversation_id,
             question_id,
             QuestionAnswerUpdate(selected_option_ids=[option_id]),
         )
+    materials = next(
+        question for question in chat.questions if question.field == "selectedMaterials"
+    )
+    chat = chat_service.update_answer(
+        chat.conversation_id,
+        materials.id,
+        QuestionAnswerUpdate(
+            selected_option_ids=[option.id for option in materials.options]
+        ),
+    )
     assert chat.can_generate is True
 
     draft = LessonDesignDraftDto.model_validate(

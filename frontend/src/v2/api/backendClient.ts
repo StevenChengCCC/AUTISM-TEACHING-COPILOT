@@ -104,7 +104,11 @@ async function request<T>(path: string, options: RequestOptions = {}, hasRetried
 
 export const backendClient = {
   get: <T,>(path: string) => request<T>(path),
-  post: <T,>(path: string, body?: unknown) => request<T>(path, { method: "POST", body }),
+  post: <T,>(
+    path: string,
+    body?: unknown,
+    options: Omit<RequestOptions, "body" | "method"> = {},
+  ) => request<T>(path, { ...options, method: "POST", body }),
   patch: <T,>(path: string, body?: unknown) => request<T>(path, { method: "PATCH", body }),
   del: <T,>(path: string) => request<T>(path, { method: "DELETE" }),
   putFile: (

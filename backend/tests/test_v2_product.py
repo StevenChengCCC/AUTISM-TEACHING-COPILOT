@@ -1,7 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v2_routes import health
 from app.core.config import settings as app_settings
+from app.core.exceptions import ValidationError
 from app.main import app
 from app.schemas.v2_dto import (
     AIChatState,
@@ -205,6 +207,43 @@ def test_v2_chat_can_restart_and_save_answers_without_stale_draft_conflicts():
         )
 
     assert chat.can_generate is True
+
+
+def test_v2_chat_rejects_a_vague_teach_only_request():
+    repos = V2Repositories()
+    service = V2LessonChatService(repos)
+    initial = service.start("a102")
+
+    with pytest.raises(ValidationError, match="Please add the skill to teach"):
+        service.submit_request(initial.conversation_id, "teach")
+
+    unchanged = service.get(initial.conversation_id)
+    assert unchanged.questions == []
+    assert unchanged.draft.goal_text == ""
+
+
+def test_v2_chat_material_choice_allows_every_recommended_page_and_cancels():
+    repos = V2Repositories()
+    service = V2LessonChatService(repos)
+    initial = service.start("a102")
+    chat = service.submit_request(
+        initial.conversation_id, "Teach the learner to ask for help."
+    )
+    materials = next(
+        question for question in chat.questions if question.field == "selectedMaterials"
+    )
+
+    assert materials.max_selections is None
+    assert len(materials.options) == 5
+    assert materials.helper_text == (
+        "Select all or only what you need. Printing choices come later."
+    )
+
+    canceled = service.cancel_request(chat.conversation_id)
+    assert canceled.questions == []
+    assert canceled.can_generate is False
+    assert canceled.draft.goal_text == ""
+    assert canceled.messages[-1].content == service.cancellation_message
 
 
 def test_v2_chat_transparently_retries_a_message_version_conflict(monkeypatch):
@@ -518,7 +557,7 @@ def test_v2_lesson_chat_product_http_flow():
     )
     assert materials.status_code == 200
     assert materials.json()["draft"]["selectedMaterials"] == [
-        "Visual Cards",
+        "Visual Card",
         "Data Sheet",
     ]
 
@@ -567,8 +606,6 @@ def test_v2_product_lesson_package_pipeline_http_contract():
     ]
     assert [material["title"] for material in package["materials"]] == [
         "Visual Card",
-        "Help Card",
-        "Scenario Cards",
         "Reinforcement Board",
         "Data Sheet",
     ]
@@ -615,14 +652,22 @@ def test_v2_generated_material_editing_and_export_http_contract():
             "goalText": "Learner will ask for help using a short phrase.",
             "responseLevel": "Short phrase",
             "scenarios": ["Toy car stuck"],
-            "selectedMaterials": ["Visual Cards", "Token Board", "Data Sheet"],
+            "selectedMaterials": [
+                "Visual Cards",
+                "Help Card",
+                "Scenario Cards",
+                "Reinforcement Board",
+                "Data Sheet",
+            ],
             "theme": "Vehicles",
             "duration": "10–12 min",
             "customNotes": "",
         },
     ).json()
     package_id = package["id"]
-    visual, help_card, token = package["materials"][:3]
+    visual = next(item for item in package["materials"] if item["type"] == "visual_card")
+    help_card = next(item for item in package["materials"] if item["type"] == "help_card")
+    token = next(item for item in package["materials"] if item["type"] == "token_board")
 
     updated = client.patch(
         f"/api/v2/generated-materials/{visual['id']}",

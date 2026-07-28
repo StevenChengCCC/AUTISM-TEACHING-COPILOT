@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.core.exceptions import NotFoundError, ValidationError, VersionConflictError
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
 from app.schemas.v2_dto import (
@@ -10,9 +12,11 @@ from app.schemas.v2_dto import (
     AIQuestionOption,
     GenerationMetadataDto,
     LessonDesignDraft,
+    LessonDesignDraftDto,
     QuestionAnswerUpdate,
 )
 from app.services.v2_learner_service import V2LearnerService
+from app.services.v2_material_blueprint_service import V2MaterialBlueprintService
 from app.services.v2_repositories import V2Repositories, repositories
 
 
@@ -65,6 +69,9 @@ class V2LessonChatService:
     greeting = (
         "Tell me what you want to teach today, and I’ll help turn it into a lesson kit."
     )
+    cancellation_message = (
+        "That request was canceled. Tell me the corrected teaching goal when you’re ready."
+    )
 
     def __init__(
         self, repos: V2Repositories = repositories, ai: V2AIProvider | None = None
@@ -79,7 +86,9 @@ class V2LessonChatService:
         existing = self.repos.chats.get(conversation_id)
         if resume_existing and existing is not None:
             questions = self._prepare_questions(
-                existing.questions, require_fresh_confirmation=False
+                existing.questions,
+                require_fresh_confirmation=False,
+                draft=existing.draft,
             )
             return existing.model_copy(
                 update={
@@ -129,6 +138,7 @@ class V2LessonChatService:
         clean = content.strip()
         if not clean:
             raise ValidationError("Lesson request cannot be empty")
+        self._validate_request_specificity(clean)
 
         initial = self._get(conversation_id)
         generated: tuple[list[AIQuestion], LessonDesignDraft] | None = None
@@ -145,6 +155,8 @@ class V2LessonChatService:
         # facing "refresh and try again" error.
         for attempt in range(3):
             chat = initial if attempt == 0 else self._get(conversation_id)
+            if attempt and self._request_was_cancelled(chat):
+                return chat
             if self._request_already_applied(chat, clean):
                 return chat
             chat = self._apply_request(
@@ -186,7 +198,9 @@ class V2LessonChatService:
                 deep=True,
             )
             chat.questions = self._prepare_questions(
-                questions, require_fresh_confirmation=True
+                questions,
+                require_fresh_confirmation=True,
+                draft=draft,
             )
             chat.draft = self._prepare_draft(draft)
             if generation_metadata is not None:
@@ -200,7 +214,9 @@ class V2LessonChatService:
             )
         else:
             chat.questions = self._prepare_questions(
-                chat.questions, require_fresh_confirmation=False
+                chat.questions,
+                require_fresh_confirmation=False,
+                draft=chat.draft,
             )
             chat.draft = self._prepare_draft(chat.draft)
             chat.draft.custom_notes = " ".join(
@@ -224,6 +240,58 @@ class V2LessonChatService:
             for message in chat.messages
         )
 
+    @classmethod
+    def _request_was_cancelled(cls, chat: AIChatState) -> bool:
+        return any(
+            message.role == "assistant"
+            and message.content == cls.cancellation_message
+            for message in chat.messages
+        )
+
+    @staticmethod
+    def _validate_request_specificity(clean: str) -> None:
+        words = re.findall(r"\w+", clean.casefold(), flags=re.UNICODE)
+        generic_words = {
+            "a",
+            "an",
+            "the",
+            "i",
+            "me",
+            "my",
+            "him",
+            "her",
+            "child",
+            "kid",
+            "learner",
+            "student",
+            "want",
+            "need",
+            "please",
+            "help",
+            "teach",
+            "teaching",
+            "lesson",
+            "make",
+            "create",
+            "generate",
+            "build",
+            "to",
+        }
+        meaningful = [word for word in words if word not in generic_words]
+        vague_phrases = {
+            "教",
+            "教学",
+            "帮我",
+            "做课程",
+            "生成课程",
+            "上课",
+        }
+        if not meaningful or clean.casefold() in vague_phrases:
+            raise ValidationError(
+                "Please add the skill to teach, for example: "
+                "“Teach identifying fruit” or “Teach asking for help.”"
+            )
+
     def submit_message_dto(
         self, conversation_id: str, learner_id: str, content: str
     ) -> AIChatStateDto:
@@ -238,7 +306,9 @@ class V2LessonChatService:
         for attempt in range(2):
             chat = self._get(conversation_id)
             chat.questions = self._prepare_questions(
-                chat.questions, require_fresh_confirmation=False
+                chat.questions,
+                require_fresh_confirmation=False,
+                draft=chat.draft,
             )
             chat.draft = self._prepare_draft(chat.draft)
             try:
@@ -325,6 +395,42 @@ class V2LessonChatService:
     def clear_dto(self, conversation_id: str) -> AIChatStateDto:
         return self.to_dto(self.clear(conversation_id))
 
+    def cancel_request(self, conversation_id: str) -> AIChatState:
+        for attempt in range(3):
+            chat = self._get(conversation_id)
+            chat.messages = [
+                AIMessage(
+                    id=self.repos.next_id("message"),
+                    role="assistant",
+                    content=self.greeting,
+                ),
+                AIMessage(
+                    id=self.repos.next_id("message"),
+                    role="assistant",
+                    content=self.cancellation_message,
+                ),
+            ]
+            chat.questions = []
+            chat.draft = LessonDesignDraft(
+                id=chat.draft.id,
+                learner_id=chat.learner_id,
+                version=chat.draft.version,
+            )
+            chat.can_generate = False
+            chat.generation_status = None
+            chat.generation_metadata = None
+            try:
+                return self.repos.chats.save(chat)
+            except VersionConflictError:
+                if attempt == 2:
+                    raise
+        raise VersionConflictError(
+            "The lesson request could not be canceled. Please try again."
+        )
+
+    def cancel_request_dto(self, conversation_id: str) -> AIChatStateDto:
+        return self.to_dto(self.cancel_request(conversation_id))
+
     def get(self, conversation_id: str) -> AIChatState:
         return self._get(conversation_id)
 
@@ -352,6 +458,7 @@ class V2LessonChatService:
         questions: list[AIQuestion],
         *,
         require_fresh_confirmation: bool,
+        draft: LessonDesignDraft | None = None,
     ) -> list[AIQuestion]:
         """Keep the teacher-facing conversation short, safe, and printable-first."""
 
@@ -364,6 +471,7 @@ class V2LessonChatService:
             by_field[question.field] = cls._prepare_question(
                 question,
                 require_fresh_confirmation=require_fresh_confirmation,
+                draft=draft,
             )
         return [
             by_field[field] for field in cls.core_question_fields if field in by_field
@@ -375,31 +483,31 @@ class V2LessonChatService:
         question: AIQuestion,
         *,
         require_fresh_confirmation: bool,
+        draft: LessonDesignDraft | None = None,
     ) -> AIQuestion:
         if question.field == "selectedMaterials":
+            material_options = cls._material_options_for_draft(draft)
             return question.model_copy(
                 update={
-                    "prompt": "Which pages should be in the kit?",
-                    "helper_text": "Pick the classroom pages you want ready to print.",
+                    "prompt": "Which pages should AI generate?",
+                    "helper_text": (
+                        "Select all or only what you need. Printing choices come later."
+                    ),
                     "input_type": "multi_select",
-                    "options": [
-                        option.model_copy(deep=True)
-                        for option in cls.printable_material_options
-                    ],
+                    "options": material_options,
                     "selected_option_ids": (
                         []
                         if require_fresh_confirmation
                         else [
                             item
                             for item in question.selected_option_ids
-                            if item
-                            in {option.id for option in cls.printable_material_options}
+                            if item in {option.id for option in material_options}
                         ]
                     ),
                     "custom_answer": "",
                     "allow_custom_answer": True,
                     "required": True,
-                    "max_selections": 4,
+                    "max_selections": None,
                 }
             )
 
@@ -482,6 +590,68 @@ class V2LessonChatService:
                 "max_selections": max_selections,
             }
         )
+
+    @classmethod
+    def _material_options_for_draft(
+        cls, draft: LessonDesignDraft | None
+    ) -> list[AIQuestionOption]:
+        if draft is None or not draft.goal_text.strip():
+            return [option.model_copy(deep=True) for option in cls.printable_material_options]
+        try:
+            recommended = V2MaterialBlueprintService.recommended_bundle(
+                LessonDesignDraftDto.model_validate(
+                    draft.model_dump(mode="json", by_alias=True)
+                )
+            )
+        except Exception:
+            return [option.model_copy(deep=True) for option in cls.printable_material_options]
+        icons = {
+            "quantity_cards": "①",
+            "matching_page": "↔",
+            "visual_card": "▧",
+            "help_card": "💬",
+            "scenario_cards": "▤",
+            "token_board": "☆",
+            "data_sheet": "▦",
+            "summary_template": "▤",
+            "first_then_board": "→",
+            "choice_board": "☑",
+            "sequence_cards": "➊",
+            "visual_schedule": "☷",
+            "task_analysis_cards": "✓",
+            "emotion_scale": "☺",
+            "break_card": "⏸",
+            "core_word_board": "▦",
+            "social_narrative": "▤",
+            "sorting_page": "◫",
+        }
+        option_ids = {
+            "visual_card": "visual-cards",
+            "quantity_cards": "quantity-cards",
+            "matching_page": "matching-page",
+            "scenario_cards": "scenario-cards",
+            "summary_template": "summary-template",
+        }
+        options: list[AIQuestionOption] = []
+        for material_type in recommended:
+            blueprint = V2MaterialBlueprintService.blueprint(material_type)
+            if blueprint is None:
+                continue
+            options.append(
+                AIQuestionOption(
+                    id=option_ids.get(
+                        material_type, material_type.replace("_", "-")
+                    ),
+                    label=blueprint.display_name,
+                    value=blueprint.display_name,
+                    description=blueprint.instructional_purpose,
+                    icon=icons.get(material_type, "▧"),
+                    recommended=True,
+                )
+            )
+        return options or [
+            option.model_copy(deep=True) for option in cls.printable_material_options
+        ]
 
     @staticmethod
     def _prepare_draft(draft: LessonDesignDraft) -> LessonDesignDraft:
