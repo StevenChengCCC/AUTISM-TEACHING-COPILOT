@@ -126,38 +126,87 @@ class V2LessonChatService:
         return self.to_dto(self.start(learner_id, resume_existing=resume_existing))
 
     def submit_request(self, conversation_id: str, content: str) -> AIChatState:
-        chat = self._get(conversation_id)
-        if chat.questions:
-            chat.questions = self._prepare_questions(
-                chat.questions, require_fresh_confirmation=False
-            )
-            chat.draft = self._prepare_draft(chat.draft)
         clean = content.strip()
         if not clean:
             raise ValidationError("Lesson request cannot be empty")
+
+        initial = self._get(conversation_id)
+        generated: tuple[list[AIQuestion], LessonDesignDraft] | None = None
+        generation_metadata = None
+        if not initial.questions:
+            learner = self.learners.get(initial.learner_id)
+            questions, draft = self.ai.generate_lesson_questions(learner, clean)
+            generated = (questions, draft)
+            generation_metadata = getattr(self.ai, "last_generation_metadata", None)
+
+        # OpenAI generation can take several seconds. During that time a duplicate
+        # browser request or another tab may advance the draft version. Re-load and
+        # merge on conflict so an implementation detail never becomes a teacher
+        # facing "refresh and try again" error.
+        for attempt in range(3):
+            chat = initial if attempt == 0 else self._get(conversation_id)
+            if self._request_already_applied(chat, clean):
+                return chat
+            chat = self._apply_request(
+                chat,
+                clean,
+                generated=generated,
+                generation_metadata=generation_metadata,
+            )
+            try:
+                return self.repos.chats.save(chat)
+            except VersionConflictError:
+                if attempt == 2:
+                    raise VersionConflictError(
+                        "We could not save the lesson suggestions. Please try once more."
+                    )
+        raise VersionConflictError(
+            "We could not save the lesson suggestions. Please try once more."
+        )
+
+    def _apply_request(
+        self,
+        chat: AIChatState,
+        clean: str,
+        *,
+        generated: tuple[list[AIQuestion], LessonDesignDraft] | None,
+        generation_metadata,
+    ) -> AIChatState:
         chat.messages.append(
             AIMessage(id=self.repos.next_id("message"), role="teacher", content=clean)
         )
-        if not chat.questions:
-            learner = self.learners.get(chat.learner_id)
-            questions, draft = self.ai.generate_lesson_questions(learner, clean)
-            draft.id = chat.draft.id
+        if not chat.questions and generated is not None:
+            questions, generated_draft = generated
+            draft = generated_draft.model_copy(
+                update={
+                    "id": chat.draft.id,
+                    "learner_id": chat.learner_id,
+                    "version": chat.draft.version,
+                },
+                deep=True,
+            )
             chat.questions = self._prepare_questions(
                 questions, require_fresh_confirmation=True
             )
             chat.draft = self._prepare_draft(draft)
-            metadata = getattr(self.ai, "last_generation_metadata", None)
-            if metadata is not None:
-                chat.generation_status = metadata.status
+            if generation_metadata is not None:
+                chat.generation_status = generation_metadata.status
                 chat.generation_metadata = GenerationMetadataDto.model_validate(
-                    metadata.model_dump(mode="json", by_alias=True)
+                    generation_metadata.model_dump(mode="json", by_alias=True)
                 )
-            response = "Great. I’ll ask a few quick questions so we can generate the right teaching materials."
+            response = (
+                "I’ve turned that request into three suggested lesson choices. "
+                "Pick what fits your learner."
+            )
         else:
+            chat.questions = self._prepare_questions(
+                chat.questions, require_fresh_confirmation=False
+            )
+            chat.draft = self._prepare_draft(chat.draft)
             chat.draft.custom_notes = " ".join(
                 filter(None, [chat.draft.custom_notes, clean])
             )
-            response = "Thanks. I’ve kept your lesson choices and added that note to the draft."
+            response = "Thanks. I’ve kept your choices and added that note."
         chat.messages.append(
             AIMessage(
                 id=self.repos.next_id("message"), role="assistant", content=response
@@ -166,7 +215,14 @@ class V2LessonChatService:
         chat.can_generate = bool(chat.questions) and all(
             self._answered(item) for item in chat.questions
         )
-        return self.repos.chats.save(chat)
+        return chat
+
+    @staticmethod
+    def _request_already_applied(chat: AIChatState, clean: str) -> bool:
+        return bool(chat.questions) and any(
+            message.role == "teacher" and message.content.strip() == clean
+            for message in chat.messages
+        )
 
     def submit_message_dto(
         self, conversation_id: str, learner_id: str, content: str

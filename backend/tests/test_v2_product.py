@@ -207,6 +207,52 @@ def test_v2_chat_can_restart_and_save_answers_without_stale_draft_conflicts():
     assert chat.can_generate is True
 
 
+def test_v2_chat_transparently_retries_a_message_version_conflict(monkeypatch):
+    repos = V2Repositories()
+    service = V2LessonChatService(repos)
+    initial = service.start("a102")
+    real_save = repos.chats.save
+    attempts = 0
+
+    def flaky_save(chat):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            from app.core.exceptions import VersionConflictError
+
+            raise VersionConflictError(
+                "The lesson draft changed after it was loaded. Refresh and try again."
+            )
+        return real_save(chat)
+
+    monkeypatch.setattr(repos.chats, "save", flaky_save)
+    state = service.submit_request(
+        initial.conversation_id, "Teach the learner to identify fruit."
+    )
+
+    assert attempts == 2
+    assert len(state.questions) == 3
+    assert state.messages[-1].content.startswith(
+        "I’ve turned that request into three suggested lesson choices"
+    )
+
+
+def test_v2_chat_treats_a_duplicate_teacher_request_as_idempotent():
+    repos = V2Repositories()
+    service = V2LessonChatService(repos)
+    initial = service.start("a102")
+    first = service.submit_request(
+        initial.conversation_id, "Teach the learner to identify fruit."
+    )
+    repeated = service.submit_request(
+        initial.conversation_id, "Teach the learner to identify fruit."
+    )
+
+    assert repeated.draft.version == first.draft.version
+    assert repeated.messages == first.messages
+    assert repeated.questions == first.questions
+
+
 def test_v2_package_runs_safety_and_standards_before_persistence():
     repos = V2Repositories()
     chat_service = V2LessonChatService(repos)
