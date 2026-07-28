@@ -14,6 +14,7 @@ import type {
 import { backendClient } from "./backendClient";
 
 const useLocalMock = import.meta.env.VITE_USE_LOCAL_MOCK === "true";
+const pendingChatStarts = new Map<string, Promise<AIChatState>>();
 
 export interface RecordUploadInput { fileName: string; fileType: string; text: string }
 export interface MaterialUpdateInput { title: string; content: GeneratedMaterial["content"]; printLayout: GeneratedMaterial["printLayout"] }
@@ -57,8 +58,15 @@ export const lessonKitApi = {
   getExtractedLearnerProfile: (id:string):Promise<LearnerProfileExtraction> => useLocalMock ? lessonKitMockApi.getExtractedLearnerProfile(id) : backendClient.get(`/v2/learners/${id}/profile-extraction`),
 
   getInitialLessonChat: async (learnerId:string,resumeExisting=false):Promise<AIChatState> => {
-    const state=useLocalMock?await lessonKitMockApi.getInitialLessonChat(learnerId):await backendClient.post<AIChatState>("/v2/lesson-chat/start",{learnerId,resumeExisting});
-    return state;
+    const key=`${learnerId}:${resumeExisting}`;
+    const pending=pendingChatStarts.get(key);
+    if(pending)return pending;
+    const request=useLocalMock
+      ?lessonKitMockApi.getInitialLessonChat(learnerId)
+      :backendClient.post<AIChatState>("/v2/lesson-chat/start",{learnerId,resumeExisting});
+    pendingChatStarts.set(key,request);
+    try{return await request;}
+    finally{if(pendingChatStarts.get(key)===request)pendingChatStarts.delete(key);}
   },
   submitLessonRequest: (conversationId:string,learnerId:string,message:string,currentDraft?:LessonDesignDraft):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.submitLessonRequest(conversationId,message) : backendClient.post("/v2/lesson-chat/message",{conversationId,learnerId,message,currentDraft}),
   updateAIQuestionAnswer: (conversationId:string,questionId:string,selectedOptionIds:string[],customAnswer=""):Promise<AIChatState> => useLocalMock ? lessonKitMockApi.updateAIQuestionAnswer(conversationId,questionId,selectedOptionIds,customAnswer) : backendClient.patch(`/v2/lesson-chat/${conversationId}/answers`,{questionId,selectedOptionIds,customAnswer}),

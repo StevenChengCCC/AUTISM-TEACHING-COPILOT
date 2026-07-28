@@ -2,6 +2,7 @@ import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "re
 import { lessonKitApi } from "../api/lessonKitApi";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { LearnerAvatar } from "../components/Avatar";
 import { Tag } from "../components/Tag";
 import type { LearnerProfile, LearnerRecord } from "../types";
 
@@ -178,7 +179,12 @@ export function UploadRecordsPage({
       <div className="v2-upload-layout">
         <Card className="v2-upload-main">
           <div className="v2-upload-learner">
-            <span>{learner?.avatar ?? "🧒🏻"}</span>
+            <LearnerAvatar
+              learnerId={learner?.id ?? learnerId}
+              avatar={learner?.avatar}
+              alt={`${learner?.code ?? "Learner"} avatar`}
+              size={64}
+            />
             <div>
               <h2>{learner?.code ?? "New learner"} <small>· {learner?.age && learner.age>0?`Age ${learner.age}`:"Age to confirm"}</small></h2>
               <div>{learner?.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div>

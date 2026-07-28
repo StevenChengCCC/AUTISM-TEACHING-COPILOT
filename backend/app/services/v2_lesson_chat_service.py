@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import NotFoundError, ValidationError, VersionConflictError
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
 from app.schemas.v2_dto import (
     AIChatState,
@@ -19,8 +19,6 @@ from app.services.v2_repositories import V2Repositories, repositories
 class V2LessonChatService:
     core_question_fields = (
         "goalText",
-        "baseline",
-        "responseLevel",
         "scenarios",
         "selectedMaterials",
     )
@@ -75,21 +73,23 @@ class V2LessonChatService:
         self.learners = V2LearnerService(repos)
         self.ai = ai or get_v2_ai_provider()
 
-    def start(
-        self, learner_id: str, *, resume_existing: bool = False
-    ) -> AIChatState:
+    def start(self, learner_id: str, *, resume_existing: bool = False) -> AIChatState:
         self.learners.get(learner_id)
         conversation_id = f"conversation-{learner_id}"
         existing = self.repos.chats.get(conversation_id)
         if resume_existing and existing is not None:
-            existing.questions = self._prepare_questions(
+            questions = self._prepare_questions(
                 existing.questions, require_fresh_confirmation=False
             )
-            existing.draft = self._prepare_draft(existing.draft)
-            existing.can_generate = bool(existing.questions) and all(
-                self._answered(item) for item in existing.questions
+            return existing.model_copy(
+                update={
+                    "questions": questions,
+                    "draft": self._prepare_draft(existing.draft),
+                    "can_generate": bool(questions)
+                    and all(self._answered(item) for item in questions),
+                }
             )
-            return self.repos.chats.save(existing)
+        draft_version = existing.draft.version if existing is not None else 1
         chat = AIChatState(
             conversation_id=conversation_id,
             learner_id=learner_id,
@@ -101,20 +101,37 @@ class V2LessonChatService:
                 )
             ],
             questions=[],
-            draft=LessonDesignDraft(id=f"draft-{learner_id}", learner_id=learner_id),
+            draft=LessonDesignDraft(
+                id=f"draft-{learner_id}",
+                learner_id=learner_id,
+                version=draft_version,
+            ),
             can_generate=False,
         )
-        return self.repos.chats.save(chat)
+        for attempt in range(2):
+            try:
+                return self.repos.chats.save(chat)
+            except VersionConflictError:
+                if attempt:
+                    raise
+                latest = self.repos.chats.get(conversation_id)
+                if latest is None:
+                    raise
+                chat.draft.version = latest.draft.version
+        return chat
 
     def start_dto(
         self, learner_id: str, *, resume_existing: bool = False
     ) -> AIChatStateDto:
-        return self.to_dto(
-            self.start(learner_id, resume_existing=resume_existing)
-        )
+        return self.to_dto(self.start(learner_id, resume_existing=resume_existing))
 
     def submit_request(self, conversation_id: str, content: str) -> AIChatState:
         chat = self._get(conversation_id)
+        if chat.questions:
+            chat.questions = self._prepare_questions(
+                chat.questions, require_fresh_confirmation=False
+            )
+            chat.draft = self._prepare_draft(chat.draft)
         clean = content.strip()
         if not clean:
             raise ValidationError("Lesson request cannot be empty")
@@ -162,7 +179,27 @@ class V2LessonChatService:
     def update_answer(
         self, conversation_id: str, question_id: str, payload: QuestionAnswerUpdate
     ) -> AIChatState:
-        chat = self._get(conversation_id)
+        for attempt in range(2):
+            chat = self._get(conversation_id)
+            chat.questions = self._prepare_questions(
+                chat.questions, require_fresh_confirmation=False
+            )
+            chat.draft = self._prepare_draft(chat.draft)
+            try:
+                return self._update_answer(chat, question_id, payload)
+            except VersionConflictError:
+                if attempt:
+                    raise
+        raise VersionConflictError(
+            "The lesson draft changed after it was loaded. Refresh and try again."
+        )
+
+    def _update_answer(
+        self,
+        chat: AIChatState,
+        question_id: str,
+        payload: QuestionAnswerUpdate,
+    ) -> AIChatState:
         question = next(
             (item for item in chat.questions if item.id == question_id), None
         )
@@ -195,6 +232,7 @@ class V2LessonChatService:
             selected = (
                 [custom_id]
                 if question.input_type == "single_select"
+                or question.max_selections == 1
                 else [*selected, custom_id]
             )
         question.selected_option_ids = selected
@@ -272,10 +310,8 @@ class V2LessonChatService:
                 require_fresh_confirmation=require_fresh_confirmation,
             )
         return [
-            by_field[field]
-            for field in cls.core_question_fields
-            if field in by_field
-        ][:5]
+            by_field[field] for field in cls.core_question_fields if field in by_field
+        ][:3]
 
     @classmethod
     def _prepare_question(
@@ -287,11 +323,8 @@ class V2LessonChatService:
         if question.field == "selectedMaterials":
             return question.model_copy(
                 update={
-                    "prompt": "Which printable materials should be included in the lesson kit?",
-                    "helper_text": (
-                        "Select only the classroom pages you want to review and print. "
-                        "Digital apps are not included automatically."
-                    ),
+                    "prompt": "Which pages should be in the kit?",
+                    "helper_text": "Pick the classroom pages you want ready to print.",
                     "input_type": "multi_select",
                     "options": [
                         option.model_copy(deep=True)
@@ -304,22 +337,21 @@ class V2LessonChatService:
                             item
                             for item in question.selected_option_ids
                             if item
-                            in {
-                                option.id
-                                for option in cls.printable_material_options
-                            }
+                            in {option.id for option in cls.printable_material_options}
                         ]
                     ),
                     "custom_answer": "",
                     "allow_custom_answer": True,
                     "required": True,
-                    "max_selections": 5,
+                    "max_selections": 4,
                 }
             )
 
         options: list[AIQuestionOption] = []
         selected_ids = set(question.selected_option_ids)
         for option in question.options:
+            if option.source == "teacher_custom":
+                continue
             normalized = option.label.casefold()
             if "full physical" in normalized or "hand-over-hand" in normalized:
                 selected_ids.discard(option.id)
@@ -348,16 +380,50 @@ class V2LessonChatService:
                 ),
             )
             custom_answer = ""
+        elif custom_answer:
+            options.append(
+                AIQuestionOption(
+                    id=f"custom-{question.id}",
+                    label=custom_answer,
+                    value=custom_answer,
+                    description="Teacher-authored answer.",
+                    icon="✎",
+                    source="teacher_custom",
+                )
+            )
+
+        prompt_by_field = {
+            "goalText": "What should the learner practice?",
+            "scenarios": "Where will the learner practice?",
+        }
+        helper_by_field = {
+            "goalText": "Choose the AI suggestion or write a short goal.",
+            "scenarios": "Pick one or two familiar situations.",
+        }
+        if question.field == "goalText":
+            input_type = "hybrid"
+            max_selections = 1
+        elif question.field == "scenarios":
+            input_type = "multi_select"
+            max_selections = 2
+        else:
+            input_type = question.input_type
+            max_selections = question.max_selections
 
         return question.model_copy(
             update={
-                "options": options,
+                "prompt": prompt_by_field.get(question.field, question.prompt),
+                "helper_text": helper_by_field.get(
+                    question.field,
+                    "Review the suggestion and confirm or edit it.",
+                ),
+                "input_type": input_type,
+                "options": options[:4],
                 "selected_option_ids": (
                     [] if require_fresh_confirmation else list(selected_ids)
                 ),
                 "custom_answer": custom_answer,
-                "helper_text": question.helper_text
-                or "Review the suggestion and confirm or edit it before generation.",
+                "max_selections": max_selections,
             }
         )
 

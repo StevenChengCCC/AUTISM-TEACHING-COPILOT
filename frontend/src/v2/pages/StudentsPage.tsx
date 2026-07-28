@@ -3,6 +3,7 @@ import { lessonKitApi } from "../api/lessonKitApi";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
+import { LearnerAvatar } from "../components/Avatar";
 import type { LearnerProfile, LearnerRecord, RecentLesson } from "../types";
 
 const filters = ["All", "Visual support", "AAC", "Communication", "Attention", "New"];
@@ -83,7 +84,7 @@ export function StudentsPage({
           <div className="v2-student-list">
             {filtered.map((learner) => (
               <button className={selected?.id === learner.id ? "is-selected" : ""} key={learner.id} onClick={() => setSelectedId(learner.id)}>
-                <span>{learner.avatar}</span>
+                <LearnerAvatar learnerId={learner.id} avatar={learner.avatar} alt="" size={62} />
                 <div>
                   <strong>{learner.code}</strong>
                   <small>{learner.age > 0 ? `Age ${learner.age}` : "Age to confirm"}</small>
@@ -102,7 +103,7 @@ export function StudentsPage({
           <Card className="v2-profile-panel">
             <h2>Learner Profile</h2>
             <div className="v2-profile-title">
-              <span>{selected.avatar}</span>
+              <LearnerAvatar learnerId={selected.id} avatar={selected.avatar} alt={`${selected.code} avatar`} size={76} />
               <div>
                 <h2>{selected.code}</h2>
                 <p>{selected.age > 0 ? `Age ${selected.age}` : "Age to confirm"}</p>

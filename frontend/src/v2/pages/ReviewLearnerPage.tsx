@@ -3,6 +3,7 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
 import { lessonKitApi } from "../api/lessonKitApi";
+import { LearnerAvatar } from "../components/Avatar";
 import type { LearnerProfile,LearnerProfileExtraction,LearnerRecord } from "../types";
 import "./ReviewLearnerPage.css";
 
@@ -63,7 +64,7 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
     <div className="v2-page-heading"><h1>Review learner summary</h1><p>Confirm the essentials before planning the lesson.</p></div>
     <Card className="v2-learner-summary-card">
       <header className="v2-learner-summary-header">
-        <div className="v2-learner-identity"><span aria-hidden="true">{form.code.replace(/^Learner\s*/i,"").charAt(0)||"L"}</span><div><h2>{form.code||learner.code}</h2><p>{form.age?`Age ${form.age}`:"Age needs confirmation"} · {extraction.records.length} {extraction.records.length===1?"record":"records"}</p></div></div>
+        <div className="v2-learner-identity"><LearnerAvatar learnerId={learner.id} avatar={learner.avatar} alt="" size={64}/><div><h2>{form.code||learner.code}</h2><p>{form.age?`Age ${form.age}`:"Age needs confirmation"} · {extraction.records.length} {extraction.records.length===1?"record":"records"}</p></div></div>
         <Button variant="secondary" onClick={()=>setIsEditing((value)=>!value)}>{isEditing?"Close editing":"Edit details"}</Button>
       </header>
 

@@ -206,11 +206,9 @@ def test_lesson_planning_questions_are_dynamic_and_require_teacher_confirmation(
         "I want to teach asking for help.",
     )
     fields = {question.field for question in state.questions}
-    assert len(state.questions) == 5
+    assert len(state.questions) == 3
     assert fields == {
         "goalText",
-        "baseline",
-        "responseLevel",
         "scenarios",
         "selectedMaterials",
     }
@@ -229,28 +227,16 @@ def test_lesson_planning_questions_are_dynamic_and_require_teacher_confirmation(
     )
     state = service.update_answer(
         state.conversation_id,
-        "baseline",
-        QuestionAnswerUpdate(selected_option_ids=["baseline-prompted"]),
-    )
-    state = service.update_answer(
-        state.conversation_id,
-        "response-level",
-        QuestionAnswerUpdate(selected_option_ids=["short-phrase"]),
-    )
-    state = service.update_answer(
-        state.conversation_id,
         "scenarios",
         QuestionAnswerUpdate(selected_option_ids=["toy-car"]),
     )
     state = service.update_answer(
         state.conversation_id,
         "materials",
-        QuestionAnswerUpdate(
-            selected_option_ids=["visual-cards", "data-sheet"]
-        ),
+        QuestionAnswerUpdate(selected_option_ids=["visual-cards", "data-sheet"]),
     )
     assert state.can_generate is True
-    assert state.draft.baseline == "Responds with prompting"
+    assert state.draft.goal_text
 
 
 def test_lesson_context_minimizes_identity_and_record_text():
@@ -285,9 +271,7 @@ def test_package_is_typed_evaluated_and_versioned_through_teacher_approval():
         check.skillId == "ny_instructional_materials"
         for check in package.standardsChecks
     )
-    assert {
-        check.version for check in package.standardsChecks
-    } == {
+    assert {check.version for check in package.standardsChecks} == {
         "instructional-quality-v1",
         "ny-instructional-materials-evaluator-v1",
     }
@@ -436,8 +420,6 @@ def test_selected_records_to_teacher_approved_package_end_to_end():
     )
     for question_id, option_id in (
         ("target-response", "confirm-target"),
-        ("baseline", "baseline-prompted"),
-        ("response-level", "short-phrase"),
         ("scenarios", "toy-car"),
         ("materials", "visual-cards"),
     ):

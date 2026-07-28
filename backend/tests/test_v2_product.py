@@ -140,11 +140,9 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
     chat = service.submit_request(
         initial.conversation_id, "I want to teach Learner A-102 to ask for help."
     )
-    assert len(chat.questions) == 5
+    assert len(chat.questions) == 3
     assert {question.field for question in chat.questions} == {
         "goalText",
-        "baseline",
-        "responseLevel",
         "scenarios",
         "selectedMaterials",
     }
@@ -163,15 +161,50 @@ def test_v2_chat_is_input_driven_and_uses_camel_case_contracts():
 
     updated = service.update_answer(
         chat.conversation_id,
-        "response-level",
+        "target-response",
         QuestionAnswerUpdate(selected_option_ids=[], custom_answer="Two-word request"),
     )
     response_question = next(
-        question for question in updated.questions if question.id == "response-level"
+        question for question in updated.questions if question.id == "target-response"
     )
     custom = response_question.options[-1]
     assert custom.source == "teacher_custom"
-    assert updated.draft.response_level == "Two-word request"
+    assert updated.draft.goal_text == "Two-word request"
+
+    replaced = service.update_answer(
+        updated.conversation_id,
+        "target-response",
+        QuestionAnswerUpdate(
+            selected_option_ids=["confirm-target"],
+            custom_answer="One-word request",
+        ),
+    )
+    response_question = next(
+        question for question in replaced.questions if question.id == "target-response"
+    )
+    assert response_question.selected_option_ids == ["custom-target-response"]
+    assert replaced.draft.goal_text == "One-word request"
+
+
+def test_v2_chat_can_restart_and_save_answers_without_stale_draft_conflicts():
+    repos = V2Repositories()
+    service = V2LessonChatService(repos)
+
+    service.start("a102")
+    second = service.start("a102")
+
+    chat = service.submit_request(
+        second.conversation_id, "Teach the learner to ask for help."
+    )
+    for question in chat.questions:
+        selected = [question.options[0].id] if question.options else []
+        chat = service.update_answer(
+            chat.conversation_id,
+            question.id,
+            QuestionAnswerUpdate(selected_option_ids=selected),
+        )
+
+    assert chat.can_generate is True
 
 
 def test_v2_package_runs_safety_and_standards_before_persistence():
@@ -343,8 +376,7 @@ def test_v2_learner_record_and_extraction_http_contracts():
         for insight in extraction.json()["insights"]
     )
     assert all(
-        "mastery" not in insight.casefold()
-        for insight in extraction.json()["insights"]
+        "mastery" not in insight.casefold() for insight in extraction.json()["insights"]
     )
     assert extraction.json()["analyzedRecordCount"] == 5
     assert extraction.json()["status"] == "complete"
@@ -372,11 +404,9 @@ def test_v2_lesson_chat_product_http_flow():
     )
     assert generated.status_code == 200
     state = generated.json()
-    assert len(state["questions"]) == 5
+    assert len(state["questions"]) == 3
     assert {question["field"] for question in state["questions"]} == {
         "goalText",
-        "baseline",
-        "responseLevel",
         "scenarios",
         "selectedMaterials",
     }
@@ -478,9 +508,7 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         check["skillId"] == "ny_instructional_materials"
         for check in package["standardsChecks"]
     )
-    assert {
-        check["version"] for check in package["standardsChecks"]
-    } == {
+    assert {check["version"] for check in package["standardsChecks"]} == {
         "instructional-quality-v1",
         "ny-instructional-materials-evaluator-v1",
     }

@@ -2,6 +2,7 @@ import type { StudioPage } from "../types";
 import { useEffect,useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { BRAND } from "../brand";
+import { TeacherAvatar } from "./Avatar";
 import { BrandMark } from "./BrandMark";
 
 type Props = {
@@ -47,7 +48,7 @@ export function TopNav({ page, onNavigate }: Props) {
         <button className="v2-dev-link" aria-pressed={teachingMode} onClick={()=>setTeachingMode((value)=>!value)}>{teachingMode?"Exit teaching mode":"Teaching mode"}</button>
         {import.meta.env.DEV&&<button className={`v2-dev-link v2-ai-dev-link ${page==="developerAI"?"is-active":""}`} onClick={()=>onNavigate("developerAI")} title="Backend AI development checks">AI dev</button>}
         <button className="v2-profile" aria-label="Open teacher account menu" aria-expanded={menuOpen} aria-controls="teacher-account-menu" onClick={()=>setMenuOpen((value)=>!value)}>
-          <span className="v2-avatar" aria-hidden="true">👩🏻</span><span className="v2-profile-name">{user?.displayName ?? "Teacher"}</span><span aria-hidden="true">⌄</span>
+          <TeacherAvatar size={44} /><span className="v2-profile-name">{user?.displayName ?? "Teacher"}</span><span aria-hidden="true">⌄</span>
         </button>
         {menuOpen&&<div className="v2-account-menu" id="teacher-account-menu" role="menu">
           <strong>{user?.displayName ?? "Teacher"}</strong>
