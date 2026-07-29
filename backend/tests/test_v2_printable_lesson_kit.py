@@ -214,6 +214,68 @@ def test_complete_printable_lesson_kit_embeds_generated_image_url(tmp_path):
     assert embedded_images >= 1
 
 
+def test_visual_card_pdf_embeds_each_target_without_template_box(tmp_path):
+    config = _settings(tmp_path)
+    repos = V2Repositories()
+    package, materials = _seed_package(repos)
+    generated_dir = tmp_path / "public" / "generated-images"
+    generated_dir.mkdir(parents=True)
+    tiny_png = b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+    )
+    (generated_dir / "apple.png").write_bytes(tiny_png)
+    (generated_dir / "banana.png").write_bytes(tiny_png)
+    visual = materials[0].model_copy(
+        update={
+            "title": "Apple and Banana Visual Cards",
+            "content": {
+                **materials[0].content,
+                "visualItems": [
+                    {
+                        "id": "apple",
+                        "label": "Apple",
+                        "imageUrl": "/storage/generated-images/apple.png",
+                        "imageAltText": "One isolated apple.",
+                        "generationStatus": "ready",
+                    },
+                    {
+                        "id": "banana",
+                        "label": "Banana",
+                        "imageUrl": "/storage/generated-images/banana.png",
+                        "imageAltText": "One isolated banana.",
+                        "generationStatus": "ready",
+                    },
+                ],
+            },
+        }
+    )
+    updated_materials = [visual, *materials[1:]]
+    repos.generated_materials.save(visual)
+    repos.lesson_packages.save(package.model_copy(update={"materials": updated_materials}))
+    service = V2PrintableLessonKitService(
+        repos, LocalPrivateObjectStorage(config), config
+    )
+
+    job = service.create(
+        package.id,
+        PrintableLessonKitRequest(
+            materialIds=[item.id for item in updated_materials],
+            pageSize="Letter",
+            reviewedConfirmation=True,
+        ),
+    )
+
+    body = LocalPrivateObjectStorage(config).read_bytes(
+        job.storageObjectKey, config.MAX_EXPORT_BYTES
+    )
+    reader = PdfReader(BytesIO(body))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert "Apple" in text
+    assert "Banana" in text
+    commands = V2PrintableLessonKitService._visual_sheet_style().getCommands()
+    assert all(command[0] not in {"BOX", "GRID"} for command in commands)
+
+
 def test_selected_material_design_controls_print_palette():
     blue = V2PrintableLessonKitService._design_palette(
         {"selectedDesignVariant": "calm-blue"}

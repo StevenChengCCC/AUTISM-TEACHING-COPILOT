@@ -55,10 +55,10 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
   };
   const replaceFirstRecord=()=>{setExtraction((current)=>current?{...current,records:current.records.map((record,index)=>index===0?{...record,fileName:"Replacement learner summary.pdf",uploadedAt:"Just now",status:"ready"}:record)}:current);onFeedback("The first source record was replaced.");};
   const summaryItems=[
-    ["Communication",conciseInsight(form.communication)||"Needs confirmation"],
-    ["Supports",shortList(form.supportNeeds,3)],
-    ["Interests",shortList(form.interests,3)],
-    [isNew?"Learning format":"Motivators",conciseInsight(isNew?form.activityFormats:form.reinforcement)||"Needs confirmation"],
+    {label:"Communication",icon:"💬",value:conciseInsight(form.communication)||"Needs confirmation",tone:"blue"},
+    {label:"Supports",icon:"✦",value:shortList(form.supportNeeds,3),tone:"violet"},
+    {label:"Interests",icon:"★",value:shortList(form.interests,3),tone:"gold"},
+    {label:isNew?"Learning format":"Motivators",icon:"✓",value:conciseInsight(isNew?form.activityFormats:form.reinforcement)||"Needs confirmation",tone:"green"},
   ];
   return <section className="v2-review-page">
     <div className="v2-page-heading"><h1>Review learner summary</h1><p>Confirm the essentials before planning the lesson.</p></div>
@@ -69,7 +69,7 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
       </header>
 
       {!isEditing&&<>
-        <div className="v2-summary-grid">{summaryItems.map(([label,value])=><div key={label}><small>{label}</small><strong title={value}>{value}</strong></div>)}</div>
+        <div className="v2-summary-grid">{summaryItems.map((item)=><article className={`v2-summary-tile v2-summary-tile--${item.tone}`} key={item.label}><span aria-hidden>{item.icon}</span><div><small>{item.label}</small><strong title={item.value}>{item.value}</strong></div></article>)}</div>
         {form.notes&&<details className="v2-summary-details"><summary>View learner notes</summary><p>{conciseInsight(form.notes)}</p></details>}
         {isNew&&extraction.insights.length>0&&<div className="v2-summary-cues"><small>Key teaching notes</small><ul>{extraction.insights.slice(0,3).map((insight)=><li key={insight}>{conciseInsight(insight)}</li>)}</ul></div>}
       </>}

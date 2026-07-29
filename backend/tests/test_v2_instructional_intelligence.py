@@ -455,3 +455,43 @@ def test_selected_records_to_teacher_approved_package_end_to_end():
     )
     assert approved.status == "approved"
     assert packages.get_product(package.id).status == "approved"
+
+
+def test_prepared_material_choices_are_resynced_to_the_draft():
+    repos = V2Repositories()
+    service = V2LessonChatService(repos)
+    chat = service.submit_request(
+        service.start("a102").conversation_id,
+        "Teach identifying and naming an apple.",
+    )
+    material_question = next(
+        item for item in chat.questions if item.field == "selectedMaterials"
+    )
+    assert len(material_question.selected_option_ids) >= 4
+
+    # Reproduce an older/provider-authored partial draft while the prepared
+    # teacher-facing question contains the complete recommended kit.
+    stored = repos.chats.get(chat.conversation_id)
+    assert stored is not None
+    stored.draft.selected_materials = ["Visual Card", "Data Sheet"]
+    repos.chats.save(stored)
+
+    goal_question = next(item for item in chat.questions if item.field == "goalText")
+    refreshed = service.update_answer(
+        chat.conversation_id,
+        goal_question.id,
+        QuestionAnswerUpdate(
+            selected_option_ids=goal_question.selected_option_ids,
+            custom_answer=goal_question.custom_answer,
+        ),
+    )
+    refreshed_materials = next(
+        item for item in refreshed.questions if item.field == "selectedMaterials"
+    )
+    selected_values = [
+        option.value
+        for option in refreshed_materials.options
+        if option.id in refreshed_materials.selected_option_ids
+    ]
+    assert refreshed.draft.selected_materials == selected_values
+    assert "Lesson Summary" in refreshed.draft.selected_materials

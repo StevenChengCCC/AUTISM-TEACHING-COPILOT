@@ -5,6 +5,7 @@ from app.integrations.mock_ai_provider import MockV2AIProvider
 from app.schemas.v2_dto import ImageAssetDto, LessonDesignDraftDto
 from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_lesson_package_service import V2LessonPackageService
+from app.services.v2_material_service import V2MaterialService
 from app.services.v2_repositories import V2Repositories
 
 
@@ -116,6 +117,127 @@ def counting_draft() -> LessonDesignDraftDto:
         duration="8 minutes",
         customNotes="Use the learner's interests.",
     )
+
+
+def fruit_identification_draft() -> LessonDesignDraftDto:
+    return LessonDesignDraftDto(
+        id="draft-fruit-identification-kit",
+        learnerId="a102",
+        goalText="Learner identifies pictures of apples and bananas when named.",
+        observableResponse="Learner identifies pictures of apples and bananas when named.",
+        responseLevel="Point or name",
+        scenarios=["Table work"],
+        selectedMaterials=[
+            "Visual Cards",
+            "Matching Practice",
+            "Token Board",
+            "Data Sheet",
+            "Summary Template",
+        ],
+        theme="Fruit identification",
+        duration="10 minutes",
+        customNotes="Use clear object photographs or illustrations.",
+    )
+
+
+def test_object_identification_creates_one_person_free_image_per_target(tmp_path):
+    repos = V2Repositories()
+    provider = CountingImageProvider()
+    config = Settings(
+        _env_file=None,
+        IMAGE_ASSET_STRATEGY="generate_first",
+        STORAGE_DIR=str(tmp_path),
+    )
+    images = V2ImageAssetService(
+        repos, external_providers=[], ai=provider, config=config
+    )
+    packages = V2LessonPackageService(repos, ai=provider, images=images)
+
+    package = packages.generate_product(fruit_identification_draft())
+    visual = next(item for item in package.materials if item.type == "visual_card")
+    matching = next(item for item in package.materials if item.type == "matching_page")
+
+    assert [item["label"] for item in visual.content["visualItems"]] == [
+        "Apple",
+        "Banana",
+    ]
+    assert [item["label"] for item in matching.content["visualItems"]] == [
+        "Apple",
+        "Banana",
+    ]
+
+    packages.queue_product_images(package.id)
+    packages.prepare_product_images(package.id)
+    completed = packages.get_product(package.id)
+    visual = next(item for item in completed.materials if item.type == "visual_card")
+    matching = next(item for item in completed.materials if item.type == "matching_page")
+
+    # The two concepts are generated once, then safely reused across printable pages.
+    object_calls = [
+        call
+        for call in provider.image_calls
+        if call["materialType"] in {"visual card", "matching page"}
+    ]
+    assert len(object_calls) == 2
+    prompts = " ".join(call["prompt"] for call in object_calls)
+    assert "one isolated Apple" in prompts
+    assert "one isolated Banana" in prompts
+    assert "Do not show a teacher" in prompts
+    assert "classroom context" not in prompts
+    assert len({item["imageAssetId"] for item in visual.content["visualItems"]}) == 2
+    assert {
+        item["imageAssetId"] for item in visual.content["visualItems"]
+    } == {item["imageAssetId"] for item in matching.content["visualItems"]}
+
+
+def test_compound_identify_and_name_goal_uses_the_object_not_a_teaching_scene(
+    tmp_path,
+):
+    repos = V2Repositories()
+    provider = CountingImageProvider()
+    config = Settings(
+        _env_file=None,
+        IMAGE_ASSET_STRATEGY="generate_first",
+        STORAGE_DIR=str(tmp_path),
+    )
+    images = V2ImageAssetService(
+        repos, external_providers=[], ai=provider, config=config
+    )
+    packages = V2LessonPackageService(repos, ai=provider, images=images)
+    draft = fruit_identification_draft().model_copy(
+        update={
+            "goalText": "Identify and name the apple.",
+            "observableResponse": "Identify and name the apple.",
+            "selectedMaterials": [
+                "Visual Card",
+                "Scenario Cards",
+                "Reinforcement Board",
+                "Data Sheet",
+                "Lesson Summary",
+            ],
+        }
+    )
+
+    package = packages.generate_product(draft)
+    assert {material.type for material in package.materials} == {
+        "visual_card",
+        "scenario_cards",
+        "token_board",
+        "data_sheet",
+        "summary_template",
+    }
+    assert not any(check.status == "blocked" for check in package.standardsChecks)
+    visual = next(item for item in package.materials if item.type == "visual_card")
+    assert V2MaterialService(repos).approve_generated(visual.id).status == "approved"
+
+    assert [item["label"] for item in visual.content["visualItems"]] == ["Apple"]
+    packages.queue_product_images(package.id)
+    packages.prepare_product_images(package.id)
+    apple_call = next(
+        call for call in provider.image_calls if call["materialType"] == "visual card"
+    )
+    assert "one isolated Apple" in apple_call["prompt"]
+    assert "Do not show a teacher" in apple_call["prompt"]
 
 
 def test_counting_cards_use_repeated_personalized_object_not_generic_dots(tmp_path):

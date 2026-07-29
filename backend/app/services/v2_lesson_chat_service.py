@@ -90,10 +90,12 @@ class V2LessonChatService:
                 require_fresh_confirmation=False,
                 draft=existing.draft,
             )
+            draft = self._prepare_draft(existing.draft)
+            self._sync_draft_from_answers(draft, questions)
             return existing.model_copy(
                 update={
                     "questions": questions,
-                    "draft": self._prepare_draft(existing.draft),
+                    "draft": draft,
                     "can_generate": bool(questions)
                     and all(self._answered(item) for item in questions),
                 }
@@ -317,6 +319,7 @@ class V2LessonChatService:
                 draft=chat.draft,
             )
             chat.draft = self._prepare_draft(chat.draft)
+            self._sync_draft_from_answers(chat.draft, chat.questions)
             try:
                 return self._update_answer(chat, question_id, payload)
             except VersionConflictError:
@@ -832,6 +835,22 @@ class V2LessonChatService:
             draft.generalization_plan = joined
         elif question.field == "teacherConstraints":
             draft.teacher_constraints = joined
+
+    @classmethod
+    def _sync_draft_from_answers(
+        cls, draft: LessonDesignDraft, questions: list[AIQuestion]
+    ) -> None:
+        """Keep prepared question selections and the persisted draft identical.
+
+        A provider can return a partial material selection. The product layer
+        then expands that question to the complete recommended printable kit.
+        Reapplying every answered core question prevents the UI from showing five
+        selected pages while the generated draft silently contains only four.
+        """
+
+        for question in questions:
+            if cls._answered(question):
+                cls._apply_answer(draft, question)
 
     @staticmethod
     def _apply_custom_notes(

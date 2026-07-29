@@ -153,7 +153,14 @@ def build_safe_image_prompt(
     concept: str,
     provider_prompt: str = "",
 ) -> tuple[str, str]:
-    """Build a low-clutter prompt from minimized context and remove identifiers."""
+    """Build an instructional-asset prompt from minimized context.
+
+    Printable reference cards should depict the concept itself.  A common image
+    model failure is to turn an object-identification target into a scene of an
+    adult teaching a child.  That scene is decorative, but it cannot be used as
+    the child's reference card.  Object-first materials therefore explicitly
+    prohibit people, hands, classrooms, and demonstrations.
+    """
 
     context = build_image_generation_context(learner, material_type, concept)
 
@@ -161,31 +168,66 @@ def build_safe_image_prompt(
     theme = context["interestTheme"]
     if theme:
         theme_clause = (
-            f"Use a subtle {theme} interest theme when it supports the concept."
+            f"A subtle {theme} interest may influence accent colors only when it "
+            "does not change or obscure the target concept."
         )
     else:
         theme_clause = (
             "Use neutral classroom materials such as blocks, pencils, or books."
         )
-    support_clause = (
-        f"Communication support: {context['communicationSupport']}."
-        if context["communicationSupport"]
-        else "Use a clear, observable classroom interaction."
-    )
     cleaned_provider_prompt = _remove_direct_identifiers(learner, provider_prompt)
     optional_direction = (
         f" Provider direction: {cleaned_provider_prompt}"
         if cleaned_provider_prompt
         else ""
     )
+    object_first_types = {
+        "quantity_cards",
+        "number_cards",
+        "visual_card",
+        "matching_page",
+        "sorting_page",
+        "token_board",
+    }
+    child_action_types = {
+        "help_card",
+        "break_card",
+        "scenario_cards",
+        "sequence_cards",
+        "social_narrative",
+        "visual_schedule",
+        "task_analysis_cards",
+    }
+    if material_type in object_first_types:
+        composition = (
+            f"Create exactly one clean teaching reference image of {safe_concept}. "
+            "Show the target object or symbol itself, centered and large, occupying "
+            "most of the canvas. Do not show a teacher, therapist, parent, child, "
+            "hand, pointing gesture, classroom, lesson, demonstration, worksheet, "
+            "card frame, border, caption, or surrounding scene. "
+        )
+    elif material_type in child_action_types:
+        composition = (
+            f"Create one clear teaching image of {safe_concept}. If a person is "
+            "essential to the concept, show one fictional child performing the "
+            "target action without an adult, teacher, therapist, audience, or "
+            "classroom demonstration. Keep the action unambiguous. "
+        )
+    else:
+        composition = (
+            f"Create one clean printable educational image of {safe_concept}. "
+            "Use one clear focal subject and no teaching demonstration. "
+        )
     prompt = (
-        f"Create a low-clutter printable {material_type.replace('_', ' ')} showing "
-        f"{safe_concept}. Show only fictional, non-identifying people. {theme_clause} "
-        f"{support_clause} Do not include names, learner codes, diagnoses, logos, branded "
-        f"characters, record text, or embedded text. Teacher review is required."
+        composition
+        + f"{theme_clause} Use a plain white or transparent-looking background, "
+        "bold friendly shapes, high contrast, age-respectful styling, and consistent "
+        "lighting. Do not include names, learner codes, diagnoses, logos, branded "
+        "characters, record text, embedded text, watermarks, or decorative borders. "
+        "The image will be placed directly into a teacher-reviewed printable PDF."
         f"{optional_direction}"
     )
-    alt_text = f"Teacher-reviewable classroom illustration showing {safe_concept}."
+    alt_text = f"Teacher-reviewable instructional image of {safe_concept}."
     return prompt, alt_text
 
 

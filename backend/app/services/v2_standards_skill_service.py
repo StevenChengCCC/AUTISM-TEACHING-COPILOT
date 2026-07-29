@@ -110,9 +110,39 @@ class V2StandardsSkillService:
             "The goal must describe an observable learner response.",
             "Rewrite the goal using a visible or countable learner action and confirm it.",
             lambda c: bool(c[0].goalText.strip())
-            and any(
-                word in c[0].goalText.casefold()
-                for word in ("will", "requests", "selects", "matches", "sorts", "uses")
+            and _contains_any_phrase(
+                c[0].goalText,
+                (
+                    "will",
+                    "request",
+                    "requests",
+                    "select",
+                    "selects",
+                    "match",
+                    "matches",
+                    "sort",
+                    "sorts",
+                    "use",
+                    "uses",
+                    "identify",
+                    "identifies",
+                    "name",
+                    "names",
+                    "point",
+                    "points",
+                    "count",
+                    "counts",
+                    "follow",
+                    "follows",
+                    "complete",
+                    "completes",
+                    "imitate",
+                    "imitates",
+                    "respond",
+                    "responds",
+                    "indicate",
+                    "indicates",
+                ),
             ),
         ),
         InstructionalQualityRule(

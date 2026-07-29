@@ -253,22 +253,12 @@ class V2PrintableLessonKitService:
         palette = self._design_palette(content)
         title = escape(material.title)
         header: list[Any] = [
-            Table(
-                [[Paragraph(title, styles["MaterialTitle"])]],
-                colWidths=[6.8 * inch],
-                style=TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, -1), palette["soft"]),
-                        ("BOX", (0, 0), (-1, -1), 1.4, palette["accent"]),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 14),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 14),
-                        ("TOPPADDING", (0, 0), (-1, -1), 10),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-                    ]
-                ),
+            Paragraph(title, styles["MaterialTitle"]),
+            Paragraph(
+                "Ready to print, cut, laminate, or use as a full-page support.",
+                styles["Kicker"],
             ),
-            Paragraph("Cut, laminate, or use as a full-page support.", styles["Kicker"]),
-            Spacer(1, 10),
+            Spacer(1, 14),
         ]
         image = self._embedded_image(content)
         card_types = {
@@ -334,7 +324,7 @@ class V2PrintableLessonKitService:
                     ),
                 )
                 card_image = self._embedded_image(
-                    visual_item, width=1.05 * inch, height=1.05 * inch
+                    visual_item, width=1.6 * inch, height=1.6 * inch
                 )
                 cell: list[Any] = []
                 quantity = visual_item.get("quantity")
@@ -352,9 +342,9 @@ class V2PrintableLessonKitService:
             table = Table(
                 [cells[index : index + 2] for index in range(0, len(cells), 2)],
                 colWidths=[3.45 * inch, 3.45 * inch],
-                rowHeights=[2.0 * inch] * ((len(cells) + 1) // 2),
+                rowHeights=[2.45 * inch] * ((len(cells) + 1) // 2),
             )
-            table.setStyle(self._card_table_style(palette))
+            table.setStyle(self._visual_sheet_style())
             return [*header, table]
 
         if material.type in {"help_card", "break_card", "teacher_cue_card"}:
@@ -718,6 +708,28 @@ class V2PrintableLessonKitService:
                 ("RIGHTPADDING", (0, 0), (-1, -1), 12),
                 ("TOPPADDING", (0, 0), (-1, -1), 12),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ]
+        )
+
+    @staticmethod
+    def _visual_sheet_style() -> TableStyle:
+        """Place completed artwork directly on the printable page.
+
+        The image model is responsible only for the artwork.  The PDF should not
+        wrap each image in a heavy template frame that competes with the teaching
+        concept.  Whitespace separates cards while preserving a clean printable
+        sheet.
+        """
+
+        return TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("LEFTPADDING", (0, 0), (-1, -1), 18),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 18),
+                ("TOPPADDING", (0, 0), (-1, -1), 14),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
             ]
         )
 

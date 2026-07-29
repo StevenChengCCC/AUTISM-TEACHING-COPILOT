@@ -305,11 +305,30 @@ class V2ImageAssetService:
         self, concept: str, material_type: str
     ) -> ImageAssetDto | None:
         type_tag = self._material_type_tag(material_type)
+        object_asset_types = {
+            "visual card",
+            "matching page",
+            "sorting page",
+            "number cards",
+            "quantity cards",
+        }
+        compatible_type_tags = {
+            self._material_type_tag(item) for item in object_asset_types
+        }
         matches = [
             asset
             for asset in self.repos.image_assets.list()
             if _normalize(asset.concept) == concept
-            and type_tag in {_normalize(tag) for tag in asset.tags}
+            and (
+                type_tag in {_normalize(tag) for tag in asset.tags}
+                or (
+                    material_type in object_asset_types
+                    and bool(
+                        compatible_type_tags
+                        & {_normalize(tag) for tag in asset.tags}
+                    )
+                )
+            )
             and (asset.sourceType in {"generated", "mock"} or asset.approved)
             and asset.safetyStatus != "blocked"
         ]

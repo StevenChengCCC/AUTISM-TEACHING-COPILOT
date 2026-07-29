@@ -1376,7 +1376,18 @@ class V2LessonPackageService:
             clean_label = " ".join(str(label).split())
             if not clean_label:
                 continue
-            item_concept = f"{clean_label}, {theme} classroom context"
+            if material_type in {
+                "visual_card",
+                "matching_page",
+                "sorting_page",
+                "number_cards",
+                "quantity_cards",
+            }:
+                item_concept = f"one isolated {clean_label}"
+            elif material_type == "token_board":
+                item_concept = f"one isolated positive reward symbol for {clean_label}"
+            else:
+                item_concept = f"{clean_label} in a simple {theme} context"
             result.append(
                 {
                     "id": f"{role}-{index + 1}",
@@ -1415,6 +1426,10 @@ class V2LessonPackageService:
                 str(content.get("firstText") or "Practice the target skill"),
                 str(content.get("thenText") or "Teacher-confirmed reward"),
             ]
+        if material_type in {"visual_card", "matching_page", "sorting_page"}:
+            goal_labels = cls._goal_visual_labels(draft)
+            if goal_labels:
+                return goal_labels
         keys = {
             "scenario_cards": ("scenarios", "examples", "items"),
             "sequence_cards": ("steps", "examples", "items"),
@@ -1453,6 +1468,76 @@ class V2LessonPackageService:
             or draft.goalText
         )
         return [str(label)]
+
+    @staticmethod
+    def _goal_visual_labels(draft: LessonDesignDraftDto) -> list[str]:
+        """Extract discrete reference-card concepts from a confirmed goal.
+
+        This intentionally handles a narrow, high-value pattern rather than
+        pretending to be a general NLP parser.  Goals such as “identify pictures
+        of apples and bananas when named” must create an apple card and a banana
+        card, not one image of a teacher presenting fruit.
+        """
+
+        import re
+
+        source = " ".join(
+            part
+            for part in (draft.observableResponse, draft.goalText)
+            if isinstance(part, str) and part.strip()
+        )
+        if not source:
+            return []
+        normalized = " ".join(source.split())
+        action = (
+            r"(?:identify|identifies|label|labels|name|names|recognize|recognizes)"
+        )
+        patterns = (
+            r"(?:pictures?|images?|photos?|objects?)\s+of\s+(.+?)(?:\s+when\b|\s+after\b|\s+from\b|[.;]|$)",
+            rf"{action}(?:\s+and\s+{action})?\s+"
+            rf"(?:(?:the\s+)?(?:pictures?|images?|photos?|objects?)\s+of\s+)?"
+            rf"(?:the\s+)?(.+?)(?:\s+when\b|\s+after\b|\s+from\b|[.;]|$)",
+        )
+        captured = ""
+        for pattern in patterns:
+            match = re.search(pattern, normalized, flags=re.IGNORECASE)
+            if match:
+                captured = match.group(1)
+                break
+        if not captured:
+            return []
+        captured = re.sub(
+            r"^(?:the\s+)?(?:pictures?|images?|photos?|objects?)\s+of\s+",
+            "",
+            captured,
+            flags=re.IGNORECASE,
+        )
+        captured = re.sub(
+            r"\b(?:using|with|during|in)\b.*$",
+            "",
+            captured,
+            flags=re.IGNORECASE,
+        )
+        raw_labels = re.split(r"\s*(?:,|/|\band\b|\bor\b)\s*", captured)
+        labels: list[str] = []
+        for raw in raw_labels:
+            label = re.sub(r"^(?:a|an|the)\s+", "", raw.strip(), flags=re.I)
+            label = re.sub(r"\s+(?:picture|image|photo)s?$", "", label, flags=re.I)
+            if not label or len(label.split()) > 4 or len(label) > 42:
+                continue
+            # Identification cards name one visible referent.  Keep this narrow
+            # and deterministic so common goals such as “apples and bananas”
+            # become the child-facing labels “Apple” and “Banana”.
+            if (
+                len(label) > 3
+                and label.casefold().endswith("s")
+                and not label.casefold().endswith(("ss", "us", "is"))
+            ):
+                label = label[:-1]
+            display = label[:1].upper() + label[1:]
+            if display.casefold() not in {item.casefold() for item in labels}:
+                labels.append(display)
+        return labels[:6]
 
     @staticmethod
     def _counting_labels(text: str) -> list[str]:
