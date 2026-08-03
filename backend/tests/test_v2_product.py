@@ -605,8 +605,8 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         for check in package["standardsChecks"]
     )
     assert {check["version"] for check in package["standardsChecks"]} == {
-        "instructional-quality-v1",
-        "ny-instructional-materials-evaluator-v1",
+        "instructional-quality-v2",
+        "ny-instructional-materials-evaluator-v2",
     }
     assert [step["title"] for step in package["teachingFlow"]] == [
         "Warm-up and motivation",

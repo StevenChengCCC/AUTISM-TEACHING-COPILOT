@@ -275,8 +275,8 @@ def test_package_is_typed_evaluated_and_versioned_through_teacher_approval():
         for check in package.standardsChecks
     )
     assert {check.version for check in package.standardsChecks} == {
-        "instructional-quality-v1",
-        "ny-instructional-materials-evaluator-v1",
+        "instructional-quality-v2",
+        "ny-instructional-materials-evaluator-v2",
     }
     assert all(step.expectedLearnerResponse for step in package.teachingFlow)
     assert all(step.dataToRecord for step in package.teachingFlow)

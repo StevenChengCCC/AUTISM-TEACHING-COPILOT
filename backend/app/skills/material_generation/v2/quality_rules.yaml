@@ -1,0 +1,28 @@
+rules:
+  - id: fully-rendered
+    instruction: Every selected page must be complete and printable with no placeholders, empty frames, or pending copy.
+    severity: high
+  - id: exact-concept
+    instruction: Image, label, alt text, and instructional target must refer to the same confirmed concept.
+    severity: high
+  - id: multiple-exemplars
+    instruction: Concept-learning materials must include at least three clear variations of the same target.
+    severity: high
+  - id: goal-family-completeness
+    instruction: Include all teacher-selected core pages for the goal family, not one token material.
+    severity: high
+  - id: large-useful-visuals
+    instruction: Make instructional visuals large and dominant with print-safe margins and minimal decoration.
+    severity: medium
+  - id: purpose-specific-pages
+    instruction: A help card, scenario card, choice board, reinforcement board, data sheet, and summary must each serve their distinct classroom purpose.
+    severity: high
+  - id: programmatic-academic-accuracy
+    instruction: Render quantities, symbols, grids, sequence markers, and data fields programmatically and verify them.
+    severity: high
+  - id: low-prep
+    instruction: The teacher should be able to print, cut only when explicitly needed, and use the material with concise directions.
+    severity: medium
+  - id: privacy
+    instruction: Do not include learner names, codes, diagnoses, faces, or record details on student-facing materials.
+    severity: high

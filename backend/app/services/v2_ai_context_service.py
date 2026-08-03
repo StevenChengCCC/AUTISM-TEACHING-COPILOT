@@ -176,11 +176,6 @@ def build_safe_image_prompt(
             "Use neutral classroom materials such as blocks, pencils, or books."
         )
     cleaned_provider_prompt = _remove_direct_identifiers(learner, provider_prompt)
-    optional_direction = (
-        f" Provider direction: {cleaned_provider_prompt}"
-        if cleaned_provider_prompt
-        else ""
-    )
     object_first_types = {
         "quantity_cards",
         "number_cards",
@@ -198,6 +193,19 @@ def build_safe_image_prompt(
         "visual_schedule",
         "task_analysis_cards",
     }
+    # Object reference cards and universal communication symbols must be driven
+    # by the current server-authored concept. Appending a provider prompt here
+    # can reintroduce a stale concept from an earlier teacher request.
+    ignore_provider_direction = object_first_types | {
+        "help_card",
+        "break_card",
+        "teacher_cue_card",
+    }
+    optional_direction = (
+        f" Provider direction: {cleaned_provider_prompt}"
+        if cleaned_provider_prompt and material_type not in ignore_provider_direction
+        else ""
+    )
     if material_type in object_first_types:
         composition = (
             f"Create exactly one clean teaching reference image of {safe_concept}. "

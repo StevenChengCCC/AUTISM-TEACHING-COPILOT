@@ -139,7 +139,7 @@ export function PrintableMaterialCanvas({
       {!legacyImageUrl && imageStatus === "failed" && <div className="v2-image-generation-state v2-image-generation-state--failed" role="status">Custom visuals need to be regenerated.</div>}
       <div className="v2-card-sheet">{labels.slice(0, 8).map((label, index) => {
         const count = countForLabel(label);
-        const visual = plannedVisuals.find((item) => item.label === label) ?? plannedVisuals[index] ?? plannedVisuals[0];
+        const visual = plannedVisuals[index] ?? plannedVisuals[0];
         const imageUrl = itemImage(visual) ?? legacyImageUrl;
         const quantity = visual?.quantity ?? count ?? 1;
         return <article key={`${label}-${index}`}>
@@ -180,7 +180,7 @@ export function PrintableMaterialCanvas({
         : ["Choice 1", "Choice 2"];
     return <div className="v2-printable-canvas v2-printable-canvas--choice">
       <h2>{heading}</h2><div>{options.map((label, index) => {
-        const visual = plannedVisuals.find((item) => item.label === label) ?? plannedVisuals[index];
+        const visual = plannedVisuals[index];
         const imageUrl = itemImage(visual);
         return <article key={`${label}-${index}`}>{imageUrl
           ? <img src={imageUrl} alt={visual?.imageAltText ?? label} />

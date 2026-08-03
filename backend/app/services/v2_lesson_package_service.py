@@ -1268,20 +1268,25 @@ class V2LessonPackageService:
         else:
             concept = f"positive classroom reward symbol themed around {theme}"
 
-        existing_concept = str(updated.get("imageConcept") or "").strip()
-        existing_prompt = str(updated.get("imagePrompt") or "").strip()
-        updated["imageConcept"] = existing_concept or concept
-        updated["imagePrompt"] = existing_prompt or (
+        # The confirmed draft is authoritative. Provider output can contain a
+        # concept from an earlier turn (for example, "apple" after the teacher
+        # changed the goal to "banana"), so never carry provider-authored image
+        # fields into a newly generated material.
+        for stale_key in ("imageUrl", "imageBase64", "imageAssetId"):
+            updated.pop(stale_key, None)
+        updated["imageConcept"] = concept
+        updated["imagePrompt"] = (
             f"Create one polished educational illustration for {concept}. "
             "Use an uncluttered white or very light background, bold friendly "
             "shapes, high contrast, and age-respectful classroom objects. "
             "Do not include words, letters, numerals, logos, watermarks, "
             "diagnostic labels, or an identifiable child."
         )
-        updated["imageAltText"] = str(
-            updated.get("imageAltText")
-            or f"Teacher-reviewable illustration for {context}."
-        )
+        updated["imageAltText"] = f"Teacher-reviewable illustration for {context}."
+        if material_type == "help_card" and str(
+            updated.get("phrase") or ""
+        ).strip().casefold() in {"", "to be confirmed", "teacher to confirm"}:
+            updated["phrase"] = "Help, please."
         updated["visualItems"] = cls._build_visual_asset_plan(
             material_type, updated, draft
         )
@@ -1349,6 +1354,72 @@ class V2LessonPackageService:
                     "generationStatus": "not_started",
                 }
                 for label in count_labels
+            ]
+
+        if material_type == "visual_card":
+            # Concept learning requires multiple exemplars. Four varied, isolated
+            # renderings help the learner generalize the concept without mixing in
+            # distractors or turning the card into a scene of an adult teaching.
+            variations = (
+                "",
+                " from a clear side view",
+                " with a small natural variation in shape",
+                " from a different clear angle",
+            )
+            result: list[dict] = []
+            for label in labels[:2]:
+                clean_label = " ".join(str(label).split())
+                if not clean_label:
+                    continue
+                for variation_index, variation in enumerate(variations):
+                    item_concept = f"one isolated {clean_label}{variation}"
+                    result.append(
+                        {
+                            "id": (
+                                f"concept-exemplar-{len(result) + 1}"
+                            ),
+                            "label": clean_label,
+                            "assetRole": "concept_exemplar",
+                            "concept": item_concept,
+                            "prompt": (
+                                base_prompt.format(concept=item_concept)
+                                + f" Show only {clean_label}; do not include any "
+                                "other fruit, object, person, hand, scene, or text."
+                            ),
+                            "imageAltText": (
+                                f"Clear exemplar of {clean_label}, variation "
+                                f"{variation_index + 1}."
+                            ),
+                            "generationStatus": "not_started",
+                        }
+                    )
+            return result[:8]
+
+        if material_type in {"help_card", "break_card", "teacher_cue_card"}:
+            phrase = (
+                "Help, please."
+                if material_type == "help_card"
+                else "Break, please."
+                if material_type == "break_card"
+                else "Teacher cue"
+            )
+            item_concept = (
+                "one simple universal classroom help symbol with a raised hand"
+                if material_type == "help_card"
+                else "one simple universal classroom break symbol"
+                if material_type == "break_card"
+                else "one simple neutral teacher cue symbol"
+            )
+            return [
+                {
+                    "id": f"{material_type}-symbol-1",
+                    "label": phrase,
+                    "assetRole": "communication_symbol",
+                    "concept": item_concept,
+                    "prompt": base_prompt.format(concept=item_concept),
+                    "imageAltText": f"Clear symbol for {phrase}",
+                    "generationStatus": "not_started",
+                }
             ]
 
         role_by_type = {
@@ -1430,6 +1501,8 @@ class V2LessonPackageService:
             goal_labels = cls._goal_visual_labels(draft)
             if goal_labels:
                 return goal_labels
+        if material_type == "scenario_cards" and draft.scenarios:
+            return [str(item) for item in draft.scenarios]
         keys = {
             "scenario_cards": ("scenarios", "examples", "items"),
             "sequence_cards": ("steps", "examples", "items"),
@@ -1481,10 +1554,15 @@ class V2LessonPackageService:
 
         import re
 
-        source = " ".join(
-            part
-            for part in (draft.observableResponse, draft.goalText)
-            if isinstance(part, str) and part.strip()
+        # goalText reflects the teacher's latest confirmed request. Only consult
+        # observableResponse when a goal has not been set; joining both can leak
+        # an old concept from a prior lesson into the new printable kit.
+        source = (
+            draft.goalText
+            if isinstance(draft.goalText, str) and draft.goalText.strip()
+            else draft.observableResponse
+            if isinstance(draft.observableResponse, str)
+            else ""
         )
         if not source:
             return []

@@ -127,10 +127,9 @@ class V2MaterialService:
             raise ConflictError(
                 "A material from a safety-blocked package cannot be approved"
             )
-        if any(check.status == "blocked" for check in package.standardsChecks):
-            raise ConflictError(
-                "Resolve blocked instructional quality checks before material approval"
-            )
+        # Package-level instructional checks are reviewed when the teacher
+        # approves/exports the complete kit. They must not make an otherwise
+        # safe individual card's "Approve for Print" button unusable.
         material_review = V2SafetyHarnessService().review_product(
             self._draft_for_package(package),
             {"materialContent": material.content},

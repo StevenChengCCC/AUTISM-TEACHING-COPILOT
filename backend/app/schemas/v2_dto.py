@@ -1037,7 +1037,7 @@ class StandardsCheckDto(V2Model):
     severity: Literal["low", "medium", "high"]
     status: Literal["pass", "needs_review", "blocked", "not_applicable"]
     recommendation: str
-    version: str = "instructional-quality-v1"
+    version: str = "instructional-quality-v2"
     evidenceLocation: str = "lesson_package"
     explanation: str = ""
     recommendedEdit: str = ""
@@ -1062,7 +1062,7 @@ class LessonPackageQualityScoreDto(V2Model):
     percentage: int = Field(ge=0, le=100)
     overallStatus: Literal["pass", "needs_review", "blocked"]
     items: list[QualityScoreItemDto] = Field(default_factory=list)
-    evaluatorVersion: str = "lesson-package-quality-v1"
+    evaluatorVersion: str = "lesson-package-quality-v2"
     teacherReviewRequired: bool = True
 
 

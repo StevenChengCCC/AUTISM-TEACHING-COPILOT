@@ -52,6 +52,7 @@ def test_generated_package_has_exactly_eight_bounded_quality_scores():
         item.score for item in package.qualityScore.items
     )
     assert package.qualityScore.teacherReviewRequired is True
+    assert package.qualityScore.evaluatorVersion == "lesson-package-quality-v2"
 
 
 def test_missing_materials_and_data_block_quality_approval():
@@ -70,3 +71,17 @@ def test_missing_materials_and_data_block_quality_approval():
     scores = {item.id: item.score for item in result.items}
     assert scores["complete-material-kit"] == 0
     assert scores["goal-aligned-data-sheet"] == 0
+
+
+def test_recursive_placeholder_check_does_not_reject_valid_instructional_copy():
+    service = V2LessonPackageQualityService()
+
+    assert service._contains_placeholder(
+        {"visualItems": [{"label": "Creating custom artwork"}]}
+    )
+    assert not service._contains_placeholder(
+        {
+            "teacherAction": "Model the target response, wait, then fade the prompt.",
+            "visualItems": [{"label": "Banana"}],
+        }
+    )

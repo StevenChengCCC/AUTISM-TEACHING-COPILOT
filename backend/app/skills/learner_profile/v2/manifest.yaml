@@ -1,0 +1,30 @@
+skillId: learner_profile
+version: v2
+status: active
+intendedUse:
+  - Extract a brief teacher-reviewable instructional summary from supplied learner records
+  - Separate documented facts from unknowns that require teacher confirmation
+prohibitedUse:
+  - Diagnosis or clinical conclusions
+  - Inventing age, communication, preferences, interests, needs, or services
+  - Autonomous profile approval
+inputSchemaVersion: learner-profile-input-v2
+outputSchemaVersion: learner-profile-output-v2
+promptTemplateVersion: learner-profile-prompt-v2
+evaluatorVersion: learner-profile-evaluator-v2
+teacherReviewRequired: true
+sourceReviewStatus: reviewed
+promptComponents: [system.md, task.md, quality_rules.yaml]
+sourceReferences:
+  - id: nysed-quality-iep
+    title: Guide to Quality Individualized Education Program Development and Implementation
+    authority: New York State Education Department
+    url: https://www.nysed.gov/sites/default/files/programs/special-education/guide-to-quality-iep-development-and-implementation.pdf
+    classification: guidance
+    reviewedOn: "2026-07-29"
+  - id: cast-udl-3
+    title: CAST Universal Design for Learning Guidelines 3.0
+    authority: CAST
+    url: https://udlguidelines.cast.org/more/about-guidelines-3-0/
+    classification: framework
+    reviewedOn: "2026-07-29"

@@ -1,0 +1,36 @@
+skillId: lesson_generation
+version: v2
+status: active
+intendedUse:
+  - Generate concise teacher-ready lesson-plan copy from a confirmed draft
+prohibitedUse:
+  - Legal or compliance claims
+  - Clinical treatment plans
+  - Unsupported learner facts
+  - Unreviewed classroom deployment
+inputSchemaVersion: lesson-generation-input-v2
+outputSchemaVersion: lesson-generation-output-v2
+promptTemplateVersion: lesson-generation-prompt-v2
+evaluatorVersion: lesson-generation-evaluator-v2
+teacherReviewRequired: true
+sourceReviewStatus: reviewed
+promptComponents: [system.md, task.md, quality_rules.yaml]
+sourceReferences:
+  - id: nysed-quality-iep
+    title: Guide to Quality Individualized Education Program Development and Implementation
+    authority: New York State Education Department
+    url: https://www.nysed.gov/sites/default/files/programs/special-education/guide-to-quality-iep-development-and-implementation.pdf
+    classification: guidance
+    reviewedOn: "2026-07-29"
+  - id: afirm-prompting
+    title: Prompting Home Companion Guide
+    authority: UNC Frank Porter Graham Child Development Institute
+    url: https://afirm.fpg.unc.edu/sites/afirm.fpg.unc.edu/files/imce/resources/Home%20Companion%20Guide%20for%20Prompting.pdf
+    classification: framework
+    reviewedOn: "2026-07-29"
+  - id: ies-system-least-prompts
+    title: System of Least Prompts
+    authority: Institute of Education Sciences
+    url: https://ies.ed.gov/ncee/wwc/Intervention/1374
+    classification: framework
+    reviewedOn: "2026-07-29"

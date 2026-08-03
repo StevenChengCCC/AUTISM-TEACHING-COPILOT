@@ -4,6 +4,8 @@ from base64 import b64decode
 from io import BytesIO
 
 import pytest
+from PIL import Image as PILImage
+from PIL import ImageDraw
 from pypdf import PdfReader
 
 from app.core.config import Settings
@@ -147,7 +149,9 @@ def test_complete_printable_lesson_kit_is_one_real_multipage_pdf(tmp_path):
     assert body.startswith(b"%PDF")
     reader = PdfReader(BytesIO(body))
     assert len(reader.pages) >= 4
-    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = " ".join(
+        "\n".join(page.extract_text() or "" for page in reader.pages).split()
+    )
     assert "Counting 1 to 5" in text
     assert "Number Cards 1 to 5" in text
     assert "Counting Token Board" in text
@@ -220,32 +224,45 @@ def test_visual_card_pdf_embeds_each_target_without_template_box(tmp_path):
     package, materials = _seed_package(repos)
     generated_dir = tmp_path / "public" / "generated-images"
     generated_dir.mkdir(parents=True)
-    tiny_png = b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
-    )
-    (generated_dir / "apple.png").write_bytes(tiny_png)
-    (generated_dir / "banana.png").write_bytes(tiny_png)
+    exemplars = [
+        ("banana-whole", "Whole banana", "#facc15"),
+        ("banana-bunch", "Banana bunch", "#f59e0b"),
+        ("banana-sliced", "Sliced banana", "#fde68a"),
+        ("banana-green", "Green banana", "#84cc16"),
+        ("banana-peeled", "Peeled banana", "#fbbf24"),
+        ("banana-snack", "Banana at snack time", "#eab308"),
+    ]
+    visual_items = []
+    for index, (asset_id, label, fill) in enumerate(exemplars, start=1):
+        image = PILImage.new("RGB", (480, 360), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rounded_rectangle(
+            (55, 85, 425, 275),
+            radius=72,
+            fill=fill,
+            outline="#713f12",
+            width=8,
+        )
+        draw.ellipse((70 + index * 12, 115, 155 + index * 12, 200), fill="white")
+        image_path = generated_dir / f"{asset_id}.png"
+        image.save(image_path)
+        visual_items.append(
+            {
+                "id": asset_id,
+                "concept": "banana",
+                "label": label,
+                "imageUrl": f"/storage/generated-images/{asset_id}.png",
+                "imageAltText": f"A clear classroom image: {label.lower()}.",
+                "generationStatus": "ready",
+                "assetRole": "concept_exemplar",
+            }
+        )
     visual = materials[0].model_copy(
         update={
-            "title": "Apple and Banana Visual Cards",
+            "title": "Banana Visual Cards",
             "content": {
                 **materials[0].content,
-                "visualItems": [
-                    {
-                        "id": "apple",
-                        "label": "Apple",
-                        "imageUrl": "/storage/generated-images/apple.png",
-                        "imageAltText": "One isolated apple.",
-                        "generationStatus": "ready",
-                    },
-                    {
-                        "id": "banana",
-                        "label": "Banana",
-                        "imageUrl": "/storage/generated-images/banana.png",
-                        "imageAltText": "One isolated banana.",
-                        "generationStatus": "ready",
-                    },
-                ],
+                "visualItems": visual_items,
             },
         }
     )
@@ -269,9 +286,22 @@ def test_visual_card_pdf_embeds_each_target_without_template_box(tmp_path):
         job.storageObjectKey, config.MAX_EXPORT_BYTES
     )
     reader = PdfReader(BytesIO(body))
-    text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    assert "Apple" in text
-    assert "Banana" in text
+    text = " ".join(
+        "\n".join(page.extract_text() or "" for page in reader.pages).split()
+    )
+    for _, label, _ in exemplars:
+        assert label in text
+    embedded_images = 0
+    for page in reader.pages:
+        resources = page.get("/Resources")
+        x_objects = resources.get("/XObject") if resources else None
+        if not x_objects:
+            continue
+        for item in x_objects.values():
+            if item.get_object().get("/Subtype") == "/Image":
+                embedded_images += 1
+    assert embedded_images >= len(exemplars)
+    assert len(reader.pages) >= 5
     commands = V2PrintableLessonKitService._visual_sheet_style().getCommands()
     assert all(command[0] not in {"BOX", "GRID"} for command in commands)
 

@@ -140,7 +140,7 @@ def fruit_identification_draft() -> LessonDesignDraftDto:
     )
 
 
-def test_object_identification_creates_one_person_free_image_per_target(tmp_path):
+def test_object_identification_creates_varied_person_free_images_per_target(tmp_path):
     repos = V2Repositories()
     provider = CountingImageProvider()
     config = Settings(
@@ -159,6 +159,12 @@ def test_object_identification_creates_one_person_free_image_per_target(tmp_path
 
     assert [item["label"] for item in visual.content["visualItems"]] == [
         "Apple",
+        "Apple",
+        "Apple",
+        "Apple",
+        "Banana",
+        "Banana",
+        "Banana",
         "Banana",
     ]
     assert [item["label"] for item in matching.content["visualItems"]] == [
@@ -172,22 +178,21 @@ def test_object_identification_creates_one_person_free_image_per_target(tmp_path
     visual = next(item for item in completed.materials if item.type == "visual_card")
     matching = next(item for item in completed.materials if item.type == "matching_page")
 
-    # The two concepts are generated once, then safely reused across printable pages.
+    # Each concept gets several varied exemplars rather than one repeated picture.
     object_calls = [
         call
         for call in provider.image_calls
         if call["materialType"] in {"visual card", "matching page"}
     ]
-    assert len(object_calls) == 2
+    assert len(object_calls) >= 8
     prompts = " ".join(call["prompt"] for call in object_calls)
     assert "one isolated Apple" in prompts
     assert "one isolated Banana" in prompts
     assert "Do not show a teacher" in prompts
+    assert "surrounding scene" in prompts
     assert "classroom context" not in prompts
-    assert len({item["imageAssetId"] for item in visual.content["visualItems"]}) == 2
-    assert {
-        item["imageAssetId"] for item in visual.content["visualItems"]
-    } == {item["imageAssetId"] for item in matching.content["visualItems"]}
+    assert len({item["imageAssetId"] for item in visual.content["visualItems"]}) == 8
+    assert all(item["imageAssetId"] for item in matching.content["visualItems"])
 
 
 def test_compound_identify_and_name_goal_uses_the_object_not_a_teaching_scene(
@@ -230,7 +235,12 @@ def test_compound_identify_and_name_goal_uses_the_object_not_a_teaching_scene(
     visual = next(item for item in package.materials if item.type == "visual_card")
     assert V2MaterialService(repos).approve_generated(visual.id).status == "approved"
 
-    assert [item["label"] for item in visual.content["visualItems"]] == ["Apple"]
+    assert [item["label"] for item in visual.content["visualItems"]] == [
+        "Apple",
+        "Apple",
+        "Apple",
+        "Apple",
+    ]
     packages.queue_product_images(package.id)
     packages.prepare_product_images(package.id)
     apple_call = next(
@@ -300,13 +310,15 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
     )
     packages.prepare_product_images(first.id)
     first = packages.get_product(first.id)
+    first_generation_call_count = len(provider.image_calls)
+    assert first_generation_call_count >= 3
 
     second = packages.generate_product(lesson_draft())
     packages.queue_product_images(second.id)
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == 3
+    assert len(provider.image_calls) == first_generation_call_count
     visual_types = {"visual_card", "help_card", "token_board", "scenario_cards"}
     for package in (first, second):
         for material in package.materials:
@@ -324,7 +336,7 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
             else:
                 assert "imageAssetId" not in material.content
     generated_files = list((tmp_path / "generated-images").glob("*.png"))
-    assert len(generated_files) == 3
+    assert len(generated_files) == first_generation_call_count
     prompts = " ".join(call["prompt"] for call in provider.image_calls)
     assert "Learner A-102" not in prompts
     assert "visual prompts and concise instructions" not in prompts
@@ -343,18 +355,69 @@ def test_failed_generation_still_builds_package_and_caches_fallback():
     packages.queue_product_images(first.id)
     packages.prepare_product_images(first.id)
     first = packages.get_product(first.id)
+    first_generation_call_count = len(provider.image_calls)
+    assert first_generation_call_count >= 3
 
     second = packages.generate_product(lesson_draft())
     packages.queue_product_images(second.id)
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == 3
+    assert len(provider.image_calls) == first_generation_call_count
     assert first.lessonBrief and second.lessonBrief
     for material in first.materials:
         if material.type in {"visual_card", "help_card", "token_board", "scenario_cards"}:
             assert material.content["imageSourceType"] in {"internal", "mock"}
             assert material.content["imageAssetId"]
+
+
+def test_banana_request_does_not_reuse_stale_apple_visuals(tmp_path):
+    repos = V2Repositories()
+    provider = CountingImageProvider()
+    config = Settings(
+        _env_file=None,
+        IMAGE_ASSET_STRATEGY="generate_first",
+        STORAGE_DIR=str(tmp_path),
+    )
+    images = V2ImageAssetService(
+        repos, external_providers=[], ai=provider, config=config
+    )
+    packages = V2LessonPackageService(repos, ai=provider, images=images)
+    draft = fruit_identification_draft().model_copy(
+        update={
+            "goalText": "Learner will identify a banana in pictures or real objects.",
+            # Simulates stale provider copy from the previous turn.
+            "observableResponse": "Learner will identify an apple.",
+            "scenarios": ["Snack time"],
+            "selectedMaterials": [
+                "Visual Card",
+                "Help Card",
+                "Scenario Cards",
+                "Data Sheet",
+            ],
+            "theme": "Banana identification",
+        }
+    )
+
+    package = packages.generate_product(draft)
+    visual = next(item for item in package.materials if item.type == "visual_card")
+    help_card = next(item for item in package.materials if item.type == "help_card")
+
+    assert [item["label"] for item in visual.content["visualItems"]] == [
+        "Banana",
+        "Banana",
+        "Banana",
+        "Banana",
+    ]
+    assert [item["label"] for item in help_card.content["visualItems"]] == [
+        "Help, please."
+    ]
+
+    packages.queue_product_images(package.id)
+    packages.prepare_product_images(package.id)
+    prompts = " ".join(call["prompt"] for call in provider.image_calls)
+    assert "Banana" in prompts
+    assert "Apple" not in prompts
 
 
 def test_visual_materials_do_not_silently_skip_images_when_provider_omits_concept(

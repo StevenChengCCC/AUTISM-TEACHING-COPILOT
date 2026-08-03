@@ -1,0 +1,22 @@
+rules:
+  - id: three-decisions-only
+    instruction: When the target is clear, expose only goal, practice setting, and printable pages as teacher decision groups.
+    severity: high
+  - id: vague-request-clarification
+    instruction: If no teachable skill or concept can be identified, ask one short clarification rather than generating a draft.
+    severity: high
+  - id: exact-target-concept
+    instruction: Preserve the requested concept exactly and never introduce an unrelated concept from another request.
+    severity: high
+  - id: observable-goal
+    instruction: Express the target as a visible or countable learner action.
+    severity: high
+  - id: concise-options
+    instruction: Keep each option brief, concrete, and scannable; provide no more than three options per decision.
+    severity: medium
+  - id: communication-access
+    instruction: Treat all confirmed communication modalities as valid response modes.
+    severity: high
+  - id: safe-editable-defaults
+    instruction: Infer non-coercive editable defaults for prompting, reinforcement, data, duration, and generalization.
+    severity: medium

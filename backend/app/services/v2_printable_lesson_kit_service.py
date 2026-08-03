@@ -251,16 +251,11 @@ class V2PrintableLessonKitService:
     ) -> list[Any]:
         content = self._material_content(material)
         palette = self._design_palette(content)
-        title = escape(material.title)
-        header: list[Any] = [
-            Paragraph(title, styles["MaterialTitle"]),
-            Paragraph(
-                "Ready to print, cut, laminate, or use as a full-page support.",
-                styles["Kicker"],
-            ),
-            Spacer(1, 14),
-        ]
+        header = self._material_header(material.title, styles)
         image = self._embedded_image(content)
+        visual_items = self._visual_items(content)
+        if image is None and visual_items:
+            image = self._embedded_image(visual_items[0])
         card_types = {
             "quantity_cards",
             "number_cards",
@@ -278,7 +273,6 @@ class V2PrintableLessonKitService:
 
         if material.type == "matching_page":
             labels = self._card_labels(material, package)
-            visual_items = self._visual_items(content)
             rows: list[list[Any]] = []
             for index, label in enumerate(labels):
                 visual_item = (
@@ -300,31 +294,45 @@ class V2PrintableLessonKitService:
                         visual or Paragraph("Custom visual", styles["Kicker"]),
                     ]
                 )
-            table = Table(
-                rows,
-                colWidths=[1.0 * inch, 0.5 * inch, 5.2 * inch],
-                rowHeights=[0.9 * inch] * len(rows),
-            )
-            table.setStyle(self._card_table_style(palette))
-            return [*header, table]
+            result: list[Any] = []
+            row_chunks = [
+                rows[index : index + 6] for index in range(0, len(rows), 6)
+            ] or [[]]
+            for sheet_index, row_chunk in enumerate(row_chunks, start=1):
+                if sheet_index > 1:
+                    result.append(PageBreak())
+                result.extend(
+                    self._material_header(
+                        material.title,
+                        styles,
+                        sheet_index=sheet_index,
+                        sheet_count=len(row_chunks),
+                    )
+                )
+                table = Table(
+                    row_chunk,
+                    colWidths=[1.0 * inch, 0.5 * inch, 5.2 * inch],
+                    rowHeights=[0.9 * inch] * len(row_chunk),
+                )
+                table.setStyle(self._card_table_style(palette))
+                result.append(table)
+            return result
 
         if material.type in card_types:
             labels = self._card_labels(material, package)
-            visual_items = self._visual_items(content)
             cells: list[Any] = []
             for index, label in enumerate(labels):
-                visual_item = next(
-                    (
-                        item
-                        for item in visual_items
-                        if str(item.get("label") or "") == label
-                    ),
-                    visual_items[index] if index < len(visual_items) else (
-                        visual_items[0] if visual_items else content
-                    ),
+                # Multiple concept exemplars intentionally share a child-facing
+                # label (for example four different banana cards). Preserve the
+                # generated order instead of repeatedly selecting the first item
+                # with that label.
+                visual_item = (
+                    visual_items[index]
+                    if index < len(visual_items)
+                    else (visual_items[0] if visual_items else content)
                 )
                 card_image = self._embedded_image(
-                    visual_item, width=1.6 * inch, height=1.6 * inch
+                    visual_item, width=2.15 * inch, height=2.15 * inch
                 )
                 cell: list[Any] = []
                 quantity = visual_item.get("quantity")
@@ -337,15 +345,35 @@ class V2PrintableLessonKitService:
                     cell.extend([card_image, Spacer(1, 5)])
                 cell.append(Paragraph(f"<b>{escape(label)}</b>", styles["Card"]))
                 cells.append(cell)
-            if len(cells) % 2:
-                cells.append(Paragraph("", styles["Card"]))
-            table = Table(
-                [cells[index : index + 2] for index in range(0, len(cells), 2)],
-                colWidths=[3.45 * inch, 3.45 * inch],
-                rowHeights=[2.45 * inch] * ((len(cells) + 1) // 2),
-            )
-            table.setStyle(self._visual_sheet_style())
-            return [*header, table]
+            sheet_cells = [
+                cells[index : index + 4] for index in range(0, len(cells), 4)
+            ] or [[]]
+            result: list[Any] = []
+            for sheet_index, cell_chunk in enumerate(sheet_cells, start=1):
+                if sheet_index > 1:
+                    result.append(PageBreak())
+                result.extend(
+                    self._material_header(
+                        material.title,
+                        styles,
+                        sheet_index=sheet_index,
+                        sheet_count=len(sheet_cells),
+                    )
+                )
+                if len(cell_chunk) % 2:
+                    cell_chunk.append(Paragraph("", styles["Card"]))
+                rows = [
+                    cell_chunk[index : index + 2]
+                    for index in range(0, len(cell_chunk), 2)
+                ]
+                table = Table(
+                    rows,
+                    colWidths=[3.45 * inch, 3.45 * inch],
+                    rowHeights=[2.9 * inch] * len(rows),
+                )
+                table.setStyle(self._visual_sheet_style())
+                result.append(table)
+            return result
 
         if material.type in {"help_card", "break_card", "teacher_cue_card"}:
             phrase = str(
@@ -365,11 +393,15 @@ class V2PrintableLessonKitService:
             ]
 
         if material.type in {"choice_board", "first_then_board", "core_word_board"}:
-            labels = self._card_labels(material, package)[
-                : (6 if material.type == "core_word_board" else 2)
-            ]
-            visual_items = self._visual_items(content)
-            minimum = 4 if material.type == "core_word_board" else 2
+            maximum = 2 if material.type == "first_then_board" else 6
+            labels = self._card_labels(material, package)[:maximum]
+            minimum = (
+                2
+                if material.type == "first_then_board"
+                else 4
+                if material.type == "core_word_board"
+                else 2
+            )
             while len(labels) < minimum:
                 labels.append("Teacher-confirmed choice")
             choice_cells: list[Any] = []
@@ -385,7 +417,7 @@ class V2PrintableLessonKitService:
                     cell.extend([choice_image, Spacer(1, 8)])
                 cell.append(Paragraph(escape(label), styles["BigCard"]))
                 choice_cells.append(cell)
-            if material.type == "core_word_board":
+            if material.type != "first_then_board":
                 if len(choice_cells) % 2:
                     choice_cells.append(Paragraph("", styles["Card"]))
                 rows = [
@@ -473,6 +505,26 @@ class V2PrintableLessonKitService:
         return result
 
     @staticmethod
+    def _material_header(
+        title: str,
+        styles: dict[str, Any],
+        *,
+        sheet_index: int = 1,
+        sheet_count: int = 1,
+    ) -> list[Any]:
+        subtitle = "Ready to print, cut, laminate, or use as a full-page support."
+        if sheet_count > 1:
+            subtitle = (
+                f"Printable sheet {sheet_index} of {sheet_count}. "
+                "Use each card as a separate teaching exemplar."
+            )
+        return [
+            Paragraph(escape(title), styles["MaterialTitle"]),
+            Paragraph(subtitle, styles["Kicker"]),
+            Spacer(1, 14),
+        ]
+
+    @staticmethod
     def _token_row(count: int, palette: dict[str, colors.Color]) -> Drawing:
         width = 6.7 * inch
         height = 0.8 * inch
@@ -505,7 +557,7 @@ class V2PrintableLessonKitService:
                 if str(item.get("label") or "").strip()
             ]
             if labels:
-                return labels[:8]
+                return labels[:12]
         if material.type == "first_then_board":
             return [
                 str(content.get("firstText") or "First"),
@@ -524,7 +576,7 @@ class V2PrintableLessonKitService:
         ):
             value = content.get(key)
             if isinstance(value, list) and value:
-                return [str(item) for item in value[:8]]
+                return [str(item) for item in value[:12]]
         text = " ".join(
             str(value)
             for value in (

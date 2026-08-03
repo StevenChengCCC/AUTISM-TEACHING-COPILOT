@@ -1,0 +1,56 @@
+skillId: ny_instructional_materials
+version: v2
+status: active
+intendedUse:
+  - Apply instructional guidance checks to teacher-confirmed New York special education lesson kits
+  - Evaluate measurable goals, access, prompting, visual completeness, data alignment, dignity, and print readiness
+prohibitedUse:
+  - Claiming legal, IEP, district, New York State, or accessibility compliance
+  - Creating or changing an IEP, placement, diagnosis, behavior plan, service, or accommodation
+  - Replacing teacher, CSE or CPSE, family, related-service provider, or BCBA judgment
+  - Recommending restrictive, punitive, coercive, or aversive practices
+inputSchemaVersion: ny-instructional-materials-input-v2
+outputSchemaVersion: ny-instructional-materials-output-v2
+promptTemplateVersion: ny-instructional-materials-prompt-v2
+evaluatorVersion: ny-instructional-materials-evaluator-v2
+teacherReviewRequired: true
+sourceReviewStatus: reviewed
+promptComponents: [system.md, task.md, quality_rules.yaml]
+jurisdiction: New York State instructional guidance
+sourceReferences:
+  - id: nysed-part-200-4
+    title: Section 200.4 Procedures for Referral, Evaluation, IEP Development, Placement and Review
+    authority: New York State Education Department
+    url: https://www.nysed.gov/special-education/section-2004-procedures-referral-evaluation-iep-development-placement-and-review
+    classification: requirement
+    reviewedOn: "2026-07-29"
+  - id: nysed-quality-iep
+    title: Guide to Quality Individualized Education Program Development and Implementation
+    authority: New York State Education Department
+    url: https://www.nysed.gov/sites/default/files/programs/special-education/guide-to-quality-iep-development-and-implementation.pdf
+    classification: guidance
+    reviewedOn: "2026-07-29"
+  - id: nysed-iep-directions
+    title: General Directions to Use the State's Mandatory IEP Form
+    authority: New York State Education Department
+    url: https://www.nysed.gov/special-education/general-directions-use-states-mandatory-individualized-education-program-iep-form
+    classification: guidance
+    reviewedOn: "2026-07-29"
+  - id: cast-udl-3
+    title: CAST Universal Design for Learning Guidelines 3.0
+    authority: CAST
+    url: https://udlguidelines.cast.org/more/about-guidelines-3-0/
+    classification: framework
+    reviewedOn: "2026-07-29"
+  - id: afirm-visual-supports
+    title: Visual Supports Evidence-Based Practice Brief Packet
+    authority: UNC Frank Porter Graham Child Development Institute
+    url: https://afirm.fpg.unc.edu/sites/afirm.fpg.unc.edu/files/imce/resources/VS%20EBP%20Brief%20Packet.pdf
+    classification: framework
+    reviewedOn: "2026-07-29"
+  - id: afirm-prompting
+    title: Prompting Home Companion Guide
+    authority: UNC Frank Porter Graham Child Development Institute
+    url: https://afirm.fpg.unc.edu/sites/afirm.fpg.unc.edu/files/imce/resources/Home%20Companion%20Guide%20for%20Prompting.pdf
+    classification: framework
+    reviewedOn: "2026-07-29"

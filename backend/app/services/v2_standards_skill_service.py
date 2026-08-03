@@ -82,7 +82,7 @@ def _contains_any_phrase(text: str, phrases: tuple[str, ...]) -> bool:
 class V2StandardsSkillService:
     """Versioned deterministic instructional quality evaluator."""
 
-    evaluator_version = "instructional-quality-v1"
+    evaluator_version = "instructional-quality-v2"
     ny_skill_id = "ny_instructional_materials"
     image_material_types = {
         "quantity_cards",

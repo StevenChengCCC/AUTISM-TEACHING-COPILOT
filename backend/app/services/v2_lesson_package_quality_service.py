@@ -19,7 +19,16 @@ class V2LessonPackageQualityService:
     image has been clinically validated.
     """
 
-    evaluator_version = "lesson-package-quality-v1"
+    evaluator_version = "lesson-package-quality-v2"
+    placeholder_phrases = (
+        "to be confirmed",
+        "custom visual",
+        "creating custom",
+        "artwork is generating",
+        "teacher review pending",
+        "not set yet",
+        "placeholder",
+    )
     visual_material_types = {
         "quantity_cards",
         "number_cards",
@@ -254,6 +263,9 @@ class V2LessonPackageQualityService:
             )
         planned = 0
         ready = 0
+        exemplar_ids: set[str] = set()
+        exemplar_images: set[str] = set()
+        child_facing_placeholders = False
         for material in visual_materials:
             raw_items = material.content.get("visualItems")
             items = raw_items if isinstance(raw_items, list) else []
@@ -276,9 +288,32 @@ class V2LessonPackageQualityService:
                 for item in valid_items
             ):
                 ready += 1
+            for item in valid_items:
+                if str(item.get("assetRole") or "") != "concept_exemplar":
+                    continue
+                exemplar_id = str(item.get("id") or "").strip()
+                image_ref = str(
+                    item.get("imageUrl") or item.get("imageBase64") or ""
+                ).strip()
+                if exemplar_id:
+                    exemplar_ids.add(exemplar_id)
+                if image_ref:
+                    exemplar_images.add(image_ref)
+            child_facing_placeholders = (
+                child_facing_placeholders
+                or self._contains_placeholder(material.content)
+            )
+        varied_exemplars_ready = (
+            not exemplar_ids
+            or (len(exemplar_ids) >= 3 and len(exemplar_images) >= 3)
+        )
         score = (
             2
-            if ready == len(visual_materials)
+            if (
+                ready == len(visual_materials)
+                and varied_exemplars_ready
+                and not child_facing_placeholders
+            )
             else 1
             if planned == len(visual_materials)
             else 0
@@ -288,18 +323,27 @@ class V2LessonPackageQualityService:
             label="Image and text alignment",
             score=score,
             explanation=(
-                "Every visual has a ready asset and an explicit concept/label contract."
+                "Every visual has a ready asset, an explicit concept/label contract, and no child-facing placeholder copy."
                 if score == 2
-                else "Visual concepts and labels are aligned in the plan; final artwork still needs teacher review."
+                else "Visual concepts are planned, but final artwork, varied exemplars, or child-facing copy still needs review."
                 if score == 1
                 else "One or more visuals lack an explicit semantic contract."
             ),
             evidence=[
                 f"{planned}/{len(visual_materials)} visuals have semantic plans",
                 f"{ready}/{len(visual_materials)} visuals have ready assets",
+                f"{len(exemplar_images)} distinct concept exemplars are ready",
             ],
-            issues=[] if score == 2 else ["Final visual meaning has not been fully teacher-verified."],
-            edits=[] if score == 2 else ["Review each final image against its card label before printing."],
+            issues=[]
+            if score == 2
+            else [
+                "Final visual meaning, exemplar variety, or child-facing wording is incomplete."
+            ],
+            edits=[]
+            if score == 2
+            else [
+                "Use at least three meaningfully different exemplars when teaching a concept and remove all placeholder text before printing."
+            ],
             critical=True,
         )
 
@@ -352,12 +396,31 @@ class V2LessonPackageQualityService:
             (item for item in package.materials if item.type == "data_sheet"), None
         )
         spec = package.dataSheetSpecification
+        normalized_columns = [
+            str(column).strip().lower().replace("_", " ")
+            for column in (spec.columns if spec else [])
+        ]
+        joined_columns = " ".join(normalized_columns)
+        captures_response = any(
+            token in joined_columns for token in ("response", "outcome", "correct")
+        )
+        captures_independence = any(
+            token in joined_columns
+            for token in ("prompt", "independence", "independent")
+        )
+        captures_context = any(
+            token in joined_columns
+            for token in ("note", "context", "setting", "scenario")
+        )
         aligned = bool(
             data_material
             and spec
             and spec.columns
             and draft.dataCollection.strip()
             and package.observableResponse.strip()
+            and captures_response
+            and captures_independence
+            and captures_context
         )
         score = 2 if aligned else 1 if data_material or spec else 0
         return self._item(
@@ -400,6 +463,11 @@ class V2LessonPackageQualityService:
             package.preparationChecklist
             and package.materials
             and len(teacher_ready) == len(package.materials)
+            and not self._contains_placeholder(package.documentContent)
+            and not any(
+                self._contains_placeholder(material.content)
+                for material in package.materials
+            )
         )
         score = 2 if ready else 1 if package.preparationChecklist or specified else 0
         return self._item(
@@ -419,3 +487,14 @@ class V2LessonPackageQualityService:
             issues=[] if score == 2 else ["Some material preparation steps are missing."],
             edits=[] if score == 2 else ["Add one-page print preparation and teacher-use directions for every material."],
         )
+
+    @classmethod
+    def _contains_placeholder(cls, value: object) -> bool:
+        if isinstance(value, str):
+            normalized = " ".join(value.lower().split())
+            return any(phrase in normalized for phrase in cls.placeholder_phrases)
+        if isinstance(value, dict):
+            return any(cls._contains_placeholder(item) for item in value.values())
+        if isinstance(value, (list, tuple, set)):
+            return any(cls._contains_placeholder(item) for item in value)
+        return False

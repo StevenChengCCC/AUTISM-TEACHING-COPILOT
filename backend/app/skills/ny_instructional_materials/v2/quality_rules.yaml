@@ -1,0 +1,31 @@
+rules:
+  - id: observable-measurable-goal
+    instruction: Tie the goal to a visible or countable learner response, documented baseline, criterion, method, and review schedule when available.
+    severity: high
+  - id: goal-flow-data-alignment
+    instruction: Teaching opportunities and data fields must measure the same confirmed target response.
+    severity: high
+  - id: communication-and-at-access
+    instruction: Preserve every confirmed speech, AAC, picture, sign, gesture, pointing, writing, or device response mode.
+    severity: high
+  - id: complete-visual-set
+    instruction: Every selected visual item must have a final semantically aligned asset; pending, failed, blank, or placeholder art blocks approval.
+    severity: high
+  - id: multiple-representations
+    instruction: Use clear linked words and visuals where they improve access; concept learning should include multiple relevant exemplars.
+    severity: medium
+  - id: least-intrusive-effective-prompt
+    instruction: Start with the least intrusive effective prompt unless a more intensive prompt is explicitly confirmed and bounded.
+    severity: high
+  - id: observable-prompt-fading
+    instruction: Include wait time and observable criteria for reducing prompt support.
+    severity: high
+  - id: dignity-choice-regulation
+    instruction: Preserve autonomy, meaningful choice, communication, breaks, sensory access, and neutral error correction.
+    severity: high
+  - id: low-prep-print-readiness
+    instruction: Selected pages must be complete, readable, print-safe, concise, and directly usable without redesign.
+    severity: medium
+  - id: no-compliance-claim
+    instruction: Describe results as instructional guidance checks and require teacher review; never claim legal or district compliance.
+    severity: high

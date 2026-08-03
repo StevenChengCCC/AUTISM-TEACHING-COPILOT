@@ -1,0 +1,36 @@
+skillId: lesson_planning
+version: v2
+status: active
+intendedUse:
+  - Turn one teacher request into a concise editable lesson draft
+  - Present at most three high-value teacher decisions
+prohibitedUse:
+  - Diagnosis or treatment planning
+  - Inventing a target when the teacher request is too vague to identify one
+  - Asking a long interview before lesson generation
+inputSchemaVersion: lesson-planning-input-v2
+outputSchemaVersion: lesson-planning-output-v2
+promptTemplateVersion: lesson-planning-prompt-v2
+evaluatorVersion: lesson-planning-evaluator-v2
+teacherReviewRequired: true
+sourceReviewStatus: reviewed
+promptComponents: [system.md, task.md, quality_rules.yaml]
+sourceReferences:
+  - id: nysed-quality-iep
+    title: Guide to Quality Individualized Education Program Development and Implementation
+    authority: New York State Education Department
+    url: https://www.nysed.gov/sites/default/files/programs/special-education/guide-to-quality-iep-development-and-implementation.pdf
+    classification: guidance
+    reviewedOn: "2026-07-29"
+  - id: afirm-selecting-ebp
+    title: Selecting an Evidence-Based Practice
+    authority: UNC Frank Porter Graham Child Development Institute
+    url: https://afirm.fpg.unc.edu/sites/afirm.fpg.unc.edu/files/imce/resources/AFIRM%20Selecting%20an%20EBP%20Packet.pdf
+    classification: framework
+    reviewedOn: "2026-07-29"
+  - id: cast-udl-3
+    title: CAST Universal Design for Learning Guidelines 3.0
+    authority: CAST
+    url: https://udlguidelines.cast.org/more/about-guidelines-3-0/
+    classification: framework
+    reviewedOn: "2026-07-29"

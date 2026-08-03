@@ -1,0 +1,22 @@
+rules:
+  - id: exact-semantic-target
+    instruction: The artwork must depict the requested concept or action and no unrelated teaching target.
+    severity: high
+  - id: isolated-concept
+    instruction: Concept exemplars must isolate one large target with no person, scene, props, or additional objects.
+    severity: high
+  - id: varied-exemplars
+    instruction: A concept set must contain multiple visually distinct but semantically identical exemplars.
+    severity: high
+  - id: no-embedded-text
+    instruction: Generated art must contain no text, numbers, labels, logos, watermarks, borders, or worksheet layout.
+    severity: high
+  - id: low-distraction
+    instruction: Use a plain background, strong figure-ground separation, and one visual focal point.
+    severity: medium
+  - id: age-respectful
+    instruction: Use respectful, non-infantilizing artwork appropriate to the learner's age and confirmed interests.
+    severity: medium
+  - id: fictional-and-private
+    instruction: Never create or approximate a real learner, teacher, or identifiable person.
+    severity: high

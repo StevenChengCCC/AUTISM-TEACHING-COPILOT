@@ -1,0 +1,25 @@
+rules:
+  - id: goal-data-alignment
+    instruction: The observable response, opportunities, success criterion, and data sheet must measure the same target.
+    severity: high
+  - id: complete-instructional-sequence
+    instruction: Include model, guided practice, independent opportunity, reinforcement, and data recording.
+    severity: high
+  - id: least-intrusive-prompt
+    instruction: Begin with the least intrusive effective prompt unless a higher level is explicitly teacher-confirmed.
+    severity: high
+  - id: prompt-fading
+    instruction: State wait time and observable criteria for reducing support.
+    severity: high
+  - id: communication-access
+    instruction: Preserve the learner's confirmed response modalities throughout instruction and materials.
+    severity: high
+  - id: dignity-choice-regulation
+    instruction: Include choice, pause or break access, and neutral non-coercive error correction.
+    severity: high
+  - id: concise-teacher-use
+    instruction: Keep directions short enough for a teacher to scan during preparation or instruction.
+    severity: medium
+  - id: exact-concept
+    instruction: Use only the teacher-confirmed target concept and examples relevant to it.
+    severity: high

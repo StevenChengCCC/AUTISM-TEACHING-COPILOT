@@ -1,0 +1,22 @@
+rules:
+  - id: source-grounded-fields
+    instruction: Every profile value must be supported by supplied evidence or marked Confirm with teacher.
+    severity: high
+  - id: accurate-age
+    instruction: Never default, normalize, or guess age; preserve the documented age exactly.
+    severity: high
+  - id: concise-summary
+    instruction: Use short phrases and no more than five one-sentence insights.
+    severity: medium
+  - id: communication-access
+    instruction: Record all documented accepted communication modes without privileging speech.
+    severity: high
+  - id: strengths-and-supports
+    instruction: Include supported strengths or motivators as well as support needs.
+    severity: medium
+  - id: no-diagnosis-inference
+    instruction: Do not infer instructional ability, behavior, preference, or prognosis from a diagnosis.
+    severity: high
+  - id: privacy-minimization
+    instruction: Exclude names, contact information, record titles, and unnecessary sensitive narrative.
+    severity: high

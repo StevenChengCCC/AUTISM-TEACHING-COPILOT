@@ -1,0 +1,30 @@
+skillId: image_generation
+version: v2
+status: active
+intendedUse:
+  - Create exact non-identifying educational visuals for teacher-reviewed printable materials
+  - Create varied exemplars of one confirmed concept
+prohibitedUse:
+  - Real learner likenesses or private information
+  - Text, logos, watermarks, borders, worksheets, or card layouts inside generated art
+  - Unrelated objects or concepts
+inputSchemaVersion: image-generation-input-v2
+outputSchemaVersion: image-generation-output-v2
+promptTemplateVersion: image-generation-prompt-v2
+evaluatorVersion: image-generation-evaluator-v2
+teacherReviewRequired: true
+sourceReviewStatus: reviewed
+promptComponents: [system.md, quality_rules.yaml]
+sourceReferences:
+  - id: cast-multiple-media
+    title: Illustrate through multiple media
+    authority: CAST
+    url: https://udlguidelines.cast.org/representation/language-symbols/multiple-media/
+    classification: framework
+    reviewedOn: "2026-07-29"
+  - id: afirm-visual-supports
+    title: Visual Supports Evidence-Based Practice Brief Packet
+    authority: UNC Frank Porter Graham Child Development Institute
+    url: https://afirm.fpg.unc.edu/sites/afirm.fpg.unc.edu/files/imce/resources/VS%20EBP%20Brief%20Packet.pdf
+    classification: framework
+    reviewedOn: "2026-07-29"
