@@ -619,6 +619,10 @@ def test_v2_product_lesson_package_pipeline_http_contract():
         "Visual Card",
         "Reinforcement Board",
         "Data Sheet",
+        "Help Card",
+        "Teacher Cue Card",
+        "Scenario Cards",
+        "Lesson Summary",
     ]
     token_board = next(
         material
@@ -631,6 +635,28 @@ def test_v2_product_lesson_package_pipeline_http_contract():
     )
 
     package_id = package["id"]
+    generation_job = client.get(
+        f"/api/v2/lesson-packages/{package_id}/generation-job"
+    )
+    assert generation_job.status_code == 200
+    assert generation_job.json()["packageId"] == package_id
+    assert generation_job.json()["status"] in {"completed", "partially_complete"}
+    repeated = client.post(
+        "/api/v2/lesson-packages/generate",
+        json={
+            "id": "draft-product-package",
+            "learnerId": "a102",
+            "goalText": "Learner will ask for help using a short phrase.",
+            "responseLevel": "Short phrase",
+            "scenarios": ["Toy car stuck", "Closed box"],
+            "selectedMaterials": ["Visual Cards", "Token Board", "Data Sheet"],
+            "theme": "Vehicles",
+            "duration": "10–12 min",
+            "customNotes": "",
+        },
+    )
+    assert repeated.status_code == 201
+    assert repeated.json()["id"] == package_id
     stored = client.get(f"/api/v2/lesson-packages/{package_id}")
     assert stored.status_code == 200
     assert stored.json() == package

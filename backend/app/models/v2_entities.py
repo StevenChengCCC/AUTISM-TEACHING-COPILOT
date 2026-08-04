@@ -434,6 +434,114 @@ class ProgressObservation(Base, OwnedEntityMixin):
     payload = Column(JSON, nullable=False, default=dict)
 
 
+class SessionOutcome(Base, OwnedEntityMixin):
+    __tablename__ = "v2_session_outcomes"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "external_id", name="uq_v2_session_outcome_org_external"
+        ),
+        UniqueConstraint(
+            "organization_id", "teaching_session_id", name="uq_v2_session_outcome_org_session"
+        ),
+        Index("ix_v2_session_outcome_org_learner", "organization_id", "learner_id"),
+        Index("ix_v2_session_outcome_org_goal", "organization_id", "goal_id", "goal_revision"),
+    )
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    external_id = Column(String(180), nullable=False)
+    learner_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_learners.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    teaching_session_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_teaching_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    lesson_package_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_lesson_packages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    lesson_package_revision = Column(Integer, nullable=False)
+    lesson_spec_id = Column(String(180), nullable=False)
+    goal_id = Column(String(180), nullable=False)
+    goal_revision = Column(Integer, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+
+
+class NextSessionRecommendation(Base, OwnedEntityMixin):
+    __tablename__ = "v2_next_session_recommendations"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "external_id", name="uq_v2_next_recommendation_org_external"
+        ),
+        Index(
+            "ix_v2_next_recommendation_org_goal",
+            "organization_id", "learner_id", "goal_id", "goal_revision",
+        ),
+        Index(
+            "ix_v2_next_recommendation_org_status", "organization_id", "status"
+        ),
+    )
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    external_id = Column(String(180), nullable=False)
+    learner_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_learners.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    goal_id = Column(String(180), nullable=False)
+    goal_revision = Column(Integer, nullable=False)
+    recommendation_type = Column(String(40), nullable=False)
+    status = Column(String(30), nullable=False, default="pending")
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    payload = Column(JSON, nullable=False, default=dict)
+
+
+class NextSessionMaterialImpactPlan(Base, OwnedEntityMixin):
+    __tablename__ = "v2_next_session_impact_plans"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "external_id", name="uq_v2_next_impact_plan_org_external"
+        ),
+        Index(
+            "ix_v2_next_impact_plan_org_package",
+            "organization_id", "previous_package_id",
+        ),
+    )
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    external_id = Column(String(180), nullable=False)
+    learner_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_learners.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    previous_package_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_lesson_packages.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status = Column(String(30), nullable=False, default="proposed")
+    created_package_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_lesson_packages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    payload = Column(JSON, nullable=False, default=dict)
+
+
 class MaterialLibraryItem(Base, OwnedEntityMixin):
     __tablename__ = "v2_material_library_items"
     __table_args__ = (
@@ -464,6 +572,42 @@ class ImageAsset(Base, OwnedEntityMixin):
     concept = Column(String(255), nullable=False)
     source_type = Column(String(30), nullable=False)
     approved = Column(Boolean, nullable=False, default=False)
+    payload = Column(JSON, nullable=False, default=dict)
+
+
+class GenerationJob(Base, OwnedEntityMixin):
+    __tablename__ = "v2_generation_jobs"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "external_id", name="uq_v2_generation_job_org_external"
+        ),
+        UniqueConstraint(
+            "organization_id", "idempotency_key", name="uq_v2_generation_job_org_key"
+        ),
+        Index("ix_v2_generation_job_org_status", "organization_id", "status"),
+        Index("ix_v2_generation_job_org_learner", "organization_id", "learner_id"),
+    )
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    external_id = Column(String(180), nullable=False)
+    learner_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_learners.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    lesson_package_id = Column(
+        Uuid(as_uuid=True),
+        ForeignKey("v2_lesson_packages.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    draft_external_id = Column(String(180), nullable=False, index=True)
+    lesson_spec_id = Column(String(180), nullable=False)
+    lesson_spec_revision = Column(Integer, nullable=False)
+    package_plan_revision = Column(Integer, nullable=False)
+    status = Column(String(30), nullable=False)
+    idempotency_key = Column(String(64), nullable=False)
     payload = Column(JSON, nullable=False, default=dict)
 
 

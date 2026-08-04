@@ -9,7 +9,7 @@ from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
-    LessonDesignDraftDto,
+    LessonSpec,
     ProfileExtractionResult,
 )
 
@@ -55,9 +55,9 @@ class AzureOpenAIV2Provider(V2AIProvider):
 
     def generate_lesson_package(
         self,
-        draft: LessonDesignDraftDto,
-        learner_context: dict[str, Any] | None = None,
+        lesson_spec: LessonSpec,
     ) -> dict[str, Any]:
+        self._require_lesson_spec(lesson_spec)
         return self._not_enabled()
 
     def generate_material_image(

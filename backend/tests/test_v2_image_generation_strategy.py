@@ -41,8 +41,8 @@ class CountingImageProvider(MockV2AIProvider):
 class MissingImageFieldsProvider(CountingImageProvider):
     """Simulate valid provider material copy that omitted image metadata."""
 
-    def generate_lesson_package(self, draft, learner_context=None):
-        generated = super().generate_lesson_package(draft, learner_context)
+    def generate_lesson_package(self, lesson_spec):
+        generated = super().generate_lesson_package(lesson_spec)
         for material in generated["materials"]:
             material.pop("imageConcept", None)
             material.pop("imagePrompt", None)
@@ -230,6 +230,7 @@ def test_compound_identify_and_name_goal_uses_the_object_not_a_teaching_scene(
         "token_board",
         "data_sheet",
         "summary_template",
+        "teacher_cue_card",
     }
     assert not any(check.status == "blocked" for check in package.standardsChecks)
     visual = next(item for item in package.materials if item.type == "visual_card")
@@ -312,6 +313,11 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
     first = packages.get_product(first.id)
     first_generation_call_count = len(provider.image_calls)
     assert first_generation_call_count >= 3
+    for asset in repos.image_assets.list():
+        if asset.sourceType == "generated":
+            repos.image_assets.save(
+                asset.model_copy(update={"approved": True, "safetyStatus": "ready"})
+            )
 
     second = packages.generate_product(lesson_draft())
     packages.queue_product_images(second.id)
@@ -319,20 +325,33 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
     second = packages.get_product(second.id)
 
     assert len(provider.image_calls) == first_generation_call_count
-    visual_types = {"visual_card", "help_card", "token_board", "scenario_cards"}
-    for package in (first, second):
+    visual_types = {"visual_card", "help_card", "token_board", "scenario_cards", "teacher_cue_card"}
+    for package_index, package in enumerate((first, second)):
         for material in package.materials:
             if material.type in visual_types:
                 assert material.content["imageAssetId"]
-                assert material.content["imageUrl"].startswith(
-                    "/storage/generated-images/"
+                deterministic_only = bool(material.visualAssetPlan) and all(
+                    item.generation_method == "deterministic_svg"
+                    for item in material.visualAssetPlan.visual_items
                 )
+                if deterministic_only:
+                    assert material.content["imageUrl"].startswith(
+                        "data:image/svg+xml;base64,"
+                    )
+                    assert material.content["imageSourceType"] == "internal"
+                    assert material.content["imageSafetyStatus"] == "ready"
+                else:
+                    assert material.content["imageUrl"].startswith(
+                        "/storage/generated-images/"
+                    )
+                    assert material.content["imageSourceType"] == "generated"
+                    assert material.content["imageSafetyStatus"] == (
+                        "needs_review" if package_index == 0 else "ready"
+                    )
+                    assert "teacher review required" in material.content[
+                        "imageLicenseInfo"
+                    ]
                 assert material.content["imageBase64"] is None
-                assert material.content["imageSourceType"] == "generated"
-                assert material.content["imageSafetyStatus"] == "needs_review"
-                assert "teacher review required" in material.content[
-                    "imageLicenseInfo"
-                ]
             else:
                 assert "imageAssetId" not in material.content
     generated_files = list((tmp_path / "generated-images").glob("*.png"))
@@ -342,7 +361,7 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
     assert "visual prompts and concise instructions" not in prompts
 
 
-def test_failed_generation_still_builds_package_and_caches_fallback():
+def test_failed_generation_builds_package_but_does_not_cross_package_cache_unapproved_fallback():
     repos = V2Repositories()
     provider = CountingImageProvider(fail=True)
     config = Settings(_env_file=None, IMAGE_ASSET_STRATEGY="generate_first")
@@ -363,7 +382,7 @@ def test_failed_generation_still_builds_package_and_caches_fallback():
     packages.prepare_product_images(second.id)
     second = packages.get_product(second.id)
 
-    assert len(provider.image_calls) == first_generation_call_count
+    assert len(provider.image_calls) == first_generation_call_count * 2
     assert first.lessonBrief and second.lessonBrief
     for material in first.materials:
         if material.type in {"visual_card", "help_card", "token_board", "scenario_cards"}:

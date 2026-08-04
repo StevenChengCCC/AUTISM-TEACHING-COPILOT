@@ -229,6 +229,52 @@ def evaluate_runtime(config: Settings) -> RuntimeValidationReport:
                 else "Staging exports require SQLAlchemy/PostgreSQL metadata and private S3 artifact storage."
             ),
         ),
+        CapabilityCheck(
+            name="generationPersistence",
+            status=(
+                "ready"
+                if config.effective_v2_repository_mode == "sqlalchemy"
+                and database_persistent
+                else "incomplete"
+            ),
+            required=strict,
+            message=(
+                "Generation jobs use durable SQLAlchemy persistence."
+                if config.effective_v2_repository_mode == "sqlalchemy"
+                and database_persistent
+                else "Generation jobs require SQLAlchemy with a non-SQLite database."
+            ),
+        ),
+        CapabilityCheck(
+            name="storageRegion",
+            status=(
+                "ready"
+                if config.effective_object_storage_provider != "s3"
+                or bool(config.S3_REGION)
+                else "incomplete"
+            ),
+            required=strict,
+            message=(
+                "The object-storage region is explicit."
+                if config.effective_object_storage_provider != "s3"
+                or bool(config.S3_REGION)
+                else "S3_REGION must be explicit in staging and production."
+            ),
+        ),
+        CapabilityCheck(
+            name="publicApiBase",
+            status=(
+                "ready"
+                if not strict or config.PUBLIC_API_BASE_URL.startswith("https://")
+                else "incomplete"
+            ),
+            required=strict,
+            message=(
+                "The public API base URL uses HTTPS."
+                if not strict or config.PUBLIC_API_BASE_URL.startswith("https://")
+                else "Staging and production require an explicit HTTPS public API base URL."
+            ),
+        ),
     )
     deployment_required_names = {
         "database",
@@ -241,6 +287,9 @@ def evaluate_runtime(config: Settings) -> RuntimeValidationReport:
         "aiFailurePolicy",
         "skillRegistry",
         "exportStorage",
+        "generationPersistence",
+        "storageRegion",
+        "publicApiBase",
     }
     production_ready = all(
         check.status == "ready"

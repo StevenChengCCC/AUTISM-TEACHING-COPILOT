@@ -39,9 +39,13 @@ In addition to the Cognito variables in `ROUND_7_COGNITO_SETUP.md`, configure:
 1. Provision or verify RDS, private S3, Secrets Manager, Cognito, and backend IAM.
 2. Run the one-time Alembic migration process documented in `docs/deployment/DATABASE_MIGRATIONS.md`.
 3. Deploy Elastic Beanstalk and wait for `/health/ready`.
-4. Add the final Amplify domain to Cognito callback/logout URLs and backend `ALLOWED_ORIGINS`.
-5. Configure Amplify variables and deploy the staging branch.
-6. Run the end-to-end demo script.
+4. Verify `POST /api/v2/lesson-packages/{packageId}/pdf-artifacts` is present
+   before deploying frontend code that calls it. An unauthenticated probe should
+   return `401`, not `404`.
+5. Add the final Amplify domain to Cognito callback/logout URLs, backend
+   `ALLOWED_ORIGINS`, and private-S3 CORS (`PUT` and signed `GET`).
+6. Configure Amplify variables and deploy the staging branch.
+7. Run the end-to-end demo script, including a signed lesson-kit PDF download.
 
 ## Rollback
 

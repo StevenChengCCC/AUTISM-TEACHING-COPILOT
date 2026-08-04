@@ -322,6 +322,14 @@ def test_s3_export_uses_private_encryption_and_short_lived_get(tmp_path):
         def put_object(self, **kwargs):
             self.put = kwargs
 
+        def head_object(self, **kwargs):
+            assert kwargs["Key"] == self.put["Key"]
+            return {
+                "ContentLength": len(self.put["Body"]),
+                "ContentType": self.put["ContentType"],
+                "ETag": '"synthetic-etag"',
+            }
+
         def generate_presigned_url(self, operation, **kwargs):
             self.presign = (operation, kwargs)
             return "https://private.invalid/signed"

@@ -2,9 +2,17 @@ import logging
 from base64 import b64decode
 from binascii import Error as Base64Error
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+)
 
 from app.core.auth import CurrentTeacher, get_current_teacher
 from app.core.auth_context import (
@@ -28,6 +36,9 @@ from app.schemas.v2_dto import (
     DevAIStatusDto,
     GeneratedMaterial,
     GeneratedMaterialDto,
+    GenerationJobDto,
+    GoalProgressSeries,
+    GoalProgressSeriesOption,
     HealthResponse,
     AuthenticatedTeacherDto,
     ApproveImageAssetRequest,
@@ -44,6 +55,7 @@ from app.schemas.v2_dto import (
     LearnerRecordDto,
     LearnerUpdate,
     ProfileConfirmRequest,
+    ProfileFactorReviewRequest,
     ProfileSignalReviewRequest,
     LessonChatMessageRequest,
     LessonDraftMaterialAttachRequest,
@@ -61,7 +73,10 @@ from app.schemas.v2_dto import (
     LessonPackageVersionDto,
     LessonPackageExportJobDto,
     LessonPackageExportRequest,
+    PrintableLessonKitArtifactDto,
     PrintableLessonKitRequest,
+    PrintPresetCatalog,
+    PackagePrintReadiness,
     TeacherHandoffExportRequest,
     HandoffExportDownloadDto,
     LessonRequestSubmit,
@@ -70,17 +85,29 @@ from app.schemas.v2_dto import (
     LessonSessionStatDto,
     LessonSessionSummaryDto,
     MaterialLibraryItem,
+    VisualAssetReplaceRequest,
+    VisualAssetReviewRequest,
     MaterialLibraryCreateRequest,
     MaterialLibraryItemDto,
     MaterialQuickEditRequest,
     MaterialUpdate,
     MaterialUpdateRequest,
+    GenerateNextSessionRecommendationsRequest,
+    NextSessionRecommendationDto,
+    ReviewNextSessionRecommendationRequest,
+    CreateNextSessionPlanRequest,
+    UpdateNextSessionPlanRequest,
+    CreateNextSessionPackageRequest,
+    NextSessionMaterialImpactPlanDto,
+    SelectiveMaterialRegenerationRequest,
+    SelectiveScenarioRegenerationRequest,
     LearnerProgressSummaryDto,
     ProgressDataPointDto,
     ProgressSignalDto,
     RecentLessonDto,
     ProgressObservation,
     ProgressSummary,
+    ProgressMetric,
     QuestionAnswerUpdate,
     RecordUploadRequest,
     RecordUploadIntentRequest,
@@ -89,25 +116,49 @@ from app.schemas.v2_dto import (
     RecordTextCorrectionRequest,
     RecordDeletionResponse,
     SessionCreate,
+    CompleteSessionRequest,
+    SessionCompletionTemplateDto,
+    SessionOutcomeDto,
+    StartSessionRequest,
+    PatchSessionRunDraftRequest,
+    CompleteSessionRunDraftRequest,
+    DiscardSessionRunDraftRequest,
+    SessionRunStateDto,
     SessionDataRecordRequest,
     StartLessonChatRequest,
     UpdateAIQuestionAnswerRequest,
+    RefreshLessonRecommendationsRequest,
+    PackageContentPlanActionRequest,
 )
 from app.services.v2_learner_service import V2LearnerService
 from app.services.v2_lesson_chat_service import V2LessonChatService
+from app.services.v2_lesson_spec_service import V2LessonSpecService
+from app.services.v2_instructional_constraint_service import build_instructional_constraint_snapshot
 from app.services.v2_lesson_package_service import V2LessonPackageService
+from app.services.v2_generation_job_service import V2GenerationJobService
 from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_material_service import V2MaterialService
 from app.services.v2_profile_extraction_service import V2ProfileExtractionService
 from app.services.v2_progress_service import V2ProgressService
+from app.services.v2_goal_progress_service import V2GoalProgressService
+from app.services.v2_next_session_recommendation_service import V2NextSessionRecommendationService
+from app.services.v2_next_session_workflow_service import V2NextSessionWorkflowService
 from app.services.v2_record_service import V2RecordService
 from app.services.v2_repositories import repositories
 from app.services.v2_session_service import V2SessionService
+from app.services.v2_session_outcome_service import V2SessionOutcomeService
+from app.services.v2_session_run_service import V2SessionRunService
 from app.services.v2_handoff_export_service import V2HandoffExportService
 from app.services.v2_printable_lesson_kit_service import V2PrintableLessonKitService
-from app.services.v2_ai_context_service import build_lesson_generation_context
+from app.services.v2_print_readiness_service import V2PrintReadinessService
+from app.services.v2_print_preset_service import V2PrintPresetService
+from app.services.v2_synthetic_n482_fixture_service import (
+    V2SyntheticN482FixtureService,
+)
 from app.integrations.private_object_storage import (
     LocalPrivateObjectStorage,
+    PrivateObjectStorage,
+    download_content_disposition,
     get_private_object_storage,
 )
 
@@ -120,17 +171,17 @@ logger = logging.getLogger(__name__)
 
 
 def _prepare_package_images_background(
-    package_id: str, scope: AuthenticatedScope | None
+    job_id: str, scope: AuthenticatedScope | None
 ) -> None:
     token = set_authenticated_scope(scope) if scope is not None else None
     try:
-        V2LessonPackageService().prepare_product_images(package_id)
+        V2GenerationJobService().resume(job_id)
     except Exception:
         logger.warning(
             "package_image_background_task_failed",
             extra={
                 "event": "package_image_background_task_failed",
-                "package_id": package_id,
+                "generation_job_id": job_id,
             },
         )
     finally:
@@ -193,9 +244,49 @@ def _handoff_export_service(
     return V2HandoffExportService(repositories)
 
 
+def _printable_lesson_kit_service(
+    current: CurrentTeacher = Depends(get_current_teacher),
+) -> V2PrintableLessonKitService:
+    return V2PrintableLessonKitService(repositories)
+
+
+def _print_readiness_service(
+    current: CurrentTeacher = Depends(get_current_teacher),
+) -> V2PrintReadinessService:
+    return V2PrintReadinessService(repositories)
+
+
+def _print_preset_service(
+    current: CurrentTeacher = Depends(get_current_teacher),
+) -> V2PrintPresetService:
+    return V2PrintPresetService(repositories)
+
+
+def _synthetic_n482_fixture_service(
+    current: CurrentTeacher = Depends(get_current_teacher),
+) -> V2SyntheticN482FixtureService:
+    return V2SyntheticN482FixtureService(repositories, settings)
+
+
+def _private_object_storage() -> PrivateObjectStorage:
+    return get_private_object_storage(settings)
+
+
 def _require_development() -> None:
     if settings.APP_ENV != "development":
         raise HTTPException(status_code=404, detail="Not found")
+
+
+@router.post(
+    "/dev/fixtures/n482/reset",
+    dependencies=[Depends(_require_development)],
+)
+def reset_synthetic_n482_fixture(
+    service: V2SyntheticN482FixtureService = Depends(
+        _synthetic_n482_fixture_service
+    ),
+) -> dict[str, object]:
+    return service.reset()
 
 
 def _provider_with_dev_fallback():
@@ -314,18 +405,20 @@ def development_test_ai_lesson_package(
         customNotes=payload.customNotes,
     )
     provider, fallback_used = _provider_with_dev_fallback()
+    snapshot = build_instructional_constraint_snapshot(
+        learner, V2RecordService().list_for_learner(payload.learnerId)
+    )
+    lesson_spec = V2LessonSpecService().require_valid(
+        V2LessonSpecService().from_draft(draft, learner, snapshot), snapshot
+    )
     try:
-        generated = provider.generate_lesson_package(
-            draft, build_lesson_generation_context(learner, draft)
-        )
+        generated = provider.generate_lesson_package(lesson_spec)
     except RuntimeError:
         logger.warning(
             "Development OpenAI lesson package request failed; using mock fallback"
         )
         provider = MockV2AIProvider()
-        generated = provider.generate_lesson_package(
-            draft, build_lesson_generation_context(learner, draft)
-        )
+        generated = provider.generate_lesson_package(lesson_spec)
         fallback_used = True
     if isinstance(provider, OpenAIV2AIProvider):
         fallback_used = fallback_used or provider.last_fallback_used
@@ -452,9 +545,17 @@ def review_profile_signal(
     return V2LearnerService().review_signal(learner_id, signal_id, payload)
 
 
-@router.post(
-    "/learners/{learner_id}/profile/confirm", response_model=LearnerProfileDto
+@router.patch(
+    "/learners/{learner_id}/profile-factors/{factor_id}",
+    response_model=LearnerProfileDto,
 )
+def review_profile_factor(
+    learner_id: str, factor_id: str, payload: ProfileFactorReviewRequest
+) -> LearnerProfileDto:
+    return V2LearnerService().review_factor(learner_id, factor_id, payload)
+
+
+@router.post("/learners/{learner_id}/profile/confirm", response_model=LearnerProfileDto)
 def confirm_learner_profile(
     learner_id: str, payload: ProfileConfirmRequest
 ) -> LearnerProfileDto:
@@ -611,9 +712,7 @@ def send_lesson_chat_message(
 def get_lesson_chat(conversation_id: str) -> AIChatStateDto:
     """Return the latest persisted draft for optimistic-conflict recovery."""
 
-    return V2LessonChatService().to_dto(
-        V2LessonChatService().get(conversation_id)
-    )
+    return V2LessonChatService().to_dto(V2LessonChatService().get(conversation_id))
 
 
 @router.patch("/lesson-chat/{conversation_id}/answers", response_model=AIChatStateDto)
@@ -626,8 +725,46 @@ def update_lesson_chat_answer(
         QuestionAnswerUpdate(
             selected_option_ids=payload.selectedOptionIds,
             custom_answer=payload.customAnswer,
+            expected_draft_version=payload.expectedDraftVersion,
+            save_unsupported_for_future=payload.saveUnsupportedForFuture,
         ),
     )
+
+
+@router.post(
+    "/lesson-chat/{conversation_id}/refresh-recommendations",
+    response_model=AIChatStateDto,
+)
+def refresh_lesson_recommendations(
+    conversation_id: str, payload: RefreshLessonRecommendationsRequest
+) -> AIChatStateDto:
+    return V2LessonChatService().to_dto(
+        V2LessonChatService().refresh_recommendations(
+            conversation_id, payload.expectedDraftVersion
+        )
+    )
+
+
+@router.post(
+    "/lesson-chat/{conversation_id}/content-plan",
+    response_model=AIChatStateDto,
+)
+def preview_lesson_content_plan(
+    conversation_id: str, payload: RefreshLessonRecommendationsRequest
+) -> AIChatStateDto:
+    return V2LessonChatService().preview_package_content_plan(
+        conversation_id, payload.expectedDraftVersion
+    )
+
+
+@router.patch(
+    "/lesson-chat/{conversation_id}/content-plan",
+    response_model=AIChatStateDto,
+)
+def adjust_lesson_content_plan(
+    conversation_id: str, payload: PackageContentPlanActionRequest
+) -> AIChatStateDto:
+    return V2LessonChatService().adjust_package_content_plan(conversation_id, payload)
 
 
 @router.post("/lesson-chat/{conversation_id}/clear", response_model=AIChatStateDto)
@@ -674,15 +811,19 @@ def generate_product_lesson_package(
     draft: LessonDesignDraftDto,
     background_tasks: BackgroundTasks,
 ) -> LessonPackageDto:
-    service = V2LessonPackageService()
-    package = service.generate_product(draft)
+    job_service = V2GenerationJobService()
+    job, package = job_service.create_or_resume(draft)
     if settings.AI_PROVIDER != "mock":
-        package = service.queue_product_images(package.id)
-        background_tasks.add_task(
-            _prepare_package_images_background,
-            package.id,
-            get_authenticated_scope(),
-        )
+        if job_service.claim_visual_work(job.jobId):
+            package = job_service.packages.queue_product_images(package.id)
+            background_tasks.add_task(
+                _prepare_package_images_background,
+                job.jobId,
+                get_authenticated_scope(),
+            )
+    elif job.status not in {"completed", "partially_complete"}:
+        job_service.resume(job.jobId)
+        package = job_service.packages.get_product(package.id)
     return package
 
 
@@ -700,9 +841,46 @@ def list_lesson_packages(learnerId: str | None = None) -> list[LessonPackageDto]
     return V2LessonPackageService().list_products(learnerId)
 
 
+@router.get("/generation-jobs/{job_id}", response_model=GenerationJobDto)
+def get_generation_job(job_id: str) -> GenerationJobDto:
+    return V2GenerationJobService().get(job_id)
+
+
+@router.get(
+    "/lesson-packages/{package_id}/generation-job",
+    response_model=GenerationJobDto,
+)
+def get_package_generation_job(package_id: str) -> GenerationJobDto:
+    return V2GenerationJobService().for_package(package_id)
+
+
+@router.post("/generation-jobs/{job_id}/retry", response_model=GenerationJobDto)
+def retry_generation_job(job_id: str) -> GenerationJobDto:
+    return V2GenerationJobService().resume(job_id)
+
+
+@router.post(
+    "/generation-jobs/{job_id}/visuals/{visual_id}/retry",
+    response_model=GenerationJobDto,
+)
+def retry_generation_visual(job_id: str, visual_id: str) -> GenerationJobDto:
+    return V2GenerationJobService().retry_visual(job_id, visual_id)
+
+
 @router.get("/lesson-packages/{package_id}", response_model=LessonPackageDto)
 def get_lesson_package(package_id: str) -> LessonPackageDto:
     return V2LessonPackageService().get_product(package_id)
+
+
+@router.get(
+    "/lesson-packages/{package_id}/print-readiness",
+    response_model=PackagePrintReadiness,
+)
+def get_lesson_package_print_readiness(
+    package_id: str,
+    service: V2PrintReadinessService = Depends(_print_readiness_service),
+) -> PackagePrintReadiness:
+    return service.evaluate(package_id)
 
 
 @router.patch("/lesson-packages/{package_id}", response_model=LessonPackageDto)
@@ -794,6 +972,14 @@ def update_generated_material(
 
 
 @router.post(
+    "/generated-materials/{material_id}/review",
+    response_model=GeneratedMaterialDto,
+)
+def review_generated_material(material_id: str) -> GeneratedMaterialDto:
+    return V2MaterialService().review_generated(material_id)
+
+
+@router.post(
     "/generated-materials/{material_id}/approve",
     response_model=GeneratedMaterialDto,
 )
@@ -829,6 +1015,52 @@ def generate_material_image(
 
 
 @router.post(
+    "/generated-materials/{material_id}/visuals/{visual_item_id}/regenerate",
+    response_model=GeneratedMaterialDto,
+)
+def regenerate_material_visual(
+    material_id: str, visual_item_id: str
+) -> GeneratedMaterialDto:
+    return V2LessonPackageService().prepare_material_visual(
+        material_id, visual_item_id, force_generation=True
+    )
+
+
+@router.post(
+    "/generated-materials/{material_id}/visuals/{visual_item_id}/fallback",
+    response_model=GeneratedMaterialDto,
+)
+def use_material_visual_fallback(
+    material_id: str, visual_item_id: str
+) -> GeneratedMaterialDto:
+    return V2MaterialService().choose_visual_fallback(material_id, visual_item_id)
+
+
+@router.patch(
+    "/generated-materials/{material_id}/visuals/{visual_item_id}/asset",
+    response_model=GeneratedMaterialDto,
+)
+def replace_material_visual(
+    material_id: str, visual_item_id: str, payload: VisualAssetReplaceRequest
+) -> GeneratedMaterialDto:
+    return V2MaterialService().replace_visual_asset(
+        material_id, visual_item_id, payload.asset_id
+    )
+
+
+@router.post(
+    "/generated-materials/{material_id}/visuals/{visual_item_id}/review",
+    response_model=GeneratedMaterialDto,
+)
+def review_material_visual(
+    material_id: str, visual_item_id: str, payload: VisualAssetReviewRequest
+) -> GeneratedMaterialDto:
+    return V2MaterialService().review_visual(
+        material_id, visual_item_id, payload.action
+    )
+
+
+@router.post(
     "/lesson-packages/{package_id}/export",
     response_model=LessonPackageExportJobDto,
 )
@@ -845,9 +1077,41 @@ def export_lesson_package(
     response_model=LessonPackageExportJobDto,
 )
 def create_printable_lesson_kit(
-    package_id: str, payload: PrintableLessonKitRequest
+    package_id: str,
+    payload: PrintableLessonKitRequest,
+    service: V2PrintableLessonKitService = Depends(_printable_lesson_kit_service),
 ) -> LessonPackageExportJobDto:
-    return V2PrintableLessonKitService(repositories).create(package_id, payload)
+    return service.create(package_id, payload)
+
+
+@router.get(
+    "/lesson-packages/{package_id}/print-presets",
+    response_model=PrintPresetCatalog,
+)
+def get_print_preset_catalog(
+    package_id: str,
+    pageSize: Literal["Letter", "A4"] = "Letter",
+    textProfile: Literal["standard", "large"] = "standard",
+    service: V2PrintPresetService = Depends(_print_preset_service),
+) -> PrintPresetCatalog:
+    return service.catalog(
+        package_id,
+        page_size=pageSize,
+        text_profile=textProfile,
+    )
+
+
+@router.post(
+    "/lesson-packages/{package_id}/pdf-artifacts",
+    response_model=PrintableLessonKitArtifactDto,
+    status_code=201,
+)
+def create_printable_lesson_kit_artifact(
+    package_id: str,
+    payload: PrintableLessonKitRequest,
+    service: V2PrintableLessonKitService = Depends(_printable_lesson_kit_service),
+) -> PrintableLessonKitArtifactDto:
+    return service.create_artifact(package_id, payload)
 
 
 @router.post(
@@ -856,8 +1120,9 @@ def create_printable_lesson_kit(
 )
 def download_printable_lesson_kit(
     export_id: str,
+    service: V2PrintableLessonKitService = Depends(_printable_lesson_kit_service),
 ) -> HandoffExportDownloadDto:
-    return V2PrintableLessonKitService(repositories).create_download(export_id)
+    return service.create_download(export_id)
 
 
 @router.post(
@@ -881,9 +1146,7 @@ def list_teacher_handoff_exports(
     return service.list(learnerId)
 
 
-@router.get(
-    "/handoff-exports/{export_id}", response_model=LessonPackageExportJobDto
-)
+@router.get("/handoff-exports/{export_id}", response_model=LessonPackageExportJobDto)
 def get_teacher_handoff_export(
     export_id: str,
     service: V2HandoffExportService = Depends(_handoff_export_service),
@@ -912,9 +1175,7 @@ def download_teacher_handoff_export(
     return service.create_download(export_id)
 
 
-@router.delete(
-    "/handoff-exports/{export_id}", response_model=LessonPackageExportJobDto
-)
+@router.delete("/handoff-exports/{export_id}", response_model=LessonPackageExportJobDto)
 def delete_teacher_handoff_export(
     export_id: str,
     service: V2HandoffExportService = Depends(_handoff_export_service),
@@ -923,15 +1184,22 @@ def delete_teacher_handoff_export(
 
 
 @router.get("/exports/local/{token}", include_in_schema=False)
-def local_teacher_handoff_download(token: str) -> Response:
-    storage = get_private_object_storage(settings)
+def local_teacher_handoff_download(
+    token: str,
+    storage: PrivateObjectStorage = Depends(_private_object_storage),
+) -> Response:
     if not isinstance(storage, LocalPrivateObjectStorage):
         raise HTTPException(status_code=404, detail="Not found")
     body, content_type, download_name = storage.read_presigned_get(token)
     return Response(
         content=body,
         media_type=content_type,
-        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+        headers={
+            "Content-Disposition": download_content_disposition(download_name),
+            "Content-Length": str(len(body)),
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -984,6 +1252,55 @@ def create_session(payload: SessionCreate) -> LessonSessionDto:
 
 
 @router.post(
+    "/sessions/{session_id}/start",
+    response_model=SessionRunStateDto,
+)
+def start_session(
+    session_id: str, payload: StartSessionRequest
+) -> SessionRunStateDto:
+    return V2SessionRunService().start(session_id, payload)
+
+
+@router.get(
+    "/sessions/{session_id}/run",
+    response_model=SessionRunStateDto,
+)
+def get_session_run(session_id: str) -> SessionRunStateDto:
+    return V2SessionRunService().state(session_id)
+
+
+@router.patch(
+    "/sessions/{session_id}/run-draft",
+    response_model=SessionRunStateDto,
+)
+def patch_session_run_draft(
+    session_id: str, payload: PatchSessionRunDraftRequest
+) -> SessionRunStateDto:
+    return V2SessionRunService().patch(session_id, payload)
+
+
+@router.post(
+    "/sessions/{session_id}/run-draft/complete",
+    response_model=SessionOutcomeDto,
+    status_code=201,
+)
+def complete_session_run_draft(
+    session_id: str, payload: CompleteSessionRunDraftRequest
+) -> SessionOutcomeDto:
+    return V2SessionRunService().complete(session_id, payload)
+
+
+@router.post(
+    "/sessions/{session_id}/run-draft/discard",
+    response_model=SessionRunStateDto,
+)
+def discard_session_run_draft(
+    session_id: str, payload: DiscardSessionRunDraftRequest
+) -> SessionRunStateDto:
+    return V2SessionRunService().discard(session_id, payload)
+
+
+@router.post(
     "/sessions/{session_id}/duplicate", response_model=LessonSessionDto, status_code=201
 )
 def duplicate_session(session_id: str) -> LessonSessionDto:
@@ -993,6 +1310,184 @@ def duplicate_session(session_id: str) -> LessonSessionDto:
 @router.get("/sessions/{session_id}/summary", response_model=LessonSessionSummaryDto)
 def get_session_summary(session_id: str) -> LessonSessionSummaryDto:
     return V2SessionService().summary(session_id)
+
+
+@router.get(
+    "/sessions/{session_id}/completion-template",
+    response_model=SessionCompletionTemplateDto,
+)
+def get_session_completion_template(session_id: str) -> SessionCompletionTemplateDto:
+    return V2SessionOutcomeService().completion_template(session_id)
+
+
+@router.post(
+    "/sessions/{session_id}/complete",
+    response_model=SessionOutcomeDto,
+    status_code=201,
+)
+def complete_session(
+    session_id: str, payload: CompleteSessionRequest
+) -> SessionOutcomeDto:
+    return V2SessionOutcomeService().complete(session_id, payload)
+
+
+@router.get(
+    "/sessions/{session_id}/outcome",
+    response_model=SessionOutcomeDto,
+)
+def get_session_outcome(session_id: str) -> SessionOutcomeDto:
+    outcome = V2SessionOutcomeService().for_session(session_id)
+    assert outcome is not None
+    return outcome
+
+
+@router.get(
+    "/learners/{learner_id}/session-outcomes",
+    response_model=list[SessionOutcomeDto],
+)
+def list_learner_session_outcomes(learner_id: str) -> list[SessionOutcomeDto]:
+    return V2SessionOutcomeService().for_learner(learner_id)
+
+
+@router.get(
+    "/learners/{learner_id}/progress-series-options",
+    response_model=list[GoalProgressSeriesOption],
+)
+def list_goal_progress_series_options(
+    learner_id: str,
+) -> list[GoalProgressSeriesOption]:
+    return V2GoalProgressService().series_options(learner_id)
+
+
+@router.get(
+    "/learners/{learner_id}/progress-series",
+    response_model=GoalProgressSeries,
+)
+def get_goal_progress_series(
+    learner_id: str,
+    goalId: str | None = None,
+    goalRevision: int | None = None,
+    metric: ProgressMetric = "independent_success_rate",
+    contextKey: str | None = None,
+) -> GoalProgressSeries:
+    return V2GoalProgressService().series(
+        learner_id,
+        goal_id=goalId,
+        goal_revision=goalRevision,
+        metric=metric,
+        context_key=contextKey,
+    )
+
+
+@router.get(
+    "/learners/{learner_id}/next-session-recommendations",
+    response_model=list[NextSessionRecommendationDto],
+)
+def list_next_session_recommendations(
+    learner_id: str,
+    goalId: str | None = None,
+    goalRevision: int | None = None,
+) -> list[NextSessionRecommendationDto]:
+    return V2NextSessionRecommendationService().list(
+        learner_id, goal_id=goalId, goal_revision=goalRevision
+    )
+
+
+@router.post(
+    "/learners/{learner_id}/next-session-recommendations/generate",
+    response_model=list[NextSessionRecommendationDto],
+)
+def generate_next_session_recommendations(
+    learner_id: str,
+    payload: GenerateNextSessionRecommendationsRequest,
+) -> list[NextSessionRecommendationDto]:
+    return V2NextSessionRecommendationService().generate(
+        learner_id, payload.goalId, payload.goalRevision
+    )
+
+
+@router.patch(
+    "/next-session-recommendations/{recommendation_id}",
+    response_model=NextSessionRecommendationDto,
+)
+def review_next_session_recommendation(
+    recommendation_id: str,
+    payload: ReviewNextSessionRecommendationRequest,
+) -> NextSessionRecommendationDto:
+    return V2NextSessionRecommendationService().review(recommendation_id, payload)
+
+
+@router.post(
+    "/lesson-packages/{package_id}/next-session-plan",
+    response_model=NextSessionMaterialImpactPlanDto,
+)
+def create_next_session_plan(
+    package_id: str,
+    payload: CreateNextSessionPlanRequest,
+) -> NextSessionMaterialImpactPlanDto:
+    return V2NextSessionWorkflowService().create_plan(
+        package_id, payload.expectedPackageRevision
+    )
+
+
+@router.get(
+    "/next-session-plans/{plan_id}",
+    response_model=NextSessionMaterialImpactPlanDto,
+)
+def get_next_session_plan(plan_id: str) -> NextSessionMaterialImpactPlanDto:
+    return V2NextSessionWorkflowService().get_plan(plan_id)
+
+
+@router.patch(
+    "/next-session-plans/{plan_id}",
+    response_model=NextSessionMaterialImpactPlanDto,
+)
+def update_next_session_plan(
+    plan_id: str,
+    payload: UpdateNextSessionPlanRequest,
+) -> NextSessionMaterialImpactPlanDto:
+    return V2NextSessionWorkflowService().update_plan(plan_id, payload)
+
+
+@router.post(
+    "/next-session-plans/{plan_id}/create-package",
+    response_model=LessonPackageDto,
+)
+def create_next_session_package(
+    plan_id: str,
+    payload: CreateNextSessionPackageRequest,
+) -> LessonPackageDto:
+    return V2NextSessionWorkflowService().create_package(
+        plan_id, payload.expectedPlanVersion
+    )
+
+
+@router.post(
+    "/lesson-packages/{package_id}/materials/{material_id}/regenerate",
+    response_model=GeneratedMaterialDto,
+)
+def regenerate_next_session_material(
+    package_id: str,
+    material_id: str,
+    payload: SelectiveMaterialRegenerationRequest,
+) -> GeneratedMaterialDto:
+    return V2NextSessionWorkflowService().regenerate_material(
+        package_id, material_id, payload.expectedMaterialVersion
+    )
+
+
+@router.post(
+    "/lesson-packages/{package_id}/materials/{material_id}/regenerate-scenario",
+    response_model=GeneratedMaterialDto,
+)
+def regenerate_next_session_scenario(
+    package_id: str,
+    material_id: str,
+    payload: SelectiveScenarioRegenerationRequest,
+) -> GeneratedMaterialDto:
+    return V2NextSessionWorkflowService().regenerate_scenario(
+        package_id, material_id, payload
+    )
 
 
 @router.get(

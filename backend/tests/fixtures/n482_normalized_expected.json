@@ -1,0 +1,816 @@
+{
+  "learnerId": "internal-n482",
+  "age": 9,
+  "factors": [
+    {
+      "id": "spoken-phrases",
+      "category": "communication",
+      "label": "Spoken Phrases",
+      "value": "Uses spontaneous spoken phrases of 2–5 words",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for spoken-phrases.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Uses spontaneous spoken phrases of 2–5 words",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "aac-grid",
+      "category": "communication",
+      "label": "Aac Grid",
+      "value": "Uses a 2-by-3 AAC grid with Break, Help, Finished, More, Yes, and No",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for aac-grid.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Uses a 2-by-3 AAC grid with Break, Help, Finished, More, Yes, and No",
+      "generationConstraints": [
+        "response_options=Break|Help|Finished|More|Yes|No"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "equal-modalities",
+      "category": "communication",
+      "label": "Equal Modalities",
+      "value": "Speech and AAC are equally valid responses",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for equal-modalities.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Speech and AAC are equally valid responses",
+      "generationConstraints": [
+        "accept_speech_and_aac_equally"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "no-repeat",
+      "category": "communication",
+      "label": "No Repeat",
+      "value": "Do not require verbal repetition after successful AAC",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for no-repeat.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Do not require verbal repetition after successful AAC",
+      "generationConstraints": [
+        "never_require_verbal_repeat_after_aac"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "pointing",
+      "category": "motor_access",
+      "label": "Pointing",
+      "value": "Pointing is a valid response",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for pointing.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Pointing is a valid response",
+      "generationConstraints": [
+        "allow_pointing"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "wait-five",
+      "category": "prompting",
+      "label": "Wait Five",
+      "value": "Wait at least five seconds before another prompt",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for wait-five.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Wait at least five seconds before another prompt",
+      "generationConstraints": [
+        "minimum_processing_wait_seconds=5"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "refusal-communication",
+      "category": "communication",
+      "label": "Refusal Communication",
+      "value": "Pushing materials away or saying no may communicate refusal, not noncompliance",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for refusal-communication.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Pushing materials away or saying no may communicate refusal, not noncompliance",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "one-step",
+      "category": "receptive_language",
+      "label": "One Step",
+      "value": "Use brief concrete one-step directions",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for one-step.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use brief concrete one-step directions",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "two-step",
+      "category": "receptive_language",
+      "label": "Two Step",
+      "value": "Two-step directions require visual sequencing",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for two-step.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Two-step directions require visual sequencing",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "matching",
+      "category": "learning_strength",
+      "label": "Matching",
+      "value": "Strong matching, sorting, and sequencing skills",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for matching.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Strong matching, sorting, and sequencing skills",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "transit-symbols",
+      "category": "learning_strength",
+      "label": "Transit Symbols",
+      "value": "Responds strongly to route colors, station icons, and transit symbols",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for transit-symbols.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Responds strongly to route colors, station icons, and transit symbols",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "model-practice",
+      "category": "receptive_language",
+      "label": "Model Practice",
+      "value": "Use a short model followed by immediate practice",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for model-practice.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use a short model followed by immediate practice",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "no-long-talk",
+      "category": "receptive_language",
+      "label": "No Long Talk",
+      "value": "Long verbal explanations are ineffective",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for no-long-talk.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Long verbal explanations are ineffective",
+      "generationConstraints": [
+        "avoid_long_verbal_explanations"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "limited-generalization",
+      "category": "generalization",
+      "label": "Limited Generalization",
+      "value": "Generalization across adults, materials, and contexts is limited",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for limited-generalization.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Generalization across adults, materials, and contexts is limited",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "engagement",
+      "category": "attention",
+      "label": "Engagement",
+      "value": "Sustains engagement for approximately 6–8 minutes",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for engagement.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Sustains engagement for approximately 6–8 minutes",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "six-minute-block",
+      "category": "attention",
+      "label": "Six Minute Block",
+      "value": "Use teaching blocks of six minutes or less",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for six-minute-block.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use teaching blocks of six minutes or less",
+      "generationConstraints": [
+        "maximum_teaching_block_minutes=6"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "visible-endpoint",
+      "category": "visual_access",
+      "label": "Visible Endpoint",
+      "value": "Use a visible endpoint",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for visible-endpoint.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use a visible endpoint",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "low-clutter",
+      "category": "visual_access",
+      "label": "Low Clutter",
+      "value": "Use high-contrast low-clutter pages; avoid crowded worksheets",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for low-clutter.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use high-contrast low-clutter pages; avoid crowded worksheets",
+      "generationConstraints": [
+        "use_high_contrast_low_clutter"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "four-options",
+      "category": "visual_access",
+      "label": "Four Options",
+      "value": "Use no more than four response options per page",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for four-options.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use no more than four response options per page",
+      "generationConstraints": [
+        "maximum_response_options_per_page=4"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "no-audio",
+      "category": "sensory",
+      "label": "No Audio",
+      "value": "Avoid sound effects, applause, alarms, and audio prompts",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for no-audio.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Avoid sound effects, applause, alarms, and audio prompts",
+      "generationConstraints": [
+        "prohibit_audio_prompts"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "calm-visual",
+      "category": "sensory",
+      "label": "Calm Visual",
+      "value": "Use calm spoken delivery and visual cues",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for calm-visual.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use calm spoken delivery and visual cues",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "blue-accent",
+      "category": "visual_access",
+      "label": "Blue Accent",
+      "value": "Use blue as an organizing accent",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for blue-accent.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use blue as an organizing accent",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "literal-images",
+      "category": "visual_access",
+      "label": "Literal Images",
+      "value": "Use literal neutral images; avoid exaggerated red angry faces",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for literal-images.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use literal neutral images; avoid exaggerated red angry faces",
+      "generationConstraints": [
+        "avoid_exaggerated_red_angry_faces"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "no-handwriting",
+      "category": "motor_access",
+      "label": "No Handwriting",
+      "value": "Do not require handwriting",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for no-handwriting.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Do not require handwriting",
+      "generationConstraints": [
+        "prohibit_required_handwriting"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "no-cutting",
+      "category": "motor_access",
+      "label": "No Cutting",
+      "value": "Avoid fine-motor cutting",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for no-cutting.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Avoid fine-motor cutting",
+      "generationConstraints": [
+        "prohibit_fine_motor_cutting"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "access-options",
+      "category": "motor_access",
+      "label": "Access Options",
+      "value": "Allow pointing, card placement, stamping, or AAC with large touch targets",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for access-options.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Allow pointing, card placement, stamping, or AAC with large touch targets",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "interest-1",
+      "category": "current_interest",
+      "label": "Interest 1",
+      "value": "Subway maps",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for interest-1.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Subway maps",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "interest-2",
+      "category": "current_interest",
+      "label": "Interest 2",
+      "value": "City bus route maps",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for interest-2.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "City bus route maps",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "interest-3",
+      "category": "current_interest",
+      "label": "Interest 3",
+      "value": "Blue transit lines",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for interest-3.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Blue transit lines",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "interest-4",
+      "category": "current_interest",
+      "label": "Interest 4",
+      "value": "Station symbols",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for interest-4.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Station symbols",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "interest-5",
+      "category": "current_interest",
+      "label": "Interest 5",
+      "value": "Route matching",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for interest-5.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Route matching",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "interest-6",
+      "category": "current_interest",
+      "label": "Interest 6",
+      "value": "Arranging stops in order",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for interest-6.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Arranging stops in order",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "transit-reward",
+      "category": "reinforcement",
+      "label": "Transit Reward",
+      "value": "Two minutes tracing or building a route on a transit map",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for transit-reward.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Two minutes tracing or building a route on a transit map",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "five-token",
+      "category": "reinforcement",
+      "label": "Five Token",
+      "value": "Use a five-token board with bus-icon tokens",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for five-token.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use a five-token board with bus-icon tokens",
+      "generationConstraints": [
+        "token_count=5"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "pictured-reward",
+      "category": "reinforcement",
+      "label": "Pictured Reward",
+      "value": "Picture and name the selected reward",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for pictured-reward.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Picture and name the selected reward",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "specific-praise",
+      "category": "reinforcement",
+      "label": "Specific Praise",
+      "value": "Use specific praise: You asked for a break by yourself.",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for specific-praise.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use specific praise: You asked for a break by yourself.",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "transition",
+      "category": "transition",
+      "label": "Transition",
+      "value": "Transit activity to table or paper work is the most difficult transition",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for transition.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Transit activity to table or paper work is the most difficult transition",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "first-then",
+      "category": "transition",
+      "label": "First Then",
+      "value": "Use First–Then, a one-minute visual warning, and present First–Then again on return",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for first-then.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use First–Then, a one-minute visual warning, and present First–Then again on return",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "break",
+      "category": "regulation",
+      "label": "Break",
+      "value": "Support and honor a functional two-minute break request with a visible timer",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for break.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Support and honor a functional two-minute break request with a visible timer",
+      "generationConstraints": [
+        "break_duration_minutes=2"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "low-pressure",
+      "category": "safety",
+      "label": "Low Pressure",
+      "value": "Do not provoke distress or label leaving as defiance; begin with low-pressure role-play",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for low-pressure.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Do not provoke distress or label leaving as defiance; begin with low-pressure role-play",
+      "generationConstraints": [
+        "never_provoke_distress"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "prompt-sequence",
+      "category": "prompting",
+      "label": "Prompt Sequence",
+      "value": "Independent opportunity, then visual or gestural cue, model, then brief verbal prompt",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for prompt-sequence.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Independent opportunity, then visual or gestural cue, model, then brief verbal prompt",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "no-hoh",
+      "category": "prohibited_item",
+      "label": "No Hoh",
+      "value": "Hand-over-hand prompting is prohibited",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for no-hoh.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Hand-over-hand prompting is prohibited",
+      "generationConstraints": [
+        "prohibit_hand_over_hand_prompting"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "neutral-correction",
+      "category": "error_correction",
+      "label": "Neutral Correction",
+      "value": "Use neutral correction: Let us try it together; fade promptly",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for neutral-correction.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Use neutral correction: Let us try it together; fade promptly",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "three-contexts",
+      "category": "generalization",
+      "label": "Three Contexts",
+      "value": "Practice across transit-to-table, art-to-cleanup, and free-choice-to-reading contexts",
+      "status": "confirmed_current",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for three-contexts.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Practice across transit-to-table, art-to-cleanup, and free-choice-to-reading contexts",
+      "generationConstraints": [
+        "minimum_generalization_contexts=3"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "dinosaurs",
+      "category": "historical_interest",
+      "label": "Dinosaurs",
+      "value": "Dinosaurs are no longer motivating",
+      "status": "historical",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for dinosaurs.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Dinosaurs are no longer motivating",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "food",
+      "category": "reinforcement",
+      "label": "Food",
+      "value": "Food rewards",
+      "status": "not_approved",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for food.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Food rewards",
+      "generationConstraints": [
+        "prohibit_food_rewards"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "tablet-video",
+      "category": "reinforcement",
+      "label": "Tablet Video",
+      "value": "Tablet or video as a default reinforcer",
+      "status": "not_approved",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for tablet-video.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Tablet or video as a default reinforcer",
+      "generationConstraints": [
+        "prohibit_tablet_video_default_reinforcer"
+      ],
+      "teacherReviewed": false
+    },
+    {
+      "id": "generic-stars",
+      "category": "reinforcement",
+      "label": "Generic Stars",
+      "value": "Generic stars without a pictured reward",
+      "status": "not_meaningful",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for generic-stars.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Generic stars without a pictured reward",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "spanish-labels",
+      "category": "unresolved_assumption",
+      "label": "Spanish Labels",
+      "value": "Whether paired Spanish labels improve comprehension",
+      "status": "unconfirmed",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for spanish-labels.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Whether paired Spanish labels improve comprehension",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "image-style",
+      "category": "unresolved_assumption",
+      "label": "Image Style",
+      "value": "Whether photographs or line drawings are preferred",
+      "status": "unconfirmed",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for image-style.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Whether photographs or line drawings are preferred",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    },
+    {
+      "id": "break-settings",
+      "category": "unresolved_assumption",
+      "label": "Break Settings",
+      "value": "Whether the same break routine is appropriate in every setting",
+      "status": "unconfirmed",
+      "confidence": 0.98,
+      "sourceEvidence": "Synthetic evidence for break-settings.",
+      "sourceRecordId": "record-n482",
+      "instructionalImplication": "Whether the same break routine is appropriate in every setting",
+      "generationConstraints": [],
+      "teacherReviewed": false
+    }
+  ],
+  "confirmedFactorIds": [
+    "spoken-phrases",
+    "aac-grid",
+    "equal-modalities",
+    "no-repeat",
+    "pointing",
+    "wait-five",
+    "refusal-communication",
+    "one-step",
+    "two-step",
+    "matching",
+    "transit-symbols",
+    "model-practice",
+    "no-long-talk",
+    "limited-generalization",
+    "engagement",
+    "six-minute-block",
+    "visible-endpoint",
+    "low-clutter",
+    "four-options",
+    "no-audio",
+    "calm-visual",
+    "blue-accent",
+    "literal-images",
+    "no-handwriting",
+    "no-cutting",
+    "access-options",
+    "interest-1",
+    "interest-2",
+    "interest-3",
+    "interest-4",
+    "interest-5",
+    "interest-6",
+    "transit-reward",
+    "five-token",
+    "pictured-reward",
+    "specific-praise",
+    "transition",
+    "first-then",
+    "break",
+    "low-pressure",
+    "prompt-sequence",
+    "no-hoh",
+    "neutral-correction",
+    "three-contexts"
+  ],
+  "unconfirmedFactorIds": [
+    "spanish-labels",
+    "image-style",
+    "break-settings"
+  ],
+  "historicalFactorIds": [
+    "dinosaurs"
+  ],
+  "excludedFactorIds": [
+    "no-hoh",
+    "food",
+    "tablet-video",
+    "generic-stars"
+  ],
+  "blockingIssues": [],
+  "summary": {
+    "communication": "Uses spontaneous spoken phrases of 2–5 words; Uses a 2-by-3 AAC grid with Break, Help, Finished, More, Yes, and No; Speech and AAC are equally valid responses; Do not require verbal repetition after successful AAC; Pushing materials away or saying no may communicate refusal, not noncompliance",
+    "supports": [
+      "Use brief concrete one-step directions",
+      "Two-step directions require visual sequencing",
+      "Use a short model followed by immediate practice",
+      "Long verbal explanations are ineffective",
+      "Avoid sound effects, applause, alarms, and audio prompts",
+      "Use calm spoken delivery and visual cues",
+      "Use a visible endpoint",
+      "Use high-contrast low-clutter pages; avoid crowded worksheets",
+      "Use no more than four response options per page",
+      "Use blue as an organizing accent",
+      "Use literal neutral images; avoid exaggerated red angry faces",
+      "Pointing is a valid response",
+      "Do not require handwriting",
+      "Avoid fine-motor cutting",
+      "Allow pointing, card placement, stamping, or AAC with large touch targets",
+      "Transit activity to table or paper work is the most difficult transition",
+      "Use First–Then, a one-minute visual warning, and present First–Then again on return",
+      "Support and honor a functional two-minute break request with a visible timer",
+      "Wait at least five seconds before another prompt",
+      "Independent opportunity, then visual or gestural cue, model, then brief verbal prompt",
+      "Use neutral correction: Let us try it together; fade promptly",
+      "Do not provoke distress or label leaving as defiance; begin with low-pressure role-play",
+      "Hand-over-hand prompting is prohibited"
+    ],
+    "currentInterests": [
+      "Subway maps",
+      "City bus route maps",
+      "Blue transit lines",
+      "Station symbols",
+      "Route matching",
+      "Arranging stops in order"
+    ],
+    "learningFormat": "Sustains engagement for approximately 6–8 minutes; Use teaching blocks of six minutes or less; Use brief concrete one-step directions; Two-step directions require visual sequencing; Use a short model followed by immediate practice; Long verbal explanations are ineffective; Strong matching, sorting, and sequencing skills; Responds strongly to route colors, station icons, and transit symbols; Generalization across adults, materials, and contexts is limited; Practice across transit-to-table, art-to-cleanup, and free-choice-to-reading contexts",
+    "keyTeachingNotes": [
+      "Dinosaurs are no longer motivating",
+      "Whether paired Spanish labels improve comprehension",
+      "Whether photographs or line drawings are preferred",
+      "Whether the same break routine is appropriate in every setting",
+      "Food rewards",
+      "Tablet or video as a default reinforcer",
+      "Generic stars without a pictured reward"
+    ]
+  }
+}

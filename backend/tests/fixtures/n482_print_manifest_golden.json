@@ -1,0 +1,79 @@
+{
+  "packageId": "package-1000",
+  "packageRevision": 20,
+  "lessonSpecId": "lesson-spec-draft-n482",
+  "lessonSpecRevision": 1,
+  "profileRevision": "profile-v1-dd1680dc99aa5bbef8be",
+  "schemaVersion": 2,
+  "printPreset": "complete_kit",
+  "pageSize": "LETTER",
+  "locale": "en-US",
+  "sections": [
+    {"sectionType": "cover", "title": "Complete lesson kit", "materialIds": [], "required": true, "pageBreakBefore": true, "includedReason": "Included in the complete approved lesson package."},
+    {"sectionType": "personalization_summary", "title": "Why this lesson is personalized", "materialIds": [], "required": true, "pageBreakBefore": true, "includedReason": "Included in the complete approved lesson package."},
+    {"sectionType": "teacher_brief", "title": "Teacher lesson brief", "materialIds": [], "required": true, "pageBreakBefore": true, "includedReason": "Included in the complete approved lesson package."},
+    {"sectionType": "lesson_flow", "title": "Classroom Run Sheet", "materialIds": [], "required": true, "pageBreakBefore": true, "includedReason": "Included in the complete approved lesson package."},
+    {"sectionType": "instructional_material", "title": "Personalized instructional activities", "materialIds": ["material-1001"], "required": true, "pageBreakBefore": true, "includedReason": "Current approved material included in the complete package."},
+    {"sectionType": "functional_support", "title": "Functional support cards and boards", "materialIds": ["material-1002", "material-1003", "material-1004", "material-1005", "material-1009"], "required": true, "pageBreakBefore": true, "includedReason": "Current approved material included in the complete package."},
+    {"sectionType": "instructional_material", "title": "Scenario and generalization practice", "materialIds": ["material-1006"], "required": true, "pageBreakBefore": true, "includedReason": "Current approved material included in the complete package."},
+    {"sectionType": "data_collection", "title": "Goal-specific data collection", "materialIds": ["material-1007"], "required": true, "pageBreakBefore": true, "includedReason": "Current approved material included in the complete package."},
+    {"sectionType": "lesson_summary", "title": "Lesson summary", "materialIds": ["material-1008"], "required": true, "pageBreakBefore": true, "includedReason": "Current approved material included in the complete package."}
+  ],
+  "excludedEntries": [],
+  "materialRevisions": {
+    "material-1001": 1, "material-1002": 1, "material-1003": 1,
+    "material-1004": 1, "material-1005": 1, "material-1009": 1,
+    "material-1006": 1, "material-1007": 1, "material-1008": 1
+  },
+  "visualPlanRevisions": {
+    "material-1001": 1, "material-1002": 1, "material-1003": 1,
+    "material-1004": 1, "material-1005": 1, "material-1009": 1,
+    "material-1006": 1, "material-1007": 1, "material-1008": 1
+  },
+  "assetVersions": {
+    "deterministic:material-1001:route-background": 1,
+    "deterministic:material-1001:start-marker": 1,
+    "deterministic:material-1001:finish-marker": 1,
+    "deterministic:material-1001:station:transit-map-activity-to-table-work": 1,
+    "deterministic:material-1001:station:art-activity-to-cleanup": 1,
+    "deterministic:material-1001:station:free-choice-to-shared-reading": 1,
+    "deterministic:material-1002:communication-symbol": 1,
+    "deterministic:material-1003:first-task": 1,
+    "deterministic:material-1003:then-outcome": 1,
+    "deterministic:material-1004:token-symbol": 1,
+    "deterministic:material-1004:token-instance:1": 1,
+    "deterministic:material-1004:token-instance:2": 1,
+    "deterministic:material-1004:token-instance:3": 1,
+    "deterministic:material-1004:token-instance:4": 1,
+    "deterministic:material-1004:token-instance:5": 1,
+    "deterministic:material-1004:earned-reward": 1,
+    "deterministic:material-1005:timer-state:2": 1,
+    "deterministic:material-1005:timer-state:1": 1,
+    "deterministic:material-1005:timer-state:0": 1,
+    "deterministic:material-1009:teacher-reference": 1,
+    "deterministic:material-1006:scenario:context-1": 1,
+    "deterministic:material-1006:scenario:context-2": 1,
+    "deterministic:material-1006:scenario:context-3": 1
+  },
+  "tableOfContents": true,
+  "pageNumbers": true,
+  "textProfile": "standard",
+  "rendererVersion": "print-package-reportlab-v4-accessible-text",
+  "sourceApprovalReadinessEvidence": {
+    "ready": true,
+    "packageApprovalStatus": "approved",
+    "packageRevision": 20,
+    "lessonSpecRevision": 1,
+    "materialReviewedRevisions": {
+      "material-1001": 1, "material-1002": 1, "material-1003": 1,
+      "material-1004": 1, "material-1005": 1, "material-1009": 1,
+      "material-1006": 1, "material-1007": 1, "material-1008": 1
+    },
+    "materialApprovedRevisions": {
+      "material-1001": 1, "material-1002": 1, "material-1003": 1,
+      "material-1004": 1, "material-1005": 1, "material-1009": 1,
+      "material-1006": 1, "material-1007": 1, "material-1008": 1
+    },
+    "warningBlockerIds": []
+  }
+}

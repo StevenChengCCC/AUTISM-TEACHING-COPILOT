@@ -4,6 +4,7 @@ import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
 import { LearnerAvatar } from "../components/Avatar";
+import { GoalProgressPanel } from "../components/GoalProgressPanel";
 import type { LearnerProfile, LearnerRecord, RecentLesson } from "../types";
 
 const filters = ["All", "Visual support", "AAC", "Communication", "Attention", "New"];
@@ -132,6 +133,7 @@ export function StudentsPage({
                 <button onClick={() => onFeedback(`${lessons.length} recent teaching kit${lessons.length === 1 ? "" : "s"} found.`)}>View all kits ›</button>
               </div>
             </div>
+            <GoalProgressPanel learnerId={selected.id} />
             <div className="v2-page-actions">
               <Button variant="secondary" onClick={() => onFeedback(`${selected.code} is ready for profile editing.`)}>✎ &nbsp; Edit learner</Button>
               <Button onClick={() => onStartLesson(selected.id)}>▷ &nbsp; Create teaching kit</Button>

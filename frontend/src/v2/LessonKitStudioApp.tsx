@@ -117,7 +117,8 @@ export function AutismTeachingCopilotApp() {
     if (session.status === "draft") { openLessonChat(true); return; }
     try {
       const existing = await lessonKitApi.getLessonPackages(session.learnerId);
-      const saved = existing.find((item) => item.goal === session.goal) ?? existing[0];
+      const saved = existing.find((item) => item.id === session.lessonPackageId)
+        ?? existing.find((item) => item.goal === session.goal) ?? existing[0];
       if (saved) {
         savePackage(saved);
         navigateTo(session.status === "in_progress" ? "reviewPrintableContent" : "lessonPackageReady");

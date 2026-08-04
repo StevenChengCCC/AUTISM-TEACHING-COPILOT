@@ -9,6 +9,7 @@ import hmac
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from app.core.config import Settings, settings
 from app.core.exceptions import ObjectStorageUnavailableError, ValidationError
@@ -33,6 +34,35 @@ class PresignedPut:
 class PresignedGet:
     url: str
     expires_at: datetime
+
+
+def download_content_disposition(download_name: str) -> str:
+    """Build an injection-safe ASCII and RFC 5987 attachment filename."""
+
+    original = Path(download_name).name.replace("\r", "").replace("\n", "")
+    ascii_name = original.encode("ascii", "ignore").decode("ascii")
+    ascii_name = "".join(
+        character if character.isalnum() or character in "._- " else "-"
+        for character in ascii_name
+    ).strip(" .")
+    if not ascii_name:
+        ascii_name = "lesson-kit.pdf"
+    encoded = quote(original or ascii_name, safe="")
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{encoded}"
+    )
+
+
+def content_type_for_key(key: str) -> str:
+    return {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".txt": "text/plain",
+        ".zip": "application/zip",
+        ".csv": "text/csv",
+        ".json": "application/json",
+    }.get(Path(key).suffix.lower(), "application/octet-stream")
 
 
 class PrivateObjectStorage(ABC):
@@ -302,6 +332,7 @@ class S3PrivateObjectStorage(PrivateObjectStorage):
             ) from exc
 
     def create_presigned_get(self, key: str, download_name: str) -> PresignedGet:
+        self.head(key)
         expires_at = datetime.now(timezone.utc) + timedelta(
             seconds=self.config.EXPORT_DOWNLOAD_TTL_SECONDS
         )
@@ -311,9 +342,10 @@ class S3PrivateObjectStorage(PrivateObjectStorage):
                 Params={
                     "Bucket": self._bucket(),
                     "Key": key,
-                    "ResponseContentDisposition": (
-                        f'attachment; filename="{Path(download_name).name}"'
+                    "ResponseContentDisposition": download_content_disposition(
+                        download_name
                     ),
+                    "ResponseContentType": content_type_for_key(key),
                 },
                 ExpiresIn=self.config.EXPORT_DOWNLOAD_TTL_SECONDS,
                 HttpMethod="GET",

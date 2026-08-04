@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from base64 import b64decode
 from binascii import Error as Base64Error
+from hashlib import sha256
 import logging
 from pathlib import Path
 import re
@@ -218,7 +219,10 @@ class V2ImageAssetService:
         reuse_first = self.config.IMAGE_ASSET_STRATEGY == "reuse_search_generate"
         if not force_generation:
             cached = self._find_cached_asset(
-                normalized_concept, normalized_material_type
+                normalized_concept,
+                normalized_material_type,
+                learner_id=learner_id,
+                style=style,
             )
             if cached:
                 self._attach_if_present(material_id, cached)
@@ -302,7 +306,12 @@ class V2ImageAssetService:
         )
 
     def _find_cached_asset(
-        self, concept: str, material_type: str
+        self,
+        concept: str,
+        material_type: str,
+        *,
+        learner_id: str,
+        style: str | None,
     ) -> ImageAssetDto | None:
         type_tag = self._material_type_tag(material_type)
         object_asset_types = {
@@ -315,6 +324,8 @@ class V2ImageAssetService:
         compatible_type_tags = {
             self._material_type_tag(item) for item in object_asset_types
         }
+        lineage_tag = f"lineage learner {learner_id}"
+        style_tag = self._style_tag(style)
         matches = [
             asset
             for asset in self.repos.image_assets.list()
@@ -329,8 +340,16 @@ class V2ImageAssetService:
                     )
                 )
             )
-            and (asset.sourceType in {"generated", "mock"} or asset.approved)
-            and asset.safetyStatus != "blocked"
+            and asset.approved
+            and asset.safetyStatus == "ready"
+            and (
+                asset.sourceType == "internal"
+                or "universal symbol" in {_normalize(tag) for tag in asset.tags}
+                or (
+                    lineage_tag in {_normalize(tag) for tag in asset.tags}
+                    and style_tag in {_normalize(tag) for tag in asset.tags}
+                )
+            )
         ]
         matches.sort(
             key=lambda asset: (
@@ -401,6 +420,13 @@ class V2ImageAssetService:
             safetyStatus="needs_review",
             createdAt=utc_now().isoformat(),
         )
+        asset = asset.model_copy(update={
+            "tags": [
+                *asset.tags,
+                f"lineage learner {learner_id}",
+                self._style_tag(style),
+            ]
+        })
         return self.repos.image_assets.save(asset)
 
     def _first_external_candidate(
@@ -502,6 +528,12 @@ class V2ImageAssetService:
     @staticmethod
     def _material_type_tag(material_type: str) -> str:
         return f"material type {material_type}"
+
+    @staticmethod
+    def _style_tag(style: str | None) -> str:
+        normalized = _normalize(style or "default")
+        digest = sha256(normalized.encode()).hexdigest()[:12]
+        return f"style access {digest}"
 
     def get_seed_assets(self) -> list[ImageAssetDto]:
         return self.repos.image_assets.list()

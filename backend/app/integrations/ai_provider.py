@@ -9,8 +9,11 @@ from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
-    LessonDesignDraftDto,
+    LessonSpec,
+    MaterialSpec,
+    MaterialValidationIssue,
     ProfileExtractionResult,
+    InstructionalConstraintSnapshot,
 )
 from app.skills.models import GenerationMetadata
 from app.skills.registry import SkillRegistry, get_skill_registry
@@ -22,6 +25,14 @@ class V2AIProvider(ABC):
     provider_name = "unknown"
     last_generation_metadata: GenerationMetadata | None = None
     generation_metadata_by_skill: dict[str, GenerationMetadata]
+
+    @staticmethod
+    def _require_lesson_spec(value: object) -> LessonSpec:
+        if not isinstance(value, LessonSpec):
+            raise TypeError(
+                "Lesson package generation accepts only a validated LessonSpec"
+            )
+        return value
 
     def _record_generation(
         self,
@@ -66,6 +77,17 @@ class V2AIProvider(ABC):
 
         return self.generate_lesson_questions(learner, teacher_request)
 
+    def generate_lesson_questions_with_snapshot(
+        self,
+        learner: LearnerProfile,
+        teacher_request: str,
+        snapshot: InstructionalConstraintSnapshot,
+        supported_material_catalog: list[str],
+    ) -> tuple[list[AIQuestion], LessonDesignDraft]:
+        """Versioned context entrypoint; legacy providers retain compatibility."""
+
+        return self.generate_lesson_questions(learner, teacher_request)
+
     @abstractmethod
     def polish_lesson_brief(self, draft: LessonDesignDraft) -> str:
         raise NotImplementedError
@@ -73,10 +95,9 @@ class V2AIProvider(ABC):
     @abstractmethod
     def generate_lesson_package(
         self,
-        draft: LessonDesignDraftDto,
-        learner_context: dict[str, Any] | None = None,
+        lesson_spec: LessonSpec,
     ) -> dict[str, Any]:
-        """Return provider-authored content; orchestration stays in the service."""
+        """Generate prose proposals from a validated canonical LessonSpec only."""
 
         raise NotImplementedError
 
@@ -95,6 +116,16 @@ class V2AIProvider(ABC):
         """
 
         raise NotImplementedError("This AI provider does not support scoped editing")
+
+    def repair_material_spec(
+        self,
+        material_spec: MaterialSpec,
+        issues: list[MaterialValidationIssue],
+        lesson_spec: LessonSpec,
+    ) -> MaterialSpec:
+        """Return one bounded typed repair proposal without changing constraints."""
+
+        raise NotImplementedError("This AI provider does not support MaterialSpec repair")
 
     @abstractmethod
     def generate_material_image(

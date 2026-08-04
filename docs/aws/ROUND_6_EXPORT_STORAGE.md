@@ -47,6 +47,12 @@ The persisted ExportJob may be retained as minimized history after its object ex
 
 The backend issues presigned GET URLs only after scoped authorization and job-state checks. Default lifetime is five minutes. The response uses `Content-Disposition: attachment; filename="teacher-handoff.zip"`. Amplify never receives bucket credentials or provider keys.
 
+The same contract applies to complete lesson-kit PDFs. The backend must verify
+the current approved package and material revisions, confirm the object exists
+and is nonempty, and only then return the short-lived URL. S3 CORS must allow
+`GET` from the exact Amplify/custom origin and expose `Content-Disposition`,
+`Content-Length`, and `Content-Type`; keep Block Public Access enabled.
+
 ## CloudWatch and auditing
 
 Application logs should include request ID, export ID, state transition, duration, status, and minimized error type. Do not log learner content, selected notes, S3 signatures, object bytes, database URLs, or stack traces in user responses. Alarm on repeated `EXPORT_GENERATION_FAILED`, S3 access denied, and deletion failures.
@@ -59,6 +65,8 @@ Application logs should include request ID, export ID, state transition, duratio
 - [ ] Generated keys contain no learner identifier.
 - [ ] Objects show the configured server-side encryption.
 - [ ] Presigned GET works before TTL and fails after TTL.
+- [ ] S3 CORS permits signed `GET` from the exact frontend origin without an
+      `Authorization` header.
 - [ ] Lifecycle rule is scoped to the export prefix.
 - [ ] DELETE removes the S3 object and keeps minimized job history.
 - [ ] Export metadata survives backend restart/redeploy in PostgreSQL.
@@ -67,4 +75,3 @@ Application logs should include request ID, export ID, state transition, duratio
 ## Rollback
 
 Disable new export creation at the application layer, leave existing completed jobs readable until their normal expiry, and deploy the prior application version. Do not delete the prefix until active jobs and retention requirements are reviewed. Database rollback is governed by the migration runbook; the Round 6 downgrade removes standalone export fields and therefore must first delete or archive standalone jobs.
-

@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "goal": {
+    "displayText": "Independently request “Break, please” using speech or AAC during transitions.",
+    "observableBehavior": "Requests “Break, please” using speech or AAC",
+    "conditions": "During selected transitions",
+    "acceptedResponseModes": ["speech", "AAC"],
+    "independenceDefinition": "The target response occurs without a teacher prompt after the natural cue and confirmed processing time.",
+    "successCriterion": {
+      "requiredSuccessfulOpportunities": 4,
+      "totalOpportunities": 5,
+      "maximumPromptLevel": "Independent or the teacher-confirmed maximum prompt level",
+      "requiredContexts": 3
+    }
+  },
+  "duration": {"totalMinutes": 25, "maximumActivityBlockMinutes": 6},
+  "contexts": [
+    "transit-map activity to table work",
+    "art activity to cleanup",
+    "free choice to shared reading"
+  ],
+  "communicationPlan": {
+    "acceptedModes": ["speech", "AAC"],
+    "processingTimeSeconds": 5,
+    "responseValidationRules": [
+      "Speech and AAC are accepted equally",
+      "Do not require handwriting",
+      "Avoid fine-motor cutting",
+      "Accept any confirmed mode equally: speech, AAC"
+    ]
+  },
+  "promptingPlan": {
+    "sequence": ["Independent opportunity, visual or gestural cue, model, then brief verbal prompt"],
+    "prohibitedPrompts": ["Hand-over-hand prompting is prohibited"],
+    "fadeRule": "Fade to the least intrusive support after successful responding; teacher may pause or stop.",
+    "waitTimeSeconds": 5,
+    "teacherOverride": "Teacher may pause or change prompting at any time"
+  },
+  "reinforcementPlan": {
+    "tokenCount": 5,
+    "tokenTheme": "bus",
+    "earnedReward": "2 minutes with the transit-route map",
+    "rewardDurationMinutes": 2,
+    "specificPraise": "You asked for a break by yourself.",
+    "excludedReinforcers": ["Food rewards"]
+  },
+  "transitionPlan": {
+    "warning": "Use First–Then, a one-minute visual warning, and present First–Then again on return",
+    "firstThenRequired": true,
+    "breakRequest": "Honor a two-minute break request with a visible timer",
+    "breakDurationMinutes": 2,
+    "returnSupport": "Use First–Then, a one-minute visual warning, and present First–Then again on return"
+  },
+  "accessPlan": {
+    "maximumPrimaryVisualChoices": 4,
+    "layoutRequirements": ["Use high-contrast low-clutter pages", "Use no more than four choices"],
+    "prohibitedVisualFeatures": [],
+    "prohibitedAudioFeatures": ["No audio prompts, sound effects, applause, or alarms"],
+    "motorAccessAlternatives": ["Do not require handwriting", "Avoid fine-motor cutting"]
+  },
+  "generalizationRequired": true,
+  "dataMeasures": [
+    "opportunity", "context", "response_outcome", "independence", "prompt_level",
+    "latency_seconds", "response_mode", "break_requested", "break_honored",
+    "break_duration_minutes", "returned_to_activity", "notes"
+  ],
+  "materialRequests": [
+    {"materialType": "blue_line_activity", "displayLabel": "personalized Blue Line activity", "instructionalPurpose": "Practice the goal in a motivating transition context"},
+    {"materialType": "break_card", "displayLabel": "Break, Please communication card", "instructionalPurpose": "Provide speech and AAC-equivalent communication access"},
+    {"materialType": "first_then_board", "displayLabel": "concrete First–Then board", "instructionalPurpose": "Preview and support transition completion"},
+    {"materialType": "token_board", "displayLabel": "five-bus-token board", "instructionalPurpose": "Represent progress toward the confirmed reward"},
+    {"materialType": "visual_timer", "displayLabel": "two-minute visual timer", "instructionalPurpose": "Show the honored break duration without audio"},
+    {"materialType": "scenario_cards", "displayLabel": "transition scenario cards", "instructionalPurpose": "Practice across three selected contexts"},
+    {"materialType": "data_sheet", "displayLabel": "goal-specific data sheet", "instructionalPurpose": "Measure independent break requests and prompting"},
+    {"materialType": "summary_template", "displayLabel": "lesson summary", "instructionalPurpose": "Document response modes and next steps"}
+  ],
+  "unresolvedAssumptions": [
+    {"text": "Whether paired Spanish labels improve comprehension", "blocking": false, "profileFactorId": "spanish"},
+    {"text": "Whether photographs or line drawings are preferred", "blocking": false, "profileFactorId": "illustration"}
+  ],
+  "decisionIds": ["decision-goal", "decision-contexts", "decision-materials"],
+  "provenance": {
+    "teacherAuthoredFields": ["goal"],
+    "teacherSelectedFields": ["practice_contexts", "material_requests"],
+    "aiRecommendedFields": [],
+    "derivedFields": [
+      "goal.acceptedResponseModes", "duration.maximumActivityBlockMinutes",
+      "communicationPlan.processingTimeSeconds", "promptingPlan.sequence",
+      "promptingPlan.waitTimeSeconds", "reinforcementPlan.tokenCount",
+      "reinforcementPlan.tokenTheme", "reinforcementPlan.earnedReward",
+      "reinforcementPlan.rewardDurationMinutes", "reinforcementPlan.specificPraise",
+      "transitionPlan", "accessPlan", "dataPlan.measures"
+    ],
+    "defaultedFields": ["goal.successCriterion"]
+  }
+}

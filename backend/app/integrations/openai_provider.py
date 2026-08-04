@@ -5,7 +5,7 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.core.config import Settings, settings
 from app.core.exceptions import AIInvalidOutputError, AIProviderFailureError
@@ -15,10 +15,13 @@ from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
-    LessonDesignDraftDto,
+    LessonSpec,
+    MaterialSpec,
+    MaterialValidationIssue,
     LessonPlanningResult,
     ProfileExtractionResult,
     ProfileSignal,
+    InstructionalConstraintSnapshot,
 )
 from app.services.v2_ai_context_service import build_ai_safe_profile
 from app.skills.models import PromptEnvelope
@@ -36,6 +39,25 @@ class _OpenAIRequestError(RuntimeError):
 
 class _LessonSectionRevision(BaseModel):
     revisedText: str
+
+
+class _LessonMaterialProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: str
+    title: str
+    content: dict[str, Any] = Field(default_factory=dict)
+    imageConcept: str | None = None
+    imagePrompt: str | None = None
+    imageAltText: str | None = None
+
+
+class _LessonPackageProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    lessonBrief: str
+    summaryTemplate: str
+    teachingFlow: list[dict[str, Any]] = Field(default_factory=list)
+    materials: list[_LessonMaterialProposal] = Field(default_factory=list)
+    materialCopySuggestions: dict[str, Any] = Field(default_factory=dict)
 
 
 logger = logging.getLogger(__name__)
@@ -301,7 +323,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._prompts.build(
                     skill,
                     output_contract={
-                        "learner": "LearnerProfile-compatible object",
+                        "learner": "LearnerProfile-compatible object with a complete normalizedProfile canonical profile",
                         "profileSignals": "array of evidence-linked signals",
                         "unknownFields": "array of field names",
                         "insights": "array of short strings",
@@ -321,6 +343,13 @@ class OpenAIV2AIProvider(V2AIProvider):
             preserved["id"] = learner.id
             preserved["code"] = learner.code
             extracted = LearnerProfile.model_validate(preserved)
+            if (
+                extracted.normalized_profile is None
+                or not extracted.normalized_profile.factors
+            ):
+                raise _OpenAIOutputError(
+                    "Learner extraction returned no structured profile factors"
+                )
             insights = result["insights"]
             if not isinstance(insights, list) or not all(
                 isinstance(item, str) for item in insights
@@ -351,16 +380,39 @@ class OpenAIV2AIProvider(V2AIProvider):
             KeyError,
             TypeError,
         ) as exc:
-            self._handle_provider_failure(
-                "profile extraction",
-                "learner_profile",
-                self._failure_kind(exc),
-                self._settings.OPENAI_PROFILE_MODEL,
+            failure_kind = self._failure_kind(exc)
+            logger.warning(
+                "Profile extraction failed validation",
+                extra={"event": failure_kind, "error_code": failure_kind},
             )
-            return self._fallback.extract_profile(learner, records)
+            if failure_kind == "invalid_output":
+                raise AIInvalidOutputError(
+                    "The learner profile could not be validated. The reviewed record text is preserved; please retry extraction."
+                ) from exc
+            raise AIProviderFailureError(
+                "Learner profile extraction is temporarily unavailable. The reviewed record text is preserved; please retry."
+            ) from exc
 
     def generate_lesson_questions(
         self, learner: LearnerProfile, teacher_request: str
+    ) -> tuple[list[AIQuestion], LessonDesignDraft]:
+        from app.services.v2_instructional_constraint_service import (
+            build_instructional_constraint_snapshot,
+        )
+
+        return self.generate_lesson_questions_with_snapshot(
+            learner,
+            teacher_request,
+            build_instructional_constraint_snapshot(learner, []),
+            [],
+        )
+
+    def generate_lesson_questions_with_snapshot(
+        self,
+        learner: LearnerProfile,
+        teacher_request: str,
+        snapshot: InstructionalConstraintSnapshot,
+        supported_material_catalog: list[str],
     ) -> tuple[list[AIQuestion], LessonDesignDraft]:
         self.last_fallback_used = False
         try:
@@ -373,7 +425,15 @@ class OpenAIV2AIProvider(V2AIProvider):
                         "questions": "a concise dynamic list of required and conditional AIQuestion-compatible objects",
                         "draft": "LessonDesignDraft-compatible object",
                     },
-                    trusted_input={"learner": build_ai_safe_profile(learner)},
+                    trusted_input={
+                        "instructionalConstraintSnapshot": snapshot.model_dump(
+                            mode="json", by_alias=True
+                        ),
+                        "profileRevision": snapshot.profile_revision,
+                        "unresolvedAssumptions": snapshot.unresolved_assumptions,
+                        "excludedItems": snapshot.excluded_items,
+                        "supportedMaterialCatalog": supported_material_catalog,
+                    },
                     untrusted_input={"teacherRequest": teacher_request},
                     supplemental_skills=(ny_material_skill,),
                 ),
@@ -386,6 +446,8 @@ class OpenAIV2AIProvider(V2AIProvider):
             draft = planning.draft
             self._validate_lesson_questions(questions, draft)
             draft.learner_id = learner.id
+            draft.profile_revision = snapshot.profile_revision
+            draft.instructional_constraint_snapshot = snapshot
             self._success("lesson_planning", self._settings.OPENAI_PLANNING_MODEL)
             return questions, draft
         except (
@@ -401,7 +463,12 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._failure_kind(exc),
                 self._settings.OPENAI_PLANNING_MODEL,
             )
-            return self._fallback.generate_lesson_questions(learner, teacher_request)
+            questions, draft = self._fallback.generate_lesson_questions_with_snapshot(
+                learner, teacher_request, snapshot, supported_material_catalog
+            )
+            draft.profile_revision = snapshot.profile_revision
+            draft.instructional_constraint_snapshot = snapshot
+            return questions, draft
 
     def polish_lesson_brief(self, draft: LessonDesignDraft) -> str:
         self.last_fallback_used = False
@@ -427,9 +494,9 @@ class OpenAIV2AIProvider(V2AIProvider):
 
     def generate_lesson_package(
         self,
-        draft: LessonDesignDraftDto,
-        learner_context: dict[str, Any] | None = None,
+        lesson_spec: LessonSpec,
     ) -> dict[str, Any]:
+        lesson_spec = self._require_lesson_spec(lesson_spec)
         self.last_fallback_used = False
         try:
             lesson_skill = self._registry.get("lesson_generation")
@@ -444,13 +511,13 @@ class OpenAIV2AIProvider(V2AIProvider):
                     "materials": "array of selected material definitions with type title content",
                 },
                 trusted_input={
-                    "draft": draft.model_dump(by_alias=True),
-                    "learnerContext": learner_context or {},
+                    "lessonSpec": lesson_spec.model_dump(mode="json", by_alias=True),
                 },
                 supplemental_skills=(material_skill, ny_material_skill),
             )
             result = self._request_json(
                 prompt,
+                _LessonPackageProposal,
                 model=self._settings.OPENAI_PACKAGE_MODEL,
                 timeout_seconds=self._settings.OPENAI_PACKAGE_TIMEOUT_SECONDS,
             )
@@ -472,9 +539,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                 generated["teachingFlow"] = result["teachingFlow"]
             if isinstance(result.get("materials"), list):
                 generated["materials"] = result["materials"]
-            self._success(
-                "lesson_generation", self._settings.OPENAI_PACKAGE_MODEL
-            )
+            self._success("lesson_generation", self._settings.OPENAI_PACKAGE_MODEL)
             self._record_generation(
                 self._registry,
                 "material_generation",
@@ -491,7 +556,7 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._failure_kind(exc),
                 self._settings.OPENAI_PACKAGE_MODEL,
             )
-            return self._fallback.generate_lesson_package(draft, learner_context)
+            return self._fallback.generate_lesson_package(lesson_spec)
 
     def revise_lesson_section(
         self,
@@ -552,6 +617,34 @@ class OpenAIV2AIProvider(V2AIProvider):
                 instruction=instruction,
                 lesson_context=lesson_context,
             )
+
+    def repair_material_spec(
+        self,
+        material_spec: MaterialSpec,
+        issues: list[MaterialValidationIssue],
+        lesson_spec: LessonSpec,
+    ) -> MaterialSpec:
+        skill = self._registry.get("material_generation")
+        result = self._request_json(
+            self._prompts.build(
+                skill,
+                output_contract={
+                    "materialSpec": (
+                        "the complete repaired MaterialSpec using the identical "
+                        "artifact type and protected LessonSpec constraints"
+                    )
+                },
+                trusted_input={
+                    "existingMaterialSpec": material_spec.model_dump(mode="json", by_alias=True),
+                    "validationIssues": [item.model_dump(mode="json", by_alias=True) for item in issues],
+                    "protectedLessonSpec": lesson_spec.model_dump(mode="json", by_alias=True),
+                },
+            ),
+            type(material_spec),
+            model=self._settings.OPENAI_PACKAGE_MODEL,
+            timeout_seconds=self._settings.OPENAI_PACKAGE_TIMEOUT_SECONDS,
+        )
+        return type(material_spec).model_validate(result)
 
     def generate_material_image(
         self,

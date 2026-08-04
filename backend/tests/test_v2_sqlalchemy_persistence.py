@@ -15,14 +15,19 @@ from app.core.exceptions import VersionConflictError
 from app.domain import models as domain_models
 from app.models import v2_entities as entities
 from app.schemas.v2_dto import (
+    CanonicalLearnerProfile,
     GeneratedMaterialDto,
     LearnerProfile,
+    LessonDesignDraftDto,
     LessonPackageDto,
     LessonSession,
     ProgressDataPointDto,
     ProgressObservation,
+    ProfileFactor,
 )
 from app.services.v2_sqlalchemy_repositories import SQLAlchemyV2Repositories
+from app.services.v2_generation_job_service import V2GenerationJobService
+from app.services.v2_repositories import V2Repositories
 
 
 def _repository(database_url: str, *, organization: str = "org-one"):
@@ -90,6 +95,47 @@ def test_crud_restart_soft_delete_scope_and_optimistic_concurrency(tmp_path):
             )
         )
         assert row is not None
+    engine.dispose()
+
+
+def test_structured_profile_factors_survive_database_restart_and_versions(tmp_path):
+    url = f"sqlite:///{tmp_path / 'structured-profile.db'}"
+    engine, factory, repository = _repository(url)
+    factor = ProfileFactor(
+        id="factor-current-interest",
+        category="current_interest",
+        label="Transit maps",
+        value="Subway maps",
+        status="confirmed_current",
+        confidence=0.98,
+        sourceEvidence="Synthetic record says subway maps are current.",
+        sourceRecordId="record-synthetic",
+        instructionalImplication="Use transit-map contexts.",
+        generationConstraints=["use_transit_context_when_instructionally_relevant"],
+    )
+    repository.learners.save(
+        LearnerProfile(
+            id="structured-learner",
+            code="S-STRUCTURED",
+            age=9,
+            normalizedProfile=CanonicalLearnerProfile(
+                learnerId="structured-learner", age=9, factors=[factor]
+            ),
+        )
+    )
+    restarted = SQLAlchemyV2Repositories(
+        factory,
+        Settings(_env_file=None, APP_ENV="test"),
+        organization_external_id="org-one",
+        user_external_id="teacher-one",
+        seed_synthetic=False,
+    )
+    stored = restarted.learners.get("structured-learner")
+    assert stored and stored.normalized_profile
+    assert stored.normalized_profile.factors == [factor]
+    assert restarted.learners.list_versions("structured-learner")[
+        0
+    ].normalized_profile.factors == [factor]
     engine.dispose()
 
 
@@ -224,6 +270,53 @@ def test_round_two_acceptance_data_survives_repository_recreation(tmp_path):
             )
             == 2
         )
+    engine.dispose()
+
+
+def test_generation_job_and_completed_package_resume_after_repository_restart(tmp_path):
+    engine, factory, repository = _repository(
+        f"sqlite:///{tmp_path / 'generation-restart.db'}"
+    )
+    repository.learners.save(V2Repositories().learners.get("a102"))
+    draft = LessonDesignDraftDto(
+        id="restart-generation-draft",
+        learnerId="a102",
+        goalText="Learner will ask for help using a short phrase.",
+        observableResponse="Asks for help using a short phrase.",
+        responseLevel="Short phrase",
+        scenarios=["Toy car stuck", "Closed box", "Missing item"],
+        selectedMaterials=["Visual Cards", "Data Sheet"],
+        theme="Vehicles",
+        duration="10 minutes",
+        customNotes="",
+    )
+    config = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        V2_REPOSITORY_MODE="sqlalchemy",
+        V2_SEED_SYNTHETIC_DATA=False,
+        AI_PROVIDER="mock",
+        GENERATION_RETRY_BASE_SECONDS=0,
+    )
+    first_job, first_package = V2GenerationJobService(
+        repository, config=config
+    ).create_or_resume(draft)
+
+    restarted = SQLAlchemyV2Repositories(
+        factory,
+        config,
+        organization_external_id="org-one",
+        user_external_id="teacher-one",
+        seed_synthetic=False,
+    )
+    second_job, second_package = V2GenerationJobService(
+        restarted, config=config
+    ).create_or_resume(draft)
+
+    assert second_job.jobId == first_job.jobId
+    assert second_package.id == first_package.id
+    assert len(restarted.generation_jobs.list()) == 1
+    assert len(restarted.lesson_packages.list()) == 1
     engine.dispose()
 
 

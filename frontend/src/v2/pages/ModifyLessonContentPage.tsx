@@ -52,6 +52,7 @@ export function ModifyLessonContentPage({ lessonPackage,onBack,onContinue,onSave
 
   if(!lessonPackage)return <section className="v2-empty"><h2>No lesson content to modify</h2><Button onClick={onBack}>Back to Package</Button></section>;
   const packageId=lessonPackage.id;
+  const packageVersion=lessonPackage.version??1;
 
   const updateField=(key:keyof DocumentFields,value:string)=>{setFields((current)=>({...current,[key]:value}));setDirty(true);};
   const updateFlow=(index:number,key:keyof TeachingStep,value:string)=>{setFlow((current)=>current.map((step,stepIndex)=>stepIndex===index?{...step,[key]:value}:step));setDirty(true);};
@@ -100,6 +101,7 @@ export function ModifyLessonContentPage({ lessonPackage,onBack,onContinue,onSave
         summaryTemplate:fields.postLessonSummary,
         teachingFlow:flow,
         documentContent:{...fields,teachingFlow:flow},
+        expectedVersion:packageVersion,
       });
       onSave(updated);setDirty(false);setSavedAt("Saved just now");onFeedback("Lesson content saved.");
       if(continueAfter)onContinue();

@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import re
+from hashlib import sha256
 
-from app.core.exceptions import NotFoundError, ValidationError, VersionConflictError
+from app.core.exceptions import (
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+    VersionConflictError,
+)
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
 from app.schemas.v2_dto import (
     AIChatState,
@@ -14,9 +20,22 @@ from app.schemas.v2_dto import (
     LessonDesignDraft,
     LessonDesignDraftDto,
     QuestionAnswerUpdate,
+    GoalDecisionValue,
+    MaterialRequestDecisionValue,
+    MaterialRequestItem,
+    PackageContentPlanActionRequest,
+    PracticeContextDecisionValue,
+    PracticeContextItem,
+    StructuredTeacherChange,
+    TeacherDecision,
+    utc_now,
 )
 from app.services.v2_learner_service import V2LearnerService
 from app.services.v2_material_blueprint_service import V2MaterialBlueprintService
+from app.services.v2_record_service import V2RecordService
+from app.services.v2_instructional_constraint_service import (
+    build_instructional_constraint_snapshot,
+)
 from app.services.v2_repositories import V2Repositories, repositories
 
 
@@ -69,19 +88,19 @@ class V2LessonChatService:
     greeting = (
         "Tell me what you want to teach today, and I’ll help turn it into a lesson kit."
     )
-    cancellation_message = (
-        "That request was canceled. Tell me the corrected teaching goal when you’re ready."
-    )
+    cancellation_message = "That request was canceled. Tell me the corrected teaching goal when you’re ready."
 
     def __init__(
         self, repos: V2Repositories = repositories, ai: V2AIProvider | None = None
     ):
         self.repos = repos
         self.learners = V2LearnerService(repos)
+        self.records = V2RecordService(repos)
         self.ai = ai or get_v2_ai_provider()
 
     def start(self, learner_id: str, *, resume_existing: bool = False) -> AIChatState:
         self.learners.get(learner_id)
+        snapshot = self._snapshot(learner_id)
         conversation_id = f"conversation-{learner_id}"
         existing = self.repos.chats.get(conversation_id)
         if resume_existing and existing is not None:
@@ -92,13 +111,15 @@ class V2LessonChatService:
             )
             draft = self._prepare_draft(existing.draft)
             self._sync_draft_from_answers(draft, questions)
-            return existing.model_copy(
-                update={
-                    "questions": questions,
-                    "draft": draft,
-                    "can_generate": bool(questions)
-                    and all(self._answered(item) for item in questions),
-                }
+            return self._with_stale_state(
+                existing.model_copy(
+                    update={
+                        "questions": questions,
+                        "draft": draft,
+                        "can_generate": bool(questions)
+                        and all(self._answered(item) for item in questions),
+                    }
+                )
             )
         draft_version = existing.draft.version if existing is not None else 1
         chat = AIChatState(
@@ -115,6 +136,8 @@ class V2LessonChatService:
             draft=LessonDesignDraft(
                 id=f"draft-{learner_id}",
                 learner_id=learner_id,
+                profile_revision=snapshot.profile_revision,
+                instructional_constraint_snapshot=snapshot,
                 version=draft_version,
             ),
             can_generate=False,
@@ -147,7 +170,22 @@ class V2LessonChatService:
         generation_metadata = None
         if not initial.questions:
             learner = self.learners.get(initial.learner_id)
-            questions, draft = self.ai.generate_lesson_questions(learner, clean)
+            snapshot = self._snapshot(initial.learner_id)
+            catalog = [
+                item.display_name
+                for item in V2MaterialBlueprintService.CATALOG.values()
+            ]
+            questions, draft = self.ai.generate_lesson_questions_with_snapshot(
+                learner, clean, snapshot, catalog
+            )
+            draft = draft.model_copy(
+                update={
+                    "profile_revision": snapshot.profile_revision,
+                    "instructional_constraint_snapshot": snapshot,
+                    "profile_stale": False,
+                    "profile_stale_message": "",
+                }
+            )
             generated = (questions, draft)
             generation_metadata = getattr(self.ai, "last_generation_metadata", None)
 
@@ -199,18 +237,23 @@ class V2LessonChatService:
                 },
                 deep=True,
             )
+            draft.supplemental_suggestions = [
+                item for item in questions if item.field not in self.core_question_fields
+            ]
             chat.questions = self._prepare_questions(
                 questions,
                 require_fresh_confirmation=True,
                 draft=draft,
             )
             chat.draft = self._prepare_draft(draft)
+            chat.draft.teacher_request = clean
             # The material bundle is an AI recommendation that the teacher can
             # remove from, not an empty form the teacher must build.  Apply the
             # preselected complete bundle to the draft before it is persisted.
             for question in chat.questions:
                 if question.field == "selectedMaterials":
                     self._apply_answer(chat.draft, question)
+                    self._record_decision(chat.draft, question, ai_default=True)
             if generation_metadata is not None:
                 chat.generation_status = generation_metadata.status
                 chat.generation_metadata = GenerationMetadataDto.model_validate(
@@ -227,10 +270,10 @@ class V2LessonChatService:
                 draft=chat.draft,
             )
             chat.draft = self._prepare_draft(chat.draft)
-            chat.draft.custom_notes = " ".join(
-                filter(None, [chat.draft.custom_notes, clean])
-            )
-            response = "Thanks. I’ve kept your choices and added that note."
+            change = self._parse_follow_up(clean)
+            chat.draft.structured_changes.append(change)
+            self._apply_structured_change(chat.draft, change)
+            response = "Thanks. I’ve kept your choices and recorded that structured change."
         chat.messages.append(
             AIMessage(
                 id=self.repos.next_id("message"), role="assistant", content=response
@@ -251,8 +294,7 @@ class V2LessonChatService:
     @classmethod
     def _request_was_cancelled(cls, chat: AIChatState) -> bool:
         return any(
-            message.role == "assistant"
-            and message.content == cls.cancellation_message
+            message.role == "assistant" and message.content == cls.cancellation_message
             for message in chat.messages
         )
 
@@ -311,8 +353,18 @@ class V2LessonChatService:
     def update_answer(
         self, conversation_id: str, question_id: str, payload: QuestionAnswerUpdate
     ) -> AIChatState:
-        for attempt in range(2):
+        for attempt in range(1 if payload.expected_draft_version is not None else 2):
             chat = self._get(conversation_id)
+            if (
+                payload.expected_draft_version is not None
+                and chat.draft.version != payload.expected_draft_version
+            ):
+                raise VersionConflictError(
+                    "The lesson decisions changed after this page was loaded. Refresh before saving."
+                )
+            chat = self._with_stale_state(chat)
+            if chat.draft.profile_stale:
+                raise ConflictError(chat.draft.profile_stale_message)
             chat.questions = self._prepare_questions(
                 chat.questions,
                 require_fresh_confirmation=False,
@@ -349,32 +401,65 @@ class V2LessonChatService:
             selected = selected[-1:]
         elif question.max_selections is not None:
             selected = selected[: question.max_selections]
-        question.options = [
-            option for option in question.options if option.source != "teacher_custom"
-        ]
+        if question.input_type == "single_select" or question.max_selections == 1:
+            question.options = [
+                option for option in question.options if option.source != "teacher_custom"
+            ]
         question.custom_answer = payload.custom_answer.strip()
         if question.custom_answer:
-            custom_id = f"custom-{question.id}"
-            question.options.append(
-                AIQuestionOption(
+            custom_id = (
+                f"custom-{question.id}-{sha256(question.custom_answer.encode('utf-8')).hexdigest()[:10]}"
+                if question.input_type != "single_select" and question.max_selections != 1
+                else f"custom-{question.id}"
+            )
+            custom_option = AIQuestionOption(
                     id=custom_id,
                     label=question.custom_answer,
                     value=question.custom_answer,
                     icon="✎",
                     source="teacher_custom",
+                    decision_field=self._decision_field(question.field),
+                    reason="Teacher-authored value; preserve verbatim.",
+                    profile_factor_ids=(
+                        list(chat.draft.instructional_constraint_snapshot.profile_factor_ids)
+                        if chat.draft.instructional_constraint_snapshot else []
+                    ),
+                    affects=self._default_affects(question.field),
+                    suggestion_status=(
+                        "optional" if payload.save_unsupported_for_future
+                        else "blocked" if question.field == "selectedMaterials"
+                        else "requires_confirmation"
+                    ),
+                    supported=question.field != "selectedMaterials",
+                    unsupported_reason=(
+                        "This custom material type is not currently supported. Change it or select a supported equivalent; it will not be remapped."
+                        if question.field == "selectedMaterials" else None
+                    ),
+                    saved_for_future=(
+                        question.field == "selectedMaterials"
+                        and payload.save_unsupported_for_future
+                    ),
                 )
-            )
+            question.options = [option for option in question.options if option.id != custom_id]
+            question.options.append(custom_option)
             selected = (
                 [custom_id]
                 if question.input_type == "single_select"
                 or question.max_selections == 1
-                else [*selected, custom_id]
+                else list(dict.fromkeys([*selected, custom_id]))
             )
         question.selected_option_ids = selected
         self._apply_answer(chat.draft, question)
+        self._record_decision(chat.draft, question)
+        # Any changed core answer invalidates the derived completeness plan.
+        # The concise teacher selections remain intact and can be previewed again.
+        chat.draft.package_content_plan = None
         if question.field == "customNotes":
             self._apply_custom_notes(chat.draft, chat.questions)
-        chat.can_generate = all(self._answered(item) for item in chat.questions)
+        chat.can_generate = all(self._answered(item) for item in chat.questions) and not any(
+            option.id in question.selected_option_ids and not option.supported and not option.saved_for_future
+            for question in chat.questions for option in question.options
+        )
         return self.repos.chats.save(chat)
 
     def update_answer_dto(
@@ -384,6 +469,50 @@ class V2LessonChatService:
         payload: QuestionAnswerUpdate,
     ) -> AIChatStateDto:
         return self.to_dto(self.update_answer(conversation_id, question_id, payload))
+
+    def preview_package_content_plan(
+        self, conversation_id: str, expected_version: int
+    ) -> AIChatStateDto:
+        chat = self._get(conversation_id)
+        if chat.draft.version != expected_version:
+            raise VersionConflictError(
+                "The lesson decisions changed after this page was loaded. Refresh before planning package contents."
+            )
+        if not chat.can_generate:
+            raise ConflictError("Confirm the three lesson suggestions before previewing package contents")
+        from app.services.v2_lesson_package_service import V2LessonPackageService
+
+        draft = LessonDesignDraftDto.model_validate(
+            chat.draft.model_dump(mode="json", by_alias=True)
+        )
+        plan = V2LessonPackageService(self.repos).preview_content_plan(draft)
+        chat.draft.package_content_plan = plan
+        return self.to_dto(self.repos.chats.save(chat))
+
+    def adjust_package_content_plan(
+        self, conversation_id: str, payload: PackageContentPlanActionRequest
+    ) -> AIChatStateDto:
+        chat = self._get(conversation_id)
+        if chat.draft.version != payload.expected_draft_version:
+            raise VersionConflictError(
+                "The package preview changed after this page was loaded. Refresh before editing it."
+            )
+        if chat.draft.package_content_plan is None:
+            raise ConflictError("Preview package contents before changing the plan")
+        from app.services.v2_lesson_package_service import V2LessonPackageService
+        from app.services.v2_package_content_plan_service import V2PackageContentPlanService
+
+        plan = V2PackageContentPlanService().adjust(
+            chat.draft.package_content_plan,
+            action=payload.action,
+            material_type=payload.material_type,
+            included=payload.included,
+        )
+        draft = LessonDesignDraftDto.model_validate(
+            chat.draft.model_dump(mode="json", by_alias=True)
+        )
+        chat.draft.package_content_plan = V2LessonPackageService(self.repos).validate_content_plan(draft, plan)
+        return self.to_dto(self.repos.chats.save(chat))
 
     def clear(self, conversation_id: str) -> AIChatState:
         chat = self._get(conversation_id)
@@ -441,13 +570,88 @@ class V2LessonChatService:
         return self.to_dto(self.cancel_request(conversation_id))
 
     def get(self, conversation_id: str) -> AIChatState:
-        return self._get(conversation_id)
+        return self._with_stale_state(self._get(conversation_id))
+
+    def refresh_recommendations(self, conversation_id: str, expected_version: int) -> AIChatState:
+        chat = self._get(conversation_id)
+        if chat.draft.version != expected_version:
+            raise VersionConflictError(
+                "The lesson decisions changed after this page was loaded. Refresh before updating recommendations."
+            )
+        request = chat.draft.teacher_request.strip()
+        if not request:
+            raise ValidationError("The original teacher request is unavailable")
+        snapshot = self._snapshot(chat.learner_id)
+        learner = self.learners.get(chat.learner_id)
+        catalog = [item.display_name for item in V2MaterialBlueprintService.CATALOG.values()]
+        generated, _ = self.ai.generate_lesson_questions_with_snapshot(
+            learner, request, snapshot, catalog
+        )
+        refreshed = self._prepare_questions(
+            generated, require_fresh_confirmation=True, draft=chat.draft
+        )
+        old_by_field = {item.field: item for item in chat.questions}
+        merged: list[AIQuestion] = []
+        for question in refreshed:
+            old = old_by_field.get(question.field)
+            if old is None:
+                merged.append(question)
+                continue
+            custom = [option for option in old.options if option.source == "teacher_custom"]
+            options = [*question.options, *custom]
+            available = {option.id for option in options}
+            merged.append(question.model_copy(update={
+                "options": options,
+                "selected_option_ids": [item for item in old.selected_option_ids if item in available],
+                "custom_answer": old.custom_answer,
+            }))
+        chat.questions = merged
+        chat.draft = chat.draft.model_copy(update={
+            "profile_revision": snapshot.profile_revision,
+            "instructional_constraint_snapshot": snapshot,
+            "profile_stale": False,
+            "profile_stale_message": "",
+        })
+        self._sync_draft_from_answers(chat.draft, chat.questions)
+        chat.can_generate = all(self._answered(item) for item in chat.questions) and not any(
+            option.id in question.selected_option_ids and not option.supported and not option.saved_for_future
+            for question in chat.questions for option in question.options
+        )
+        return self.repos.chats.save(chat)
 
     def _get(self, conversation_id: str) -> AIChatState:
         chat = self.repos.chats.get(conversation_id)
         if not chat:
             raise NotFoundError("Lesson chat not found")
         return chat
+
+    def _snapshot(self, learner_id: str):
+        learner = self.learners.get(learner_id)
+        return build_instructional_constraint_snapshot(
+            learner, self.records.list_for_learner(learner_id)
+        )
+
+    def _with_stale_state(self, chat: AIChatState) -> AIChatState:
+        latest = self._snapshot(chat.learner_id)
+        stale = (
+            bool(chat.draft.profile_revision)
+            and chat.draft.profile_revision != latest.profile_revision
+        )
+        return chat.model_copy(
+            update={
+                "can_generate": False if stale else chat.can_generate,
+                "draft": chat.draft.model_copy(
+                    update={
+                        "profile_stale": stale,
+                        "profile_stale_message": (
+                            "Learner information changed. Refresh suggestions to use the latest profile without losing prior decisions."
+                            if stale
+                            else ""
+                        ),
+                    }
+                ),
+            }
+        )
 
     @staticmethod
     def to_dto(chat: AIChatState) -> AIChatStateDto:
@@ -516,11 +720,16 @@ class V2LessonChatService:
                 maxSelections=1,
             )
         if field == "scenarios":
-            labels = list(dict.fromkeys((draft.scenarios if draft else []) or [
-                "One-to-one teaching",
-                "Small-group lesson",
-                "A familiar daily routine",
-            ]))[:3]
+            labels = list(
+                dict.fromkeys(
+                    (draft.scenarios if draft else [])
+                    or [
+                        "One-to-one teaching",
+                        "Small-group lesson",
+                        "A familiar daily routine",
+                    ]
+                )
+            )[:3]
             return AIQuestion(
                 id="scenarios",
                 prompt="Where will the learner practice?",
@@ -540,7 +749,7 @@ class V2LessonChatService:
                     f"scenario-{index + 1}" for index in range(min(2, len(labels)))
                 ],
                 allowCustomAnswer=True,
-                maxSelections=2,
+                maxSelections=3,
             )
         return AIQuestion(
             id="selectedMaterials",
@@ -561,6 +770,26 @@ class V2LessonChatService:
     ) -> AIQuestion:
         if question.field == "selectedMaterials":
             material_options = cls._material_options_for_draft(draft)
+            known_ids = {option.id for option in material_options}
+            known_material_keys = {cls._material_key(option.value) for option in material_options}
+            preserved_custom = [
+                (
+                    option if option.source == "teacher_custom" else option.model_copy(update={
+                        "supported": False,
+                        "unsupported_reason": "This provider material is outside the supported catalog and will not be remapped.",
+                        "suggestion_status": "blocked",
+                    })
+                ) for option in question.options
+                if option.source == "teacher_custom" or (
+                    option.id not in known_ids
+                    and cls._material_key(option.value) not in known_material_keys
+                )
+            ]
+            material_options = [*material_options, *preserved_custom]
+            selected = [
+                item for item in question.selected_option_ids
+                if item in {option.id for option in material_options}
+            ]
             return question.model_copy(
                 update={
                     "prompt": "Which pages should AI generate?",
@@ -573,18 +802,11 @@ class V2LessonChatService:
                     # remove any page, but never has to discover and select five
                     # separate components just to get a usable package.
                     "selected_option_ids": (
-                        [option.id for option in material_options]
+                        [option.id for option in material_options if option.source != "teacher_custom" and option.supported]
                         if require_fresh_confirmation
-                        else (
-                            [
-                                item
-                                for item in question.selected_option_ids
-                                if item in {option.id for option in material_options}
-                            ]
-                            or [option.id for option in material_options]
-                        )
+                        else selected
                     ),
-                    "custom_answer": "",
+                    "custom_answer": question.custom_answer,
                     "allow_custom_answer": True,
                     "required": True,
                     "max_selections": None,
@@ -595,6 +817,8 @@ class V2LessonChatService:
         selected_ids = set(question.selected_option_ids)
         for option in question.options:
             if option.source == "teacher_custom":
+                if question.input_type != "single_select" and question.max_selections != 1:
+                    options.append(option)
                 continue
             normalized = option.label.casefold()
             if "full physical" in normalized or "hand-over-hand" in normalized:
@@ -605,6 +829,16 @@ class V2LessonChatService:
                     update={
                         "source": "ai_generated",
                         "recommended": bool(option.recommended),
+                        "decision_field": cls._decision_field(question.field),
+                        "reason": option.reason or option.description,
+                        "profile_factor_ids": option.profile_factor_ids or (
+                            list(draft.instructional_constraint_snapshot.profile_factor_ids)
+                            if draft and draft.instructional_constraint_snapshot else []
+                        ),
+                        "affects": option.affects or cls._default_affects(question.field),
+                        "suggestion_status": (
+                            "recommended" if option.recommended else "optional"
+                        ),
                     }
                 )
             )
@@ -621,20 +855,32 @@ class V2LessonChatService:
                     description="AI suggestion — teacher confirmation required.",
                     icon="✦",
                     recommended=True,
+                    decision_field=cls._decision_field(question.field),
+                    reason="AI interpretation of the teacher request; confirmation required.",
+                    affects=cls._default_affects(question.field),
+                    suggestion_status="requires_confirmation",
                 ),
             )
             custom_answer = ""
         elif custom_answer:
-            options.append(
-                AIQuestionOption(
-                    id=f"custom-{question.id}",
+            custom_id = (
+                f"custom-{question.id}-{sha256(custom_answer.encode('utf-8')).hexdigest()[:10]}"
+                if question.input_type != "single_select" and question.max_selections != 1
+                else f"custom-{question.id}"
+            )
+            if custom_id not in {item.id for item in options}:
+                options.append(AIQuestionOption(
+                    id=custom_id,
                     label=custom_answer,
                     value=custom_answer,
                     description="Teacher-authored answer.",
                     icon="✎",
                     source="teacher_custom",
-                )
-            )
+                    decision_field=cls._decision_field(question.field),
+                    reason="Teacher-authored value; preserve verbatim.",
+                    affects=cls._default_affects(question.field),
+                    suggestion_status="requires_confirmation",
+                ))
 
         prompt_by_field = {
             "goalText": "What should the learner practice?",
@@ -642,14 +888,14 @@ class V2LessonChatService:
         }
         helper_by_field = {
             "goalText": "Choose the AI suggestion or write a short goal.",
-            "scenarios": "Pick one or two familiar situations.",
+            "scenarios": "Pick up to three familiar situations.",
         }
         if question.field == "goalText":
             input_type = "hybrid"
             max_selections = 1
         elif question.field == "scenarios":
             input_type = "multi_select"
-            max_selections = 2
+            max_selections = 3
         else:
             input_type = question.input_type
             max_selections = question.max_selections
@@ -662,7 +908,7 @@ class V2LessonChatService:
                     "Review the suggestion and confirm or edit it.",
                 ),
                 "input_type": input_type,
-                "options": options[:4],
+                "options": options[:4] if question.field == "goalText" else options[:6],
                 "selected_option_ids": (
                     [] if require_fresh_confirmation else list(selected_ids)
                 ),
@@ -676,7 +922,10 @@ class V2LessonChatService:
         cls, draft: LessonDesignDraft | None
     ) -> list[AIQuestionOption]:
         if draft is None or not draft.goal_text.strip():
-            return [option.model_copy(deep=True) for option in cls.printable_material_options]
+            return [
+                option.model_copy(deep=True)
+                for option in cls.printable_material_options
+            ]
         try:
             recommended = V2MaterialBlueprintService.recommended_bundle(
                 LessonDesignDraftDto.model_validate(
@@ -684,7 +933,10 @@ class V2LessonChatService:
                 )
             )
         except Exception:
-            return [option.model_copy(deep=True) for option in cls.printable_material_options]
+            return [
+                option.model_copy(deep=True)
+                for option in cls.printable_material_options
+            ]
         icons = {
             "quantity_cards": "①",
             "matching_page": "↔",
@@ -719,19 +971,36 @@ class V2LessonChatService:
                 continue
             options.append(
                 AIQuestionOption(
-                    id=option_ids.get(
-                        material_type, material_type.replace("_", "-")
-                    ),
+                    id=option_ids.get(material_type, material_type.replace("_", "-")),
                     label=blueprint.display_name,
                     value=blueprint.display_name,
                     description=blueprint.instructional_purpose,
                     icon=icons.get(material_type, "▧"),
                     recommended=True,
+                    decision_field="material_requests",
+                    reason=blueprint.instructional_purpose,
+                    profile_factor_ids=(
+                        list(draft.instructional_constraint_snapshot.profile_factor_ids)
+                        if draft and draft.instructional_constraint_snapshot else []
+                    ),
+                    affects=[material_type],
+                    suggestion_status="recommended",
                 )
             )
         return options or [
             option.model_copy(deep=True) for option in cls.printable_material_options
         ]
+
+    @staticmethod
+    def _material_key(value: str) -> str:
+        normalized = " ".join(value.replace("–", " ").replace("-", " ").replace("_", " ").casefold().split())
+        if "summary" in normalized:
+            return "summary_template"
+        if "reinforcement" in normalized or "token" in normalized:
+            return "token_board"
+        if "visual" in normalized and "card" in normalized:
+            return "visual_card"
+        return normalized.replace(" ", "_")
 
     @staticmethod
     def _prepare_draft(draft: LessonDesignDraft) -> LessonDesignDraft:
@@ -851,6 +1120,156 @@ class V2LessonChatService:
         for question in questions:
             if cls._answered(question):
                 cls._apply_answer(draft, question)
+
+    @staticmethod
+    def _decision_field(field: str):
+        return {
+            "goalText": "goal",
+            "scenarios": "practice_contexts",
+            "selectedMaterials": "material_requests",
+        }.get(field)
+
+    @staticmethod
+    def _default_affects(field: str) -> list[str]:
+        return {
+            "goalText": ["lesson", "teaching_flow", "data_sheet", "materials"],
+            "scenarios": ["lesson", "scenario_cards", "generalization_plan"],
+            "selectedMaterials": ["materials", "printable_package"],
+        }.get(field, ["lesson"])
+
+    @classmethod
+    def _record_decision(
+        cls, draft: LessonDesignDraft, question: AIQuestion, *, ai_default: bool = False
+    ) -> None:
+        field = cls._decision_field(question.field)
+        if field is None:
+            return
+        selected = [
+            option for option in question.options
+            if option.id in question.selected_option_ids
+        ]
+        prior = next((item for item in draft.decisions if item.field == field), None)
+        has_custom = any(item.source == "teacher_custom" for item in selected)
+        source = (
+            "ai_recommended" if ai_default
+            else "teacher_edited" if has_custom and prior is not None
+            else "teacher_authored" if has_custom
+            else "teacher_selected"
+        )
+        factor_ids = list(dict.fromkeys(
+            factor_id for option in selected for factor_id in option.profile_factor_ids
+        ))
+        affects = list(dict.fromkeys(
+            affected for option in selected for affected in (option.affects or cls._default_affects(question.field))
+        ))
+        reasons = [option.reason for option in selected if option.reason]
+        assumptions = list(dict.fromkeys(
+            assumption for option in selected for assumption in option.assumptions
+        ))
+        values = [option.value for option in selected]
+        if field == "goal":
+            text = values[0] if values else question.custom_answer
+            value = GoalDecisionValue(
+                teacherRequest=draft.teacher_request,
+                interpretedGoal=text,
+                observableBehavior=text,
+                conditions=(draft.scenarios[0] if draft.scenarios else "Teacher-confirmed practice contexts"),
+                successCriterion=f"Across {draft.opportunities} planned opportunities",
+                acceptedResponseModes=(
+                    draft.instructional_constraint_snapshot.communication.accepted_modes
+                    if draft.instructional_constraint_snapshot else []
+                ),
+                baselineAssumptions=[draft.baseline] if draft.baseline else [],
+            )
+        elif field == "practice_contexts":
+            value = PracticeContextDecisionValue(
+                contexts=[cls._context_item(option) for option in selected]
+            )
+        else:
+            value = MaterialRequestDecisionValue(
+                materials=[
+                    MaterialRequestItem(
+                        requestId=option.id,
+                        materialType=(option.id.replace("-", "_") if option.supported else "unsupported_custom"),
+                        customLabel=option.value if option.source == "teacher_custom" else None,
+                        purpose=option.description or option.reason,
+                        profileFactorIds=option.profile_factor_ids,
+                        supported=option.supported,
+                        unsupportedReason=option.unsupported_reason,
+                        required=not option.saved_for_future,
+                        origin=("future_unsupported" if option.saved_for_future else "newly_generated"),
+                    )
+                    for option in selected
+                ]
+            )
+        decision = TeacherDecision(
+            id=prior.id if prior else f"decision-{draft.id}-{field}",
+            field=field,
+            source=source,
+            optionIds=[option.id for option in selected],
+            profileFactorIds=factor_ids,
+            value=value,
+            reason=" ".join(reasons),
+            affects=affects or cls._default_affects(question.field),
+            assumptions=assumptions,
+            confirmedAt=utc_now(),
+            revision=(prior.revision + 1 if prior else 1),
+        )
+        draft.decisions = [item for item in draft.decisions if item.field != field] + [decision]
+
+    @staticmethod
+    def _context_item(option: AIQuestionOption) -> PracticeContextItem:
+        label = option.value
+        match = re.split(r"\s+(?:to|→)\s+", label, maxsplit=1, flags=re.IGNORECASE)
+        return PracticeContextItem(
+            id=option.id,
+            label=label,
+            setting=label,
+            transitionFrom=match[0] if len(match) == 2 else "",
+            transitionTo=match[1] if len(match) == 2 else "",
+            generalizationDimension="activity" if len(match) == 2 else "setting",
+        )
+
+    def _parse_follow_up(self, message: str) -> StructuredTeacherChange:
+        lower = message.casefold()
+        rules = [
+            ("duration_change", ("minute", "duration", "longer", "shorter")),
+            ("reinforcement_change", ("reinfor", "reward", "token")),
+            ("prompting_change", ("prompt", "wait time", "cue")),
+            ("material_change", ("material", "card", "board", "sheet", "timer")),
+            ("context_change", ("context", "setting", "transition", "cleanup", "activity")),
+            ("goal_clarification", ("goal", "criterion", "response", "independent")),
+        ]
+        change_type = next(
+            (name for name, terms in rules if any(term in lower for term in terms)),
+            "general_note",
+        )
+        return StructuredTeacherChange(
+            id=self.repos.next_id("teacher-change"),
+            changeType=change_type,
+            originalMessage=message,
+            value=message,
+        )
+
+    @staticmethod
+    def _apply_structured_change(draft: LessonDesignDraft, change: StructuredTeacherChange) -> None:
+        if change.change_type == "duration_change":
+            draft.duration = change.value
+        elif change.change_type == "reinforcement_change":
+            draft.reinforcement_plan = change.value
+        elif change.change_type == "prompting_change":
+            draft.prompting_start = change.value
+        elif change.change_type == "goal_clarification":
+            draft.goal_text = change.value
+            draft.observable_response = change.value
+        elif change.change_type == "context_change":
+            draft.scenarios = [change.value]
+        elif change.change_type == "material_change":
+            # Preserve the teacher text for review; unsupported material names are
+            # never converted into a supported generic material here.
+            draft.teacher_constraints = change.value
+        else:
+            draft.custom_notes = " ".join(filter(None, [draft.custom_notes, change.value]))
 
     @staticmethod
     def _apply_custom_notes(

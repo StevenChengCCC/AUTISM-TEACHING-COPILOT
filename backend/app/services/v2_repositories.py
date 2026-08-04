@@ -9,17 +9,23 @@ from typing import Generic, TypeVar
 
 from app.schemas.v2_dto import (
     AIChatState,
+    CanonicalLearnerProfile,
     GeneratedMaterial,
+    GenerationJobDto,
     ImageAssetDto,
     LearnerProfile,
     LearnerRecord,
     LessonPackage,
     LessonSession,
     MaterialLibraryItem,
+    NextSessionRecommendationDto,
+    NextSessionMaterialImpactPlanDto,
     LearnerProgressSummaryDto,
     ProgressDataPointDto,
     ProgressObservation,
+    SessionOutcomeDto,
     ProgressSignalDto,
+    ProfileFactor,
     RecentLessonDto,
 )
 
@@ -127,6 +133,31 @@ class MaterialRepository(InMemoryV2Repository[GeneratedMaterial]):
             if getattr(item, "package_id", getattr(item, "packageId", None))
             == package_id
         ]
+
+
+class ConversationRepository(InMemoryV2Repository[AIChatState]):
+    """In-memory aggregate repository with SQL-equivalent draft concurrency."""
+
+    def save(self, item: AIChatState) -> AIChatState:
+        with self._lock:
+            existing = self._items.get(item.conversation_id)
+            if existing is not None:
+                if item.draft.version != existing.draft.version:
+                    from app.core.exceptions import VersionConflictError
+
+                    raise VersionConflictError(
+                        "The lesson draft changed after it was loaded. Refresh and try again."
+                    )
+                item = item.model_copy(
+                    update={
+                        "draft": item.draft.model_copy(
+                            update={"version": existing.draft.version + 1}, deep=True
+                        )
+                    },
+                    deep=True,
+                )
+            self._items[item.conversation_id] = deepcopy(item)
+            return deepcopy(item)
 
 
 class ProgressRepository:
@@ -265,6 +296,54 @@ class V2Repositories:
 
     def __init__(self):
         self.audit_events: list[dict] = []
+
+        def seed_profile(learner_id, age, interests, communication, reinforcers):
+            factors = []
+            for index, value in enumerate(interests):
+                factors.append(
+                    ProfileFactor(
+                        id=f"seed-{learner_id}-interest-{index}",
+                        category="current_interest",
+                        label="Current interest",
+                        value=value,
+                        status="confirmed_current",
+                        confidence=1,
+                        sourceEvidence="Synthetic demo profile.",
+                        instructionalImplication="Use only when relevant.",
+                        teacherReviewed=True,
+                    )
+                )
+            factors.append(
+                ProfileFactor(
+                    id=f"seed-{learner_id}-communication",
+                    category="communication",
+                    label="Communication access",
+                    value=communication,
+                    status="confirmed_current",
+                    confidence=1,
+                    sourceEvidence="Synthetic demo profile.",
+                    instructionalImplication="Accept established communication modes.",
+                    teacherReviewed=True,
+                )
+            )
+            for index, value in enumerate(reinforcers):
+                factors.append(
+                    ProfileFactor(
+                        id=f"seed-{learner_id}-reinforcer-{index}",
+                        category="reinforcement",
+                        label="Effective reinforcer",
+                        value=value,
+                        status="confirmed_current",
+                        confidence=1,
+                        sourceEvidence="Synthetic demo profile.",
+                        instructionalImplication="Offer as a confirmed engagement support.",
+                        teacherReviewed=True,
+                    )
+                )
+            return CanonicalLearnerProfile(
+                learnerId=learner_id, age=age, factors=factors
+            )
+
         learners = [
             LearnerProfile(
                 id="a102",
@@ -290,6 +369,13 @@ class V2Repositories:
                 ],
                 current_goals=["Requesting help"],
                 activity_duration_preference="Short 10–12 minute activities",
+                normalizedProfile=seed_profile(
+                    "a102",
+                    7,
+                    ["Vehicles", "Puzzles", "Toy garage", "Bubbles"],
+                    "Short phrases and picture support",
+                    ["Token board", "Car play", "Praise"],
+                ),
                 profile_review_status="confirmed",
             ),
             LearnerProfile(
@@ -306,6 +392,13 @@ class V2Repositories:
                 notes="Current focus is requesting a break using AAC with consistent modeling and wait time.",
                 prompting_preferences=["AAC model", "Wait before prompting"],
                 current_goals=["Requesting a break"],
+                normalizedProfile=seed_profile(
+                    "b214",
+                    9,
+                    ["Music", "Animals", "Movement breaks"],
+                    "AAC device, gestures, and modeled language",
+                    ["Music break", "Movement break", "Praise"],
+                ),
                 profile_review_status="confirmed",
             ),
             LearnerProfile(
@@ -330,6 +423,13 @@ class V2Repositories:
                 notes="Current focus is identifying emotions through simple matching and visual choices.",
                 prompting_preferences=["Visual choices", "Model then wait"],
                 current_goals=["Identifying emotions"],
+                normalizedProfile=seed_profile(
+                    "c087",
+                    6,
+                    ["Emotion cards", "Matching games", "Building blocks"],
+                    "Single words, pointing, and picture choices",
+                    ["Movement break", "Specific praise", "Choice time"],
+                ),
                 profile_review_status="confirmed",
             ),
             LearnerProfile(
@@ -738,7 +838,7 @@ class V2Repositories:
         ]
         self.learners = InMemoryV2Repository[LearnerProfile](learners)
         self.records = RecordRepository(records)
-        self.conversations = InMemoryV2Repository[AIChatState](
+        self.conversations = ConversationRepository(
             key_field="conversation_id"
         )
         self.chats = self.conversations
@@ -749,7 +849,13 @@ class V2Repositories:
         self.materials_library = InMemoryV2Repository[MaterialLibraryItem](library)
         self.library = self.materials_library
         self.image_assets = InMemoryV2Repository[ImageAssetDto](_seed_image_assets())
+        self.generation_jobs = InMemoryV2Repository[GenerationJobDto](
+            key_field="jobId"
+        )
         self.sessions = InMemoryV2Repository[LessonSession](sessions)
+        self.session_outcomes = InMemoryV2Repository[SessionOutcomeDto]()
+        self.next_session_recommendations = InMemoryV2Repository[NextSessionRecommendationDto]()
+        self.next_session_impact_plans = InMemoryV2Repository[NextSessionMaterialImpactPlanDto]()
         self.export_jobs = InMemoryV2Repository(key_field="exportId")
         self.recent_lessons = InMemoryV2Repository[RecentLessonDto](recent_lessons)
         self.progress_summaries = InMemoryV2Repository[LearnerProgressSummaryDto](

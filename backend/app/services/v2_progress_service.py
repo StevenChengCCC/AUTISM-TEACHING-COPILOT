@@ -1,4 +1,3 @@
-from statistics import mean, pstdev
 from datetime import datetime, timezone
 
 from app.core.exceptions import ValidationError
@@ -36,21 +35,22 @@ class V2ProgressService:
                 strengths=[],
                 support_priorities=["Collect observations across several sessions"],
             )
-        composite = [
-            (
-                item.independence_level
-                + item.engagement_level
-                + item.regulation_level
-                + (4 - item.prompt_level)
-            )
-            / 4
-            for item in items
-        ]
         if len(items) < 3:
             trend = "insufficient_data"
-        elif pstdev(composite) > 0.8:
+        elif any(
+            max(values) - min(values) >= 3
+            for values in (
+                [item.independence_level for item in items],
+                [item.prompt_level for item in items],
+                [item.engagement_level for item in items],
+                [item.regulation_level for item in items],
+            )
+        ):
             trend = "variable"
-        elif mean(composite[-2:]) > mean(composite[:2]) + 0.4:
+        elif (
+            items[-1].independence_level > items[0].independence_level
+            or items[-1].prompt_level < items[0].prompt_level
+        ):
             trend = "emerging"
         else:
             trend = "steady"
