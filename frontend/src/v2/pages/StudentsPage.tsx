@@ -5,6 +5,7 @@ import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
 import { LearnerAvatar } from "../components/Avatar";
 import { GoalProgressPanel } from "../components/GoalProgressPanel";
+import { paginateLearners } from "../learnerListModel";
 import type { LearnerProfile, LearnerRecord, RecentLesson } from "../types";
 
 const filters = ["All", "Visual support", "AAC", "Communication", "Attention", "New"];
@@ -24,19 +25,12 @@ export function StudentsPage({
   const [selectedId, setSelectedId] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    void lessonKitApi.getLearners().then(async (items) => {
+    void lessonKitApi.getLearners().then((items) => {
       setLearners(items);
       setSelectedId((current) => current || items[0]?.id || "");
-      const pairs = await Promise.all(items.map(async (item) => {
-        try {
-          return [item.id, await lessonKitApi.getRecordsForLearner(item.id)] as const;
-        } catch {
-          return [item.id, []] as const;
-        }
-      }));
-      setRecords(Object.fromEntries(pairs));
     }).catch((error) => {
       onFeedback(error instanceof Error ? error.message : "Learners could not be loaded.");
     });
@@ -44,9 +38,13 @@ export function StudentsPage({
 
   useEffect(() => {
     if (!selectedId) return;
-    void lessonKitApi.getRecentLessonsForLearner(selectedId)
-      .then(setLessons)
-      .catch(() => setLessons([]));
+    void Promise.all([
+      lessonKitApi.getRecordsForLearner(selectedId).catch(() => []),
+      lessonKitApi.getRecentLessonsForLearner(selectedId).catch(() => []),
+    ]).then(([recordItems, lessonItems]) => {
+      setRecords((current) => ({ ...current, [selectedId]: recordItems }));
+      setLessons(lessonItems);
+    });
   }, [selectedId]);
 
   const filtered = useMemo(() => learners.filter((item) => {
@@ -60,6 +58,14 @@ export function StudentsPage({
           : terms.includes(filter.toLowerCase()));
     return matchesSearch && matchesFilter;
   }), [learners, query, filter]);
+  const learnerPage = useMemo(() => paginateLearners(filtered, page), [filtered, page]);
+  useEffect(() => { setPage(1); }, [query, filter]);
+  useEffect(() => {
+    if (page !== learnerPage.page) setPage(learnerPage.page);
+    if (learnerPage.items.length && !learnerPage.items.some((item) => item.id === selectedId)) {
+      setSelectedId(learnerPage.items[0].id);
+    }
+  }, [learnerPage, page, selectedId]);
   const selected = learners.find((item) => item.id === selectedId) ?? learners[0];
 
   return (
@@ -83,7 +89,7 @@ export function StudentsPage({
             ))}
           </div>
           <div className="v2-student-list">
-            {filtered.map((learner) => (
+            {learnerPage.items.map((learner) => (
               <button className={selected?.id === learner.id ? "is-selected" : ""} key={learner.id} onClick={() => setSelectedId(learner.id)}>
                 <LearnerAvatar learnerId={learner.id} avatar={learner.avatar} alt="" size={62} />
                 <div>
@@ -97,6 +103,13 @@ export function StudentsPage({
                 <small>▤ {records[learner.id]?.length ?? 0} records<br />◷ {learner.profileReviewStatus === "confirmed" ? "Profile current" : "Review needed"}</small>
               </button>
             ))}
+          </div>
+          <div className="v2-student-pagination" aria-label="Learner list pages">
+            <span>{learnerPage.total} learner{learnerPage.total === 1 ? "" : "s"} · Page {learnerPage.page} of {learnerPage.pageCount}</span>
+            <div>
+              <button type="button" disabled={learnerPage.page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button>
+              <button type="button" disabled={learnerPage.page === learnerPage.pageCount} onClick={() => setPage((value) => Math.min(learnerPage.pageCount, value + 1))}>Next</button>
+            </div>
           </div>
         </Card>
 
