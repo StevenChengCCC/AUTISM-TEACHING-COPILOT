@@ -173,7 +173,7 @@ def test_mock_generation_records_versioned_metadata():
     assert metadata is not None
     assert metadata.status == "local_mock"
     assert metadata.skill_id == "lesson_planning"
-    assert metadata.skill_version == "v1"
+    assert metadata.skill_version == "v2"
     assert metadata.output_source == "local_mock"
     assert metadata.teacher_review_required is True
 

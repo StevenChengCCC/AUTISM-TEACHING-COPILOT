@@ -57,6 +57,14 @@ def test_round7_demo_journey_from_learner_to_private_handoff():
         planned_state = answered.json()
     assert planned_state["canGenerate"] is True
 
+    previewed = client.post(
+        f"/api/v2/lesson-chat/{planned_state['conversationId']}/content-plan",
+        json={"expectedDraftVersion": planned_state["draft"]["version"]},
+    )
+    assert previewed.status_code == 200
+    planned_state = previewed.json()
+    assert planned_state["draft"]["packageContentPlan"]
+
     generated = client.post(
         "/api/v2/lesson-packages/generate", json=planned_state["draft"]
     )

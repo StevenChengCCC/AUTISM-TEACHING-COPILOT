@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "synthetic-smoke-corpus-v1",
+  "fixturePolicy": "Fully synthetic. No case may call an external provider or contain direct identifiers.",
+  "cases": [
+    {
+      "caseId": "SYN-N482-E2E",
+      "label": "N-482 reviewed-profile through package, PDF, session lineage and persistence",
+      "stage": "end_to_end",
+      "testNode": "tests/test_n482_generation_acceptance.py::test_n482_minimal_selection_complete_generation_download_and_persistence"
+    },
+    {
+      "caseId": "SYN-MINIMAL-PROFILE",
+      "label": "Minimal profile uses neutral context instead of invented interests",
+      "stage": "profile_extraction",
+      "testNode": "tests/test_v2_personalization_pipeline.py::test_missing_interest_uses_neutral_context_and_profile_aware_mock_content"
+    },
+    {
+      "caseId": "SYN-AAC-ACCESS",
+      "label": "Communication and access constraints remain executable and traceable",
+      "stage": "material_specification",
+      "testNode": "tests/test_v2_personalized_material_rendering.py::test_visual_accessibility_and_print_layout_contracts"
+    },
+    {
+      "caseId": "SYN-AMBIGUOUS-CONFIRM",
+      "label": "Incomplete profile requires teacher confirmation",
+      "stage": "lesson_interpretation",
+      "testNode": "tests/test_lesson_service.py::test_lesson_generation_returns_guided_questions_for_incomplete_profile"
+    },
+    {
+      "caseId": "SYN-LONG-EXPANDED",
+      "label": "Long and translated-expanded content remains printable",
+      "stage": "rendering",
+      "testNode": "tests/test_v2_print_accessibility.py::test_combined_long_content_and_translation_stress_matrix_has_no_text_overflow"
+    },
+    {
+      "caseId": "SYN-UNSAFE-FAIL-CLOSED",
+      "label": "Unsafe package and material cannot be approved",
+      "stage": "safety_validation",
+      "testNode": "tests/test_v2_instructional_intelligence.py::test_unsafe_package_and_material_cannot_be_approved"
+    },
+    {
+      "caseId": "SYN-UNSUPPORTED-EXCLUDE",
+      "label": "Unsupported material is excluded instead of remapped",
+      "stage": "package_planning",
+      "testNode": "tests/test_v2_teacher_decision_snapshot.py::test_unsupported_custom_material_is_not_remapped_or_generated"
+    },
+    {
+      "caseId": "SYN-STALE-CONFLICT",
+      "label": "Stale package and draft versions are rejected",
+      "stage": "revision_control",
+      "testNode": "tests/test_v2_session_runs.py::test_partial_patch_resume_conflict_and_duplicate_retry"
+    },
+    {
+      "caseId": "SYN-PROVIDER-RETRY",
+      "label": "Provider timeout retries are bounded and idempotent",
+      "stage": "generation_job",
+      "testNode": "tests/test_v2_generation_jobs.py::test_provider_timeout_is_retried_with_bounded_backoff"
+    },
+    {
+      "caseId": "SYN-TENANT-DENIAL",
+      "label": "Cross-tenant repository access is denied",
+      "stage": "authorization",
+      "testNode": "tests/test_v2_sqlalchemy_persistence.py::test_crud_restart_soft_delete_scope_and_optimistic_concurrency"
+    },
+    {
+      "caseId": "SYN-ASSET-FAILURE",
+      "label": "Missing required visual blocks while optional fallback remains explicit",
+      "stage": "print_readiness",
+      "testNode": "tests/test_v2_print_readiness.py::test_readiness_reports_ordered_material_visual_and_revision_recovery"
+    },
+    {
+      "caseId": "SYN-PRINT-MATRIX",
+      "label": "All presets, Letter/A4, and Standard/Large Print remain distinct and parseable",
+      "stage": "pdf_composition",
+      "testNode": "tests/test_v2_print_accessibility.py::test_n482_all_preset_page_and_text_combinations_are_distinct_and_parseable"
+    },
+    {
+      "caseId": "SYN-SESSION-RECOVERY",
+      "label": "Draft reload recovery and frozen revision completion",
+      "stage": "session_recording",
+      "testNode": "tests/test_v2_session_runs.py::test_sql_restart_restores_exact_snapshot_and_partial_draft"
+    },
+    {
+      "caseId": "SYN-CLOSEOUT-PROGRESS",
+      "label": "Mixed valid and invalid trials close out without invented evidence",
+      "stage": "closeout_progress",
+      "testNode": "tests/test_v2_session_runs.py::test_mixed_recorder_paths_preserve_closeout_evidence_and_exclude_invalid_trials"
+    },
+    {
+      "caseId": "SYN-PROGRESS-NEXT",
+      "label": "Recorded outcomes produce cautious progress and evidence-linked recommendations",
+      "stage": "next_session",
+      "testNode": "tests/test_v2_next_session_recommendations.py::test_n482_recommendations_are_evidence_linked_and_review_only"
+    }
+  ]
+}

@@ -68,8 +68,27 @@ def build_ai_safe_profile(learner: LearnerProfile) -> dict[str, Any]:
     """Return minimum teaching context without record text or direct identity data."""
 
     reviewed = learner.profile_review_status == "confirmed"
-    interests = learner.interests if reviewed else _signal_labels(learner, "interest")
-    reinforcers = (
+    factors = learner.normalized_profile.factors if learner.normalized_profile else []
+    current_factors = [
+        factor for factor in factors if factor.status == "confirmed_current"
+    ]
+    excluded_factors = [
+        factor
+        for factor in factors
+        if factor.status in {"not_approved", "not_meaningful"}
+    ]
+    factor_interests = [
+        factor.value
+        for factor in current_factors
+        if factor.category == "current_interest"
+    ]
+    factor_reinforcers = [
+        factor.value for factor in current_factors if factor.category == "reinforcement"
+    ]
+    interests = factor_interests or (
+        learner.interests if reviewed else _signal_labels(learner, "interest")
+    )
+    reinforcers = factor_reinforcers or (
         learner.reinforcement_preferences
         if reviewed
         else _signal_labels(learner, "reinforcer")
@@ -96,6 +115,17 @@ def build_ai_safe_profile(learner: LearnerProfile) -> dict[str, Any]:
                 "status": signal.status,
             }
             for signal in _eligible_signals(learner)
+        ],
+        "profileFactors": [
+            {
+                "category": factor.category,
+                "label": factor.label,
+                "value": factor.value,
+                "status": factor.status,
+                "instructionalImplication": factor.instructional_implication,
+                "generationConstraints": factor.generation_constraints,
+            }
+            for factor in [*current_factors, *excluded_factors]
         ],
     }
 

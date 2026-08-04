@@ -58,9 +58,14 @@ needed, the custom staging domain. Do not use `*`.
       "x-amz-server-side-encryption",
       "x-amz-server-side-encryption-aws-kms-key-id"
     ],
-    "AllowedMethods": ["PUT"],
+    "AllowedMethods": ["PUT", "GET"],
     "AllowedOrigins": ["https://YOUR_AMPLIFY_STAGING_DOMAIN"],
-    "ExposeHeaders": ["ETag"],
+    "ExposeHeaders": [
+      "ETag",
+      "Content-Disposition",
+      "Content-Length",
+      "Content-Type"
+    ],
     "MaxAgeSeconds": 300
   }
 ]
@@ -68,7 +73,9 @@ needed, the custom staging domain. Do not use `*`.
 
 Apply it with `aws s3api put-bucket-cors --bucket ... --cors-configuration
 file://cors.json`. The frontend receives only a short-lived signed URL; it never
-receives AWS credentials.
+receives AWS credentials. `PUT` supports direct learner-record uploads. `GET`
+supports private, short-lived export downloads; the frontend follows the signed
+URL directly and must not attach its Cognito `Authorization` header to S3.
 
 ## Lifecycle rules
 

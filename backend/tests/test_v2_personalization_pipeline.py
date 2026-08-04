@@ -177,10 +177,10 @@ class _RecordingPackageProvider(MockV2AIProvider):
     provider_name = "recording"
 
     def __init__(self):
-        self.context = None
+        self.lesson_spec = None
 
-    def generate_lesson_package(self, draft, learner_context=None):
-        self.context = learner_context
+    def generate_lesson_package(self, lesson_spec):
+        self.lesson_spec = lesson_spec
         return {
             "lessonBrief": "Custom profile-aware brief.",
             "summaryTemplate": "Custom reflection.",
@@ -214,9 +214,11 @@ def test_package_provider_receives_safe_context_and_generated_content_is_used():
         _draft("b214", "Learner will choose a break option.", theme="Music")
     )
 
-    assert provider.context is not None
-    assert provider.context["communicationMode"].startswith("AAC")
-    assert "learnerCode" not in provider.context
+    assert provider.lesson_spec is not None
+    assert provider.lesson_spec.learner_id == "b214"
+    assert provider.lesson_spec.profile_revision
+    assert provider.lesson_spec.decision_ids
+    assert provider.lesson_spec.goal.observable_behavior
     assert package.teachingFlow[0].title == "Custom generated step"
     visual = next(item for item in package.materials if item.type == "visual_card")
     assert visual.title == "Custom Pencil Choice"
@@ -246,8 +248,8 @@ class _IncompleteStructuredPackageProvider(_RecordingPackageProvider):
             teacherReviewRequired=True,
         )
 
-    def generate_lesson_package(self, draft, learner_context=None):
-        self.context = learner_context
+    def generate_lesson_package(self, lesson_spec):
+        self.lesson_spec = lesson_spec
         return {
             "lessonBrief": "Use short counting practice with teacher support.",
             "summaryTemplate": "Record the response and prompt level.",
@@ -269,14 +271,16 @@ def test_incomplete_provider_structure_uses_safe_templates_for_custom_materials(
         )
     )
 
-    assert package.lessonBrief == (
-        "Use short counting practice with teacher support."
-    )
+    assert package.lessonBrief == ("Use short counting practice with teacher support.")
     assert package.fallbackUsed is True
     assert len(package.teachingFlow) == 5
     assert {item.type for item in package.materials} == {
         "number_cards",
         "token_board",
+        "teacher_cue_card",
+        "task_analysis_cards",
+        "summary_template",
+        "session_summary",
     }
 
 
@@ -285,11 +289,11 @@ class _CapturingImageProvider(_RecordingPackageProvider):
         super().__init__()
         self.image_prompts = []
 
-    def generate_lesson_package(self, draft, learner_context=None):
-        generated = super().generate_lesson_package(draft, learner_context)
+    def generate_lesson_package(self, lesson_spec):
+        generated = super().generate_lesson_package(lesson_spec)
         generated["materials"][0].update(
             {
-                "imageConcept": f"{draft.goalText} with art supplies",
+                "imageConcept": f"{lesson_spec.goalText} with art supplies",
                 "imagePrompt": "Include Learner SECRET and raw-record-private-text.",
             }
         )
@@ -378,7 +382,7 @@ def test_unrelated_profile_never_receives_vehicle_default():
 class _FailingPackageProvider(MockV2AIProvider):
     provider_name = "failing-test-provider"
 
-    def generate_lesson_package(self, draft, learner_context=None):
+    def generate_lesson_package(self, lesson_spec):
         raise RuntimeError("provider unavailable")
 
 

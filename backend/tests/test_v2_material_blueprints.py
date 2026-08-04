@@ -200,6 +200,7 @@ def test_counting_package_contains_exact_quantity_and_matching_structures():
         "token_board",
         "data_sheet",
         "summary_template",
+        "teacher_cue_card",
     ]
     quantity_cards = package.materials[0]
     assert quantity_cards.specification is not None

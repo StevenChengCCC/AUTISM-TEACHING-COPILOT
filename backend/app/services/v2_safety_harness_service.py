@@ -10,6 +10,7 @@ from app.schemas.v2_dto import (
     LessonDesignDraftDto,
     SafetyReport,
     SafetyReviewDto,
+    StructuredSafetyIssue,
 )
 
 
@@ -129,7 +130,11 @@ class V2SafetyHarnessService:
         return SafetyReport(passed=review.status != "blocked", checks=checks)
 
     def review_product(
-        self, draft: LessonDesignDraftDto, generated_content: dict
+        self,
+        draft: LessonDesignDraftDto,
+        generated_content: dict,
+        *,
+        detected_revision: int = 1,
     ) -> SafetyReviewDto:
         text = self._text(draft, generated_content)
         matches: list[tuple[SafetyRule, list[str]]] = []
@@ -138,6 +143,14 @@ class V2SafetyHarnessService:
             if terms:
                 matches.append((rule, terms))
         if matches:
+            categories = {
+                "no-punishment-humiliation": "emotional_safety",
+                "no-deprivation": "coercion",
+                "communication-access": "access",
+                "no-forced-compliance": "coercion",
+                "no-restrictive-aversive-practice": "coercion",
+                "no-clinical-claims": "unsupported_assumption",
+            }
             return SafetyReviewDto(
                 status="blocked",
                 riskLevel="high",
@@ -147,6 +160,17 @@ class V2SafetyHarnessService:
                 ],
                 recommendedEdits=[rule.recommended_edit for rule, _terms in matches],
                 appliedEdits=[],
+                structuredIssues=[
+                    StructuredSafetyIssue(
+                        id=f"{draft.id}-{rule.id}", scope="package",
+                        category=categories.get(rule.id, "other"), severity="blocking",
+                        message=rule.explanation,
+                        lessonSpecPath="safetyConstraints",
+                        suggestedCorrection=rule.recommended_edit,
+                        detectedAtRevision=detected_revision,
+                    )
+                    for rule, _terms in matches
+                ],
             )
         return SafetyReviewDto(
             status="pass",

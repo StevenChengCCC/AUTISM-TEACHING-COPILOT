@@ -54,6 +54,12 @@ class MinimizedJsonFormatter(logging.Formatter):
 
 
 def configure_logging(level: str = "INFO") -> None:
+    # Raw server access logs contain concrete path parameters. The application
+    # emits one structured route-template event instead, so tokens and learner
+    # identifiers never enter logs through a duplicate access line.
+    uvicorn_access = logging.getLogger("uvicorn.access")
+    uvicorn_access.disabled = True
+    uvicorn_access.propagate = False
     root = logging.getLogger()
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
     if any(

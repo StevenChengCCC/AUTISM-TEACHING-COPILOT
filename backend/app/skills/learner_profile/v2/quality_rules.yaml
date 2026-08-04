@@ -6,7 +6,7 @@ rules:
     instruction: Never default, normalize, or guess age; preserve the documented age exactly.
     severity: high
   - id: concise-summary
-    instruction: Use short phrases and no more than five one-sentence insights.
+    instruction: Keep the derived summary concise without omitting actionable structured factors.
     severity: medium
   - id: communication-access
     instruction: Record all documented accepted communication modes without privileging speech.
@@ -19,4 +19,13 @@ rules:
     severity: high
   - id: privacy-minimization
     instruction: Exclude names, contact information, record titles, and unnecessary sensitive narrative.
+    severity: high
+  - id: exhaustive-factors
+    instruction: Extract every supported actionable factor with evidence, implication, status, and generation constraints.
+    severity: high
+  - id: preserve-explicit-status
+    instruction: Preserve explicit current, historical, unconfirmed, not-approved, not-meaningful, and omitted statuses exactly.
+    severity: high
+  - id: access-is-first-class
+    instruction: Represent communication, sensory, visual, motor, and safety access requirements as first-class factors rather than notes.
     severity: high

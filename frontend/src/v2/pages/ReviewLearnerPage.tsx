@@ -4,12 +4,13 @@ import { Card } from "../components/Card";
 import { Tag } from "../components/Tag";
 import { lessonKitApi } from "../api/lessonKitApi";
 import { LearnerAvatar } from "../components/Avatar";
-import type { LearnerProfile,LearnerProfileExtraction,LearnerRecord } from "../types";
+import type { LearnerProfile,LearnerProfileExtraction,LearnerRecord,ProfileFactor } from "../types";
+import { factorStatusLabel,profileFactorSections,profileSummaryView,visibleFactorsForSection } from "../profileViewModel";
 import "./ReviewLearnerPage.css";
 
 type EditableProfile={ code:string;age:string;communication:string;supportNeeds:string;interests:string;reinforcement:string;activityFormats:string;notes:string };
 const emptyProfile:EditableProfile={code:"",age:"",communication:"",supportNeeds:"",interests:"",reinforcement:"",activityFormats:"",notes:""};
-const profileFromLearner=(learner:LearnerProfile):EditableProfile=>({code:learner.code,age:learner.age>0?String(learner.age):"",communication:learner.communicationMode,supportNeeds:learner.supportNeeds.join(", "),interests:learner.interests.join(", "),reinforcement:learner.reinforcementPreferences.join(", "),activityFormats:learner.attentionProfile,notes:learner.notes});
+const profileFromLearner=(learner:LearnerProfile):EditableProfile=>{const summary=profileSummaryView(learner);return {code:learner.code,age:learner.age>0?String(learner.age):"",communication:summary.communication,supportNeeds:summary.supports.join(", "),interests:summary.currentInterests.join(", "),reinforcement:learner.reinforcementPreferences.join(", "),activityFormats:summary.learningFormat,notes:summary.keyTeachingNotes.join("; ")};};
 const shortList=(value:string,limit=2)=>value.split(",").map((item)=>item.trim()).filter(Boolean).slice(0,limit).join(", ")||"Confirm with teacher";
 const conciseInsight=(value:string)=>{
   const cleaned=value
@@ -38,6 +39,8 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
   if(isLoading)return <div className="v2-loading" role="status" aria-live="polite">Preparing learner information…</div>;
   if(loadError||!extraction)return <div className="v2-load-error" role="alert"><Card><span className="v2-load-error__icon" aria-hidden="true">!</span><h2>We couldn’t prepare this learner profile</h2><p>{loadError??"Learner information is temporarily unavailable."}</p><Button onClick={()=>void loadExtraction()}>Try again</Button></Card></div>;
   const learner=extraction.learner;const update=(field:keyof EditableProfile,value:string)=>setForm((current)=>({...current,[field]:value}));
+  const factors=learner.normalizedProfile?.factors??[];
+  const reviewFactor=async(factor:ProfileFactor,value?:string)=>{try{const updated=await lessonKitApi.reviewProfileFactor(learnerId,factor.id,{decision:value===undefined?"confirm":"edit",editedValue:value,expectedVersion:learner.version??1});setExtraction((current)=>current?{...current,learner:updated}:current);setForm(profileFromLearner(updated));onFeedback(`${factor.label} updated without changing other profile factors.`);}catch(error){setFormError(error instanceof Error?error.message:"The profile factor could not be updated.");}};
   const addRecord=async(fileName:string)=>{const record=await lessonKitApi.addRecordForLearner(learnerId,{fileName,fileType:"TXT",text:"Supplemental information for teacher review."});setExtraction((current)=>current?{...current,records:[...current.records,record],analyzedRecordCount:current.analyzedRecordCount+1}:current);onFeedback(`${fileName} added for review.`);};
   const saveAndContinue=async()=>{
     const age=Number(form.age);
@@ -72,15 +75,18 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
         <div className="v2-summary-grid">{summaryItems.map((item)=><article className={`v2-summary-tile v2-summary-tile--${item.tone}`} key={item.label}><span aria-hidden>{item.icon}</span><div><small>{item.label}</small><strong title={item.value}>{item.value}</strong></div></article>)}</div>
         {form.notes&&<details className="v2-summary-details"><summary>View learner notes</summary><p>{conciseInsight(form.notes)}</p></details>}
         {isNew&&extraction.insights.length>0&&<div className="v2-summary-cues"><small>Key teaching notes</small><ul>{extraction.insights.slice(0,3).map((insight)=><li key={insight}>{conciseInsight(insight)}</li>)}</ul></div>}
+        {factors.length>0&&<div className="v2-factor-sections">{profileFactorSections.map((section)=>{const visible=visibleFactorsForSection(factors,section.title,section.categories);if(!visible.length)return null;return <section key={section.title}><h3>{section.title}</h3><div>{visible.map((factor)=><FactorCard factor={factor} onReview={reviewFactor} key={factor.id}/>)}</div></section>;})}</div>}
       </>}
 
       {isEditing&&<div className="v2-compact-profile-editor">
         <div className="v2-form-row v2-form-row--split"><label>Learner code<input value={form.code} onChange={(event)=>update("code",event.target.value)}/></label><label>Age<input type="number" min="1" max="30" inputMode="numeric" value={form.age} placeholder="Confirm" onChange={(event)=>update("age",event.target.value)}/></label></div>
+        {factors.length>0?<p className="v2-structured-edit-note">Edit individual profile factors in the structured sections. This keeps unrelated evidence and constraints intact.</p>:<>
         <ProfileField label="Primary communication" value={form.communication} onChange={(value)=>update("communication",value)}/>
         <ProfileField label="Support needs" value={form.supportNeeds} onChange={(value)=>update("supportNeeds",value)} pills/>
         <ProfileField label="Interests" value={form.interests} onChange={(value)=>update("interests",value)} pills/>
         <ProfileField label={isNew?"Best activity formats":"Reinforcement preferences"} value={isNew?form.activityFormats:form.reinforcement} onChange={(value)=>update(isNew?"activityFormats":"reinforcement",value)}/>
         <div className="v2-form-row"><label>Notes<textarea value={form.notes} onChange={(event)=>update("notes",event.target.value)}/></label></div>
+        </>}
         <button className="v2-reset-link" onClick={()=>{setForm(profileFromLearner(learner));setFormError(null);}}>Reset changes</button>
       </div>}
 
@@ -98,4 +104,10 @@ export function ReviewLearnerPage({ learnerId,isNew,onContinue,onBack,onFeedback
 
 function ProfileField({ label,value,onChange,pills=false }:{ label:string;value:string;onChange:(value:string)=>void;pills?:boolean }) {
   return <div className="v2-form-row"><label>{label}<div className={pills?"v2-pill-input":""}><textarea className="v2-profile-field-control" aria-label={label} rows={pills?2:3} value={value} onChange={(event)=>onChange(event.target.value)} placeholder={pills?"Separate items with commas":""}/></div></label></div>;
+}
+
+function FactorCard({factor,onReview}:{factor:ProfileFactor;onReview:(factor:ProfileFactor,value?:string)=>Promise<void>}){
+  const [editing,setEditing]=useState(false);const [value,setValue]=useState(factor.value);
+  const access=["sensory","visual_access","motor_access","safety","prohibited_item"].includes(factor.category)&&factor.status==="confirmed_current";
+  return <article className="v2-factor-card"><div><strong>{factor.label}</strong><span className={`v2-factor-status v2-factor-status--${access?"access":factor.status}`}>{factorStatusLabel(factor)}</span></div>{editing?<><textarea aria-label={`Edit ${factor.label}`} value={value} onChange={(event)=>setValue(event.target.value)}/><div className="v2-factor-actions"><button onClick={()=>setEditing(false)}>Cancel</button><button onClick={()=>{void onReview(factor,value).then(()=>setEditing(false));}}>Save</button></div></>:<><p>{factor.value}</p>{factor.instructionalImplication&&<small><b>Teaching implication:</b> {factor.instructionalImplication}</small>}<details><summary>Source evidence</summary><small>{factor.sourceEvidence}</small></details><div className="v2-factor-actions"><button onClick={()=>setEditing(true)}>Edit</button>{factor.status==="unconfirmed"&&<button onClick={()=>void onReview(factor)}>Confirm</button>}</div></>}</article>;
 }

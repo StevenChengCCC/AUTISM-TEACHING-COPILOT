@@ -1,0 +1,99 @@
+{
+  "fixtureVersion": 1,
+  "startedAt": "2026-08-03T09:00:00Z",
+  "completedAt": "2026-08-03T09:25:00Z",
+  "helpfulMaterialTypes": ["break_card", "first_then_board", "data_sheet"],
+  "unhelpfulMaterialTypes": [],
+  "observations": {
+    "engagementLevel": 3,
+    "regulationLevel": 3,
+    "teacherNotes": "Synthetic N-482 session. Speech and AAC were both accepted; the learner returned after an honored break."
+  },
+  "generalization": {
+    "people": ["classroom teacher"],
+    "settings": ["classroom"],
+    "materials": ["transit map", "art supplies", "shared reading book"]
+  },
+  "trials": [
+    {
+      "trialId": "n482-trial-1",
+      "opportunityNumber": 1,
+      "contextId": "context-1",
+      "contextLabel": "transit-map activity to table work",
+      "valid": true,
+      "outcome": "independent_success",
+      "responseMode": "speech",
+      "promptLevel": "independent",
+      "latencySeconds": 5,
+      "breakRequested": true,
+      "breakDelivered": true,
+      "returnedAfterBreak": true,
+      "materialTypesUsed": ["break_card", "first_then_board", "visual_timer"],
+      "note": "Independent spoken request; two-minute break honored."
+    },
+    {
+      "trialId": "n482-trial-2",
+      "opportunityNumber": 2,
+      "contextId": "context-2",
+      "contextLabel": "art activity to cleanup",
+      "valid": true,
+      "outcome": "prompted_success",
+      "responseMode": "AAC",
+      "promptLevel": "visual",
+      "latencySeconds": 5,
+      "breakRequested": false,
+      "breakDelivered": false,
+      "returnedAfterBreak": null,
+      "materialTypesUsed": ["break_card", "data_sheet"],
+      "note": "Selected the AAC message after a visual cue."
+    },
+    {
+      "trialId": "n482-trial-3",
+      "opportunityNumber": 3,
+      "contextId": "context-3",
+      "contextLabel": "free choice to shared reading",
+      "valid": true,
+      "outcome": "prompted_success",
+      "responseMode": "speech",
+      "promptLevel": "model",
+      "latencySeconds": 5,
+      "breakRequested": false,
+      "breakDelivered": false,
+      "returnedAfterBreak": null,
+      "materialTypesUsed": ["break_card", "scenario_cards", "data_sheet"],
+      "note": "Spoken request followed a model."
+    },
+    {
+      "trialId": "n482-trial-4",
+      "opportunityNumber": 4,
+      "contextId": "context-1",
+      "contextLabel": "transit-map activity to table work",
+      "valid": true,
+      "outcome": "prompted_success",
+      "responseMode": "AAC",
+      "promptLevel": "brief_verbal",
+      "latencySeconds": 5,
+      "breakRequested": false,
+      "breakDelivered": false,
+      "returnedAfterBreak": null,
+      "materialTypesUsed": ["break_card", "first_then_board", "data_sheet"],
+      "note": "AAC response after a brief verbal prompt."
+    },
+    {
+      "trialId": "n482-trial-5",
+      "opportunityNumber": 5,
+      "contextId": "context-2",
+      "contextLabel": "art activity to cleanup",
+      "valid": true,
+      "outcome": "no_response",
+      "responseMode": "none",
+      "promptLevel": "independent",
+      "latencySeconds": 5,
+      "breakRequested": false,
+      "breakDelivered": false,
+      "returnedAfterBreak": null,
+      "materialTypesUsed": ["data_sheet"],
+      "note": "No response after the five-second wait."
+    }
+  ]
+}

@@ -87,31 +87,6 @@ export function TeacherHandoffExportPanel({
     return () => window.clearInterval(timer);
   }, [jobs]);
 
-  async function approveContent() {
-    setBusy(true);
-    setError("");
-    try {
-      const materials = [];
-      for (const material of lessonPackage.materials) {
-        materials.push(
-          material.status === "approved"
-            ? material
-            : await lessonKitApi.approveGeneratedMaterial(material.id),
-        );
-      }
-      const latest = await lessonKitApi.getLessonPackage(lessonPackage.id);
-      const approved = latest.status === "approved"
-        ? latest
-        : await lessonKitApi.approveLessonPackage(latest.id, latest.version ?? 1, "Approved for authorized teacher handoff");
-      onPackageChange({ ...approved, materials });
-      onFeedback("Lesson package and materials approved for teacher handoff.");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Content could not be approved.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function generate() {
     if (!confirmed) return;
     setBusy(true);
@@ -181,8 +156,7 @@ export function TeacherHandoffExportPanel({
 
       {!readyForApprovedContent && (
         <div className="v2-handoff-approval">
-          <p>Only teacher-approved profiles, packages, and materials are included.</p>
-          <Button variant="secondary" onClick={() => void approveContent()} disabled={busy}>Approve package &amp; materials</Button>
+          <p>Only individually reviewed and approved material revisions are included. Complete review in Review Printable Content first.</p>
         </div>
       )}
 

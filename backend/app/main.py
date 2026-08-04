@@ -41,6 +41,18 @@ def _request_id_from(request: Request) -> str:
     return getattr(request.state, "request_id", "-")
 
 
+def _privacy_safe_route_path(request: Request) -> str:
+    """Return the route template, never concrete IDs, tokens, or query values."""
+
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if isinstance(template, str) and template:
+        return template
+    path = request.url.path
+    path = re.sub(r"/(uploads|exports)/local/[^/]+", r"/\1/local/{redacted}", path)
+    return path
+
+
 def _error_payload(
     request: Request,
     *,
@@ -138,7 +150,7 @@ async def request_context(request: Request, call_next):
                 "event": "http_request",
                 "request_id": request_id,
                 "method": request.method,
-                "path": request.url.path,
+                "path": _privacy_safe_route_path(request),
                 "status_code": response.status_code,
                 "duration_ms": round((perf_counter() - started) * 1000, 2),
             },
@@ -156,7 +168,7 @@ async def app_error_handler(request: Request, exc: AppError):
             "event": "application_error",
             "error_code": exc.error_code,
             "status_code": exc.status_code,
-            "path": request.url.path,
+            "path": _privacy_safe_route_path(request),
         },
     )
     compatibility = exc.payload if isinstance(exc, ValidationError) else None
@@ -190,7 +202,7 @@ async def request_validation_error_handler(
             "event": "request_validation_error",
             "error_code": "request_validation_error",
             "status_code": 422,
-            "path": request.url.path,
+            "path": _privacy_safe_route_path(request),
         },
     )
     return JSONResponse(
@@ -237,7 +249,7 @@ async def unhandled_error_handler(request: Request, exc: Exception):
             "error_code": "internal_error",
             "error_category": type(exc).__name__,
             "status_code": 500,
-            "path": request.url.path,
+            "path": _privacy_safe_route_path(request),
         },
     )
     return JSONResponse(

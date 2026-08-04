@@ -28,6 +28,14 @@ backend-deploy.zip
 tests_results.html
 storage/
 private-storage/
+output/
+tmp/
+backend/tmp/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 node_modules/
 dist/

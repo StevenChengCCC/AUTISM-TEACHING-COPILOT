@@ -73,13 +73,24 @@ class Settings(BaseSettings):
     OPENAI_PLANNING_TIMEOUT_SECONDS: int = 45
     OPENAI_PACKAGE_TIMEOUT_SECONDS: int = 45
     OPENAI_MAX_RETRIES: int = 0
-    OPENAI_REASONING_EFFORT: Literal["none", "low", "medium", "high", "xhigh"] = (
-        "low"
-    )
+    OPENAI_REASONING_EFFORT: Literal["none", "low", "medium", "high", "xhigh"] = "low"
     IMAGE_SEARCH_TIMEOUT_SECONDS: int = 10
     IMAGE_ASSET_STRATEGY: Literal["generate_first", "reuse_search_generate"] = (
         "reuse_search_generate"
     )
+    VISUAL_IMAGE_MAX_CONCURRENCY: int = 3
+    VISUAL_IMAGE_MAX_RETRIES: int = 1
+    GENERATION_PROVIDER_MAX_RETRIES: int = 2
+    GENERATION_STORAGE_MAX_RETRIES: int = 2
+    GENERATION_RETRY_BASE_SECONDS: float = 0.05
+    GENERATION_STALE_JOB_SECONDS: int = 300
+    MAX_MATERIALS_PER_PACKAGE: int = 10
+    MAX_AI_VISUALS_PER_PACKAGE: int = 30
+    MAX_MATERIAL_REPAIR_ATTEMPTS: int = 2
+    MAX_PACKAGE_TOKEN_BUDGET: int = 40_000
+    MAX_PDF_BYTES: int = 50 * 1024 * 1024
+    GENERATION_ESTIMATED_TEXT_COST_PER_1K_TOKENS: float = 0.0
+    GENERATION_ESTIMATED_IMAGE_COST: float = 0.0
 
     MAX_UPLOAD_BYTES: int = 10 * 1024 * 1024
     ALLOWED_UPLOAD_EXTENSIONS: str = ".txt,.pdf,.docx"
@@ -108,6 +119,23 @@ class Settings(BaseSettings):
     MIN_EXTRACTED_TEXT_CHARS: int = 20
     ENABLE_UPLOAD_ANTIVIRUS_SCAN: bool = False
     MAX_UNTRUSTED_RECORD_TEXT_CHARS: int = 50_000
+    PACKAGE_PLAN_MIN_ARTIFACTS: int = 6
+    PACKAGE_PLAN_MAX_ARTIFACTS: int = 10
+    PACKAGE_PLAN_MIN_PAGES: int = 8
+    PACKAGE_PLAN_MAX_PAGES: int = 16
+    PROGRESS_TREND_LOOKBACK: int = 4
+    PROGRESS_TREND_MIN_NORMAL_POINTS: int = 3
+    PROGRESS_TREND_PERCENTAGE_THRESHOLD: float = 10.0
+    PROGRESS_TREND_ABSOLUTE_THRESHOLD: float = 1.0
+    PROGRESS_CONTEXT_MIN_FILTER_SESSIONS: int = 2
+    PROGRESS_CONTEXT_MIN_FILTER_OPPORTUNITIES: int = 3
+    PROGRESS_CONTEXT_MIN_LATENCY_COVERAGE: float = 0.5
+
+    # Privacy-safe usability evaluation is opt-in and local/test only by default.
+    USABILITY_TELEMETRY_ENABLED: bool = False
+    USABILITY_TELEMETRY_SINK: Literal["disabled", "local_jsonl", "memory"] = "disabled"
+    USABILITY_TELEMETRY_PATH: str = "./private-storage/usability-study/events.jsonl"
+    USABILITY_TELEMETRY_RETENTION_DAYS: int = 30
 
     PEXELS_API_KEY: SecretStr | None = None
     PIXABAY_API_KEY: SecretStr | None = None

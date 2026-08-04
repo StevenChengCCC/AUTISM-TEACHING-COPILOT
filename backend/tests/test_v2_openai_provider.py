@@ -11,13 +11,16 @@ from app.integrations.ai_provider import get_v2_ai_provider
 from app.integrations.mock_ai_provider import MockV2AIProvider
 from app.integrations.openai_provider import OpenAIV2AIProvider
 from app.schemas.v2_dto import (
+    CanonicalLearnerProfile,
     LearnerProfile,
     LearnerRecord,
     AIQuestion,
     LessonDesignDraft,
     LessonDesignDraftDto,
+    LessonSpec,
     LessonPlanningResult,
     ProfileExtractionResult,
+    ProfileFactor,
 )
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
@@ -53,6 +56,23 @@ class _FakeParsedResponses:
                     code="Learner A-102",
                     age=7,
                     communicationMode="Short phrases",
+                    normalizedProfile=CanonicalLearnerProfile(
+                        learnerId="a102",
+                        age=7,
+                        factors=[
+                            ProfileFactor(
+                                id="communication-short-phrases",
+                                category="communication",
+                                label="Short phrases",
+                                value="Uses short phrases",
+                                status="confirmed_current",
+                                confidence=0.9,
+                                sourceEvidence="Synthetic classroom note.",
+                                sourceRecordId="record-1",
+                                instructionalImplication="Accept short phrase responses.",
+                            )
+                        ],
+                    ),
                 ),
                 profileSignals=[],
                 unknownFields=[],
@@ -131,15 +151,7 @@ def test_openai_provider_requires_key_only_when_request_is_attempted():
         match=r"OPENAI_API_KEY is not configured\. Add it to backend/\.env\.local or your backend environment\.",
     ):
         provider.generate_lesson_package(
-            LessonDesignDraftDto(
-                id="draft-test",
-                learnerId="a102",
-                goalText="",
-                responseLevel="",
-                theme="",
-                duration="",
-                customNotes="",
-            )
+            LessonSpec.model_construct(id="lesson-spec-test")
         )
 
 
@@ -165,9 +177,7 @@ def test_profile_extraction_uses_typed_responses_parse():
         _env_file=None, AI_PROVIDER="openai", OPENAI_API_KEY="not-a-real-key"
     )
     responses = _FakeParsedResponses()
-    provider = OpenAIV2AIProvider(
-        config, client=SimpleNamespace(responses=responses)
-    )
+    provider = OpenAIV2AIProvider(config, client=SimpleNamespace(responses=responses))
     learner = LearnerProfile(id="a102", code="Learner A-102", age=7)
     record = LearnerRecord(
         id="record-1",
@@ -184,6 +194,9 @@ def test_profile_extraction_uses_typed_responses_parse():
     assert responses.text_format is ProfileExtractionResult
     assert responses.request["model"] == "gpt-4.1-mini"
     assert "reasoning" not in responses.request
+    assert "Extract every actionable" in responses.request["instructions"]
+    assert "not_approved" in responses.request["instructions"]
+    assert "generationConstraints" in responses.request["instructions"]
     assert result.learner.communication_mode == "Short phrases"
     assert result.insights == ["Use visual supports"]
     assert provider.last_fallback_used is False
@@ -198,9 +211,7 @@ def test_gpt5_requests_use_configured_low_reasoning_effort():
         OPENAI_REASONING_EFFORT="low",
     )
     responses = _FakeResponses('{"lessonBrief":"A concise lesson brief."}')
-    provider = OpenAIV2AIProvider(
-        config, client=SimpleNamespace(responses=responses)
-    )
+    provider = OpenAIV2AIProvider(config, client=SimpleNamespace(responses=responses))
 
     result = provider.polish_lesson_brief(
         LessonDesignDraft(
@@ -232,22 +243,10 @@ def test_lesson_package_uses_fast_dedicated_model_without_reasoning_controls():
         '{"lessonBrief":"Practice counting with brief teacher support.",'
         '"summaryTemplate":"Record independence and prompt level."}'
     )
-    provider = OpenAIV2AIProvider(
-        config, client=SimpleNamespace(responses=responses)
-    )
+    provider = OpenAIV2AIProvider(config, client=SimpleNamespace(responses=responses))
 
     generated = provider.generate_lesson_package(
-        LessonDesignDraftDto(
-            id="draft-counting",
-            learnerId="a102",
-            goalText="The learner will count from 1 to 5.",
-            responseLevel="Verbal counting",
-            scenarios=["Count five classroom objects"],
-            selectedMaterials=["Number cards 1 to 5"],
-            theme="Counting",
-            duration="5 minutes",
-            customNotes="Use short directions.",
-        )
+        LessonSpec.model_construct(id="lesson-spec-counting")
     )
 
     assert generated["lessonBrief"].startswith("Practice counting")
@@ -264,9 +263,7 @@ def test_lesson_planning_accepts_dynamic_question_ids_and_uses_fast_model():
         OPENAI_PLANNING_MODEL="gpt-4.1-mini",
     )
     responses = _FakePlanningResponses()
-    provider = OpenAIV2AIProvider(
-        config, client=SimpleNamespace(responses=responses)
-    )
+    provider = OpenAIV2AIProvider(config, client=SimpleNamespace(responses=responses))
 
     questions, draft = provider.generate_lesson_questions(
         LearnerProfile(id="a102", code="Learner A-102", age=7),
@@ -276,6 +273,13 @@ def test_lesson_planning_accepts_dynamic_question_ids_and_uses_fast_model():
     assert questions[0].id == "counting-range"
     assert draft.goal_text == "Learner will count objects from 1 to 5."
     assert responses.request["model"] == "gpt-4.1-mini"
+    payload = responses.request["input"]
+    assert "instructionalConstraintSnapshot" in payload
+    assert "profileRevision" in payload
+    assert "unresolvedAssumptions" in payload
+    assert "excludedItems" in payload
+    assert "supportedMaterialCatalog" in payload
+    assert "Learner A-102" not in payload
 
 
 def test_fail_closed_mode_never_returns_realistic_mock_content():

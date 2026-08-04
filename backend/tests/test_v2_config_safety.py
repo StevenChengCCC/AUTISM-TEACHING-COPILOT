@@ -4,7 +4,8 @@ from app.core.config import Settings
 from app.integrations.ai_provider import get_v2_ai_provider
 from app.integrations.mock_ai_provider import MockV2AIProvider
 from app.integrations.openai_provider import OpenAIV2AIProvider
-from app.schemas.v2_dto import LessonDesignDraftDto
+from app.schemas.v2_dto import LessonSpec
+from app.core.runtime import evaluate_runtime
 
 
 def test_v2_defaults_to_mock_and_masks_secrets():
@@ -40,15 +41,7 @@ def test_openai_defaults_and_missing_key_fail_safely_at_runtime():
     provider = get_v2_ai_provider(settings)
     assert isinstance(provider, OpenAIV2AIProvider)
 
-    draft = LessonDesignDraftDto(
-        id="draft-test",
-        learnerId="a102",
-        goalText="",
-        responseLevel="",
-        theme="",
-        duration="",
-        customNotes="",
-    )
+    lesson_spec = LessonSpec.model_construct(id="lesson-spec-test")
     with pytest.raises(
         RuntimeError,
         match=(
@@ -56,7 +49,7 @@ def test_openai_defaults_and_missing_key_fail_safely_at_runtime():
             r"backend/\.env\.local or your backend environment\."
         ),
     ):
-        provider.generate_lesson_package(draft)
+        provider.generate_lesson_package(lesson_spec)
 
 
 def test_local_config_searches_for_backend_env_local():
@@ -118,3 +111,45 @@ def test_incomplete_rds_environment_keeps_sqlite_default():
     )
 
     assert settings.effective_database_url == "sqlite:///./autism_copilot.db"
+
+
+def test_generation_cost_and_retry_limits_are_explicit_and_bounded():
+    settings = Settings(_env_file=None)
+    assert settings.MAX_MATERIALS_PER_PACKAGE == 10
+    assert settings.MAX_AI_VISUALS_PER_PACKAGE == 30
+    assert settings.MAX_MATERIAL_REPAIR_ATTEMPTS == 2
+    assert settings.VISUAL_IMAGE_MAX_RETRIES == 1
+    assert settings.MAX_PACKAGE_TOKEN_BUDGET == 40_000
+    assert settings.MAX_PDF_BYTES > 0
+    assert settings.VISUAL_IMAGE_MAX_CONCURRENCY == 3
+
+
+def test_fully_configured_production_runtime_rejects_mock_memory_and_local_storage():
+    config = Settings(
+        _env_file=None,
+        APP_ENV="production",
+        DATABASE_URL="postgresql+psycopg2://synthetic:fake@example.invalid:5432/app",
+        V2_REPOSITORY_MODE="memory",
+        V2_SEED_SYNTHETIC_DATA=False,
+        ALLOWED_ORIGINS="https://studio.example.org",
+        PUBLIC_API_BASE_URL="https://api.example.org",
+        DEV_ALLOW_ANON_TEACHER=False,
+        AUTH_MODE="cognito",
+        COGNITO_REGION="us-east-1",
+        COGNITO_USER_POOL_ID="us-east-1_synthetic",
+        COGNITO_APP_CLIENT_ID="public-client",
+        COGNITO_DOMAIN="auth.example.org",
+        AI_PROVIDER="openai",
+        OPENAI_API_KEY="synthetic-test-key",
+        AI_FAILURE_MODE="mock_fallback",
+        OBJECT_STORAGE_PROVIDER="local",
+        S3_BUCKET="private-synthetic-bucket",
+        S3_REGION="us-east-1",
+    )
+    report = evaluate_runtime(config)
+    assert config.effective_v2_repository_mode == "sqlalchemy"
+    assert config.effective_object_storage_provider == "s3"
+    assert config.effective_ai_failure_mode == "fail_closed"
+    assert report.status == "ready"
+    assert report.production_ready is True
+    assert "generationPersistence" not in report.incomplete_capabilities

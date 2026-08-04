@@ -141,7 +141,7 @@ def test_complete_printable_lesson_kit_is_one_real_multipage_pdf(tmp_path):
 
     assert job.status == "completed"
     assert job.format == "pdf"
-    assert job.fileName == "complete-lesson-kit.pdf"
+    assert job.fileName.endswith("-counting-kit-letter-standard.pdf")
     assert job.storageObjectKey
     assert package.learnerId not in job.storageObjectKey
 
@@ -164,7 +164,7 @@ def test_complete_printable_lesson_kit_is_one_real_multipage_pdf(tmp_path):
     downloaded, content_type, filename = storage.read_presigned_get(token)
     assert downloaded == body
     assert content_type == "application/pdf"
-    assert filename == "complete-lesson-kit.pdf"
+    assert filename == job.fileName
 
 
 def test_complete_printable_lesson_kit_embeds_generated_image_url(tmp_path):

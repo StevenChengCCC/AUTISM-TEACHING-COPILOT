@@ -11,7 +11,10 @@ from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
-    LessonDesignDraftDto,
+    LessonSpec,
+    MaterialSpec,
+    MaterialValidationIssue,
+    InstructionalConstraintSnapshot,
     ProfileExtractionResult,
     ProfileSignal,
 )
@@ -400,7 +403,15 @@ class MockV2AIProvider(V2AIProvider):
         self, learner: LearnerProfile, teacher_request: str
     ) -> tuple[list[AIQuestion], LessonDesignDraft]:
         self._mark_local_mock("lesson_planning")
-        safe_profile = build_ai_safe_profile(learner)
+        snapshot = getattr(self, "_planning_snapshot", None)
+        safe_profile = (
+            {
+                "interests": snapshot.engagement.current_interests,
+                "reinforcementPreferences": snapshot.engagement.effective_reinforcers,
+            }
+            if snapshot is not None
+            else build_ai_safe_profile(learner)
+        )
         safe_interests = safe_profile["interests"]
         theme = safe_interests[0] if safe_interests else "Classroom"
         theme_lower = theme.casefold()
@@ -414,6 +425,8 @@ class MockV2AIProvider(V2AIProvider):
             ]
         else:
             scenario_labels = ["Blocks need help", "Closed box", "Backpack zipper"]
+        if snapshot is not None and snapshot.generalization.contexts:
+            scenario_labels = snapshot.generalization.contexts[:3]
         scenario_ids = {
             "Toy car stuck": "toy-car",
             "Closed box": "closed-box",
@@ -434,7 +447,9 @@ class MockV2AIProvider(V2AIProvider):
                     _option(
                         "confirm-target",
                         (
-                            "Learner will ask for help using a short phrase."
+                            teacher_request.strip()
+                            if "break" in teacher_request.casefold()
+                            else "Learner will ask for help using a short phrase."
                             if "help" in teacher_request.casefold()
                             else "Learner will demonstrate the requested skill in an observable opportunity."
                         ),
@@ -685,11 +700,14 @@ class MockV2AIProvider(V2AIProvider):
             "ask for help" in teacher_request.lower()
             or "asking for help" in teacher_request.lower()
         )
+        asks_for_break = "break" in teacher_request.casefold()
         draft = LessonDesignDraft(
             id=f"draft-{learner.id}",
             learner_id=learner.id,
             goal_text=(
-                "Learner will ask for help using a short phrase."
+                teacher_request.strip()
+                if asks_for_break
+                else "Learner will ask for help using a short phrase."
                 if asks_for_help
                 else "Learner will practice the requested skill with teacher support."
             ),
@@ -711,7 +729,9 @@ class MockV2AIProvider(V2AIProvider):
             ),
             baseline="Unknown — teacher confirmation needed",
             observable_response=(
-                "Requests help using a short phrase"
+                teacher_request.strip()
+                if asks_for_break
+                else "Requests help using a short phrase"
                 if asks_for_help
                 else "Performs the teacher-confirmed observable response"
             ),
@@ -725,16 +745,35 @@ class MockV2AIProvider(V2AIProvider):
         )
         return deepcopy(questions), draft
 
+    def generate_lesson_questions_with_snapshot(
+        self,
+        learner: LearnerProfile,
+        teacher_request: str,
+        snapshot: InstructionalConstraintSnapshot,
+        supported_material_catalog: list[str],
+    ) -> tuple[list[AIQuestion], LessonDesignDraft]:
+        self._planning_snapshot = snapshot
+        try:
+            questions, draft = self.generate_lesson_questions(learner, teacher_request)
+            return questions, draft.model_copy(
+                update={
+                    "profile_revision": snapshot.profile_revision,
+                    "instructional_constraint_snapshot": snapshot,
+                }
+            )
+        finally:
+            self._planning_snapshot = None
+
     def polish_lesson_brief(self, draft: LessonDesignDraft) -> str:
         self._mark_local_mock("lesson_generation")
         return "Practice the target skill across short, familiar situations with teacher-confirmed supports."
 
     def generate_lesson_package(
         self,
-        draft: LessonDesignDraftDto,
-        learner_context: dict | None = None,
+        lesson_spec: LessonSpec,
     ) -> dict:
-        """Deterministic fake content behind the same boundary a real model will use."""
+        """Deterministic prose proposals from the canonical LessonSpec boundary."""
+        lesson_spec = self._require_lesson_spec(lesson_spec)
         self._mark_local_mock("lesson_generation")
         self._record_generation(
             self._registry,
@@ -744,21 +783,14 @@ class MockV2AIProvider(V2AIProvider):
             output_source="local_mock",
             set_last=False,
         )
-        context = learner_context or {}
-        interests = context.get("interests") or []
-        support_needs = context.get("supportNeeds") or []
-        communication_mode = context.get("communicationMode") or draft.responseLevel
-        reinforcers = context.get("reinforcementPreferences") or ["specific praise"]
-        prompting = context.get("promptingPreferences") or ["least-to-most prompting"]
-        theme = draft.theme.strip() or (
-            interests[0] if interests else "neutral classroom"
-        )
-        scenario = (
-            draft.scenarios[0] if draft.scenarios else "a familiar classroom activity"
-        )
-        phrase = draft.responseLevel or communication_mode or "the target response"
-        support_copy = ", ".join(support_needs[:2]) or "clear teacher modeling"
-        selected = list(dict.fromkeys(draft.selectedMaterials))
+        interests = lesson_spec.personalization_themes
+        communication_mode = ", ".join(lesson_spec.communication_plan.accepted_modes)
+        reinforcer = lesson_spec.reinforcement_plan.earned_reward or "the teacher-confirmed reinforcement"
+        prompting = lesson_spec.prompting_plan.sequence or ["the teacher-confirmed prompt sequence"]
+        theme = interests[0] if interests else "neutral classroom"
+        scenario = lesson_spec.contexts[0].label if lesson_spec.contexts else "a familiar classroom activity"
+        phrase = communication_mode or "the confirmed target response"
+        support_copy = ", ".join(lesson_spec.access_plan.layout_requirements[:2]) or "the confirmed access plan"
         material_types = {
             "quantity cards": "quantity_cards",
             "number cards": "quantity_cards",
@@ -812,19 +844,19 @@ class MockV2AIProvider(V2AIProvider):
             "summary_template": "Lesson Summary",
         }
         materials = []
-        for selected_name in selected:
-            material_type = material_types.get(selected_name.casefold())
-            if not material_type:
+        for request in lesson_spec.material_requests:
+            if not request.required or not request.supported:
                 continue
+            material_type = request.material_type
             if material_type == "visual_card":
                 content = {
                     "phrase": phrase,
                     "instruction": f"Use during {scenario.lower()} and pause before prompting.",
-                    "example": draft.goalText,
+                    "example": lesson_spec.goal.display_text,
                     "teacherNote": f"Support with {support_copy}.",
                 }
                 image_concept = (
-                    f"{draft.goalText.rstrip('.')} during {scenario.lower()}"
+                    f"{lesson_spec.goal.display_text.rstrip('.')} during {scenario.lower()}"
                 )
             elif material_type == "help_card":
                 content = {
@@ -836,28 +868,22 @@ class MockV2AIProvider(V2AIProvider):
                 image_concept = f"requesting support during {scenario.lower()}"
             elif material_type == "token_board":
                 content = {
-                    "instruction": "Earn 3 tokens, then access the selected reinforcer.",
-                    "reward": reinforcers[0],
+                    "instruction": f"Earn {lesson_spec.reinforcement_plan.token_count or 'the confirmed number of'} tokens, then access the selected reinforcer.",
+                    "reward": reinforcer,
                     "artwork": f"Friendly {'vehicle' if 'vehicle' in theme.casefold() else theme.lower()} artwork",
-                    "tokens": 3,
+                    "tokens": lesson_spec.reinforcement_plan.token_count,
                     "teacherNote": (
                         "Praise effort and reinforce each appropriate request."
-                        if "ask for help" in draft.goalText.casefold()
+                        if "ask for help" in lesson_spec.goal.display_text.casefold()
                         else "Reinforce participation and appropriate attempts, not perfection."
                     ),
                 }
                 image_concept = (
-                    f"simple token board with {reinforcers[0].lower()} reward"
+                    f"simple token board with {reinforcer.lower()} reward"
                 )
             elif material_type == "data_sheet":
                 content = {
-                    "columns": [
-                        "Scenario",
-                        "Response",
-                        "Prompt level",
-                        "Participation",
-                        "Notes",
-                    ],
+                    "columns": lesson_spec.data_plan.measures,
                     "progressSignals": [
                         "Independence",
                         "Prompt fading",
@@ -878,7 +904,7 @@ class MockV2AIProvider(V2AIProvider):
                 image_concept = ""
             material = {
                 "type": material_type,
-                "title": material_titles[material_type],
+                "title": material_titles.get(material_type, request.display_label),
                 "content": content,
             }
             if image_concept:
@@ -893,7 +919,7 @@ class MockV2AIProvider(V2AIProvider):
         return {
             "lessonBrief": (
                 f"Teach the confirmed goal across short, familiar {theme.lower()} practice "
-                f"situations. Use {support_copy}, {prompting[0]}, and {reinforcers[0]}; "
+                f"situations. Use {support_copy}, {prompting[0]}, and {reinforcer}; "
                 "record independence, prompt level, engagement, and regulation."
             ),
             "summaryTemplate": (
@@ -938,12 +964,24 @@ class MockV2AIProvider(V2AIProvider):
                     "title": "Reinforcement and data note",
                     "description": "Recognize small wins and capture multidimensional progress.",
                     "duration": "2 min",
-                    "teacherAction": f"Offer {reinforcers[0]} and record prompt level and participation.",
+                    "teacherAction": f"Offer {reinforcer} and record prompt level and participation.",
                     "learnerAction": "Receives reinforcement and transitions with support.",
                 },
             ],
             "materials": materials,
         }
+
+    def repair_material_spec(
+        self,
+        material_spec: MaterialSpec,
+        issues: list[MaterialValidationIssue],
+        lesson_spec: LessonSpec,
+    ) -> MaterialSpec:
+        # Fixture-driven mock generation is expected to validate on its first
+        # pass. Returning the same typed value makes an unexpected invalid mock
+        # fail visibly after the bounded repair attempts instead of hiding it
+        # behind generic fallback content.
+        return material_spec
 
     def generate_material_image(
         self,

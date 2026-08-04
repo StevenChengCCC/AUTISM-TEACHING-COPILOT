@@ -3,7 +3,7 @@ export const mockSessions: LessonSession[] = [
   { id:"s1",learnerId:"a102",goal:"Asking for Help",status:"planned",updatedAt:"Today 2:30 PM" },
   { id:"s2",learnerId:"b214",goal:"Following Directions",status:"completed",updatedAt:"Yesterday" },
   { id:"s3",learnerId:"n501",goal:"Identify Emotions",status:"draft",updatedAt:"Saved 1 hour ago" },
-  { id:"s4",learnerId:"c087",goal:"Sorting Objects",status:"in_progress",updatedAt:"Today" },
+  { id:"s4",learnerId:"c087",goal:"Sorting Objects",status:"in_progress",updatedAt:"Today",lessonPackageId:"mock-package-s4",lessonPackageRevision:1,lessonSpecId:"mock-spec-s4",goalId:"mock-spec-s4:goal",goalRevision:1,operationalizedGoal:"Sorts an object into the matching category" },
 ];
 export const mockSessionStats:LessonSessionStat[] = [
   {status:"planned",label:"Planned",count:12,helperText:"Upcoming sessions"},

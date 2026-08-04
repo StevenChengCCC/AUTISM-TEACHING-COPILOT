@@ -8,8 +8,10 @@ from app.schemas.v2_dto import (
     LearnerProfileVersionDto,
     LearnerUpdate,
     ProfileConfirmRequest,
+    ProfileFactorReviewRequest,
     ProfileSignalReviewRequest,
 )
+from app.services.v2_profile_normalization_service import canonicalize_profile
 from app.services.v2_repositories import V2Repositories, repositories
 
 
@@ -35,8 +37,8 @@ class V2LearnerService:
     def create(self, payload: LearnerCreate) -> LearnerProfile:
         if any(item.code == payload.code for item in self.repos.learners.list()):
             raise ConflictError("Learner code already exists")
-        learner = LearnerProfile(
-            id=self.repos.next_id("learner"), **payload.model_dump()
+        learner = canonicalize_profile(
+            LearnerProfile(id=self.repos.next_id("learner"), **payload.model_dump())
         )
         return self.repos.learners.save(learner)
 
@@ -54,7 +56,7 @@ class V2LearnerService:
             raise ConflictError("Learner code already exists")
         if payload.expected_version is not None:
             learner = learner.model_copy(update={"version": payload.expected_version})
-        updated = learner.model_copy(update=changes)
+        updated = canonicalize_profile(learner.model_copy(update=changes))
         return self.repos.learners.save(updated)
 
     def update_dto(self, learner_id: str, payload: LearnerUpdate) -> LearnerProfileDto:
@@ -65,6 +67,65 @@ class V2LearnerService:
 
         self.get(learner.id)
         return self.repos.learners.save(learner)
+
+    def review_factor(
+        self,
+        learner_id: str,
+        factor_id: str,
+        payload: ProfileFactorReviewRequest,
+    ) -> LearnerProfileDto:
+        learner = self.get(learner_id)
+        if learner.version != payload.expected_version:
+            from app.core.exceptions import VersionConflictError
+
+            raise VersionConflictError(
+                "The learner profile changed after it was loaded. Refresh and try again."
+            )
+        canonical = learner.normalized_profile
+        if canonical is None:
+            raise NotFoundError("Normalized learner profile not found")
+        found = False
+        factors = []
+        for factor in canonical.factors:
+            if factor.id != factor_id:
+                factors.append(factor)
+                continue
+            found = True
+            edited = (payload.edited_value or "").strip()
+            factors.append(
+                factor.model_copy(
+                    update={
+                        "value": (
+                            edited
+                            if payload.decision == "edit" and edited
+                            else factor.value
+                        ),
+                        "status": (
+                            "rejected"
+                            if payload.decision == "reject"
+                            else (
+                                "teacher_edited"
+                                if payload.decision == "edit"
+                                else "teacher_confirmed"
+                            )
+                        ),
+                        "teacher_reviewed": True,
+                    }
+                )
+            )
+        if not found:
+            raise NotFoundError("Profile factor not found")
+        updated = canonicalize_profile(
+            learner.model_copy(
+                update={
+                    "normalized_profile": canonical.model_copy(
+                        update={"factors": factors}
+                    ),
+                    "profile_review_status": "reviewed",
+                }
+            )
+        )
+        return self.to_dto(self.repos.learners.save(updated))
 
     def review_signal(
         self,
@@ -186,6 +247,7 @@ class V2LearnerService:
             generalizationProfile=learner.generalization_profile,
             breakPreferences=learner.break_preferences,
             classroomBarriers=learner.classroom_barriers,
+            normalizedProfile=learner.normalized_profile,
             profileSignals=learner.profile_signals,
             unknownFields=learner.unknown_fields,
             profileReviewStatus=learner.profile_review_status,

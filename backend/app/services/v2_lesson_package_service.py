@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import logging
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 
 from app.core.config import Settings, settings
 from app.core.exceptions import (
@@ -23,6 +26,8 @@ from app.schemas.v2_dto import (
     EmotionScaleSpecification,
     ErrorCorrectionPlanDto,
     GeneralizationPlanDto,
+    GenericMaterialProposalSpecification,
+    GoalDecisionValue,
     HelpCardSpecification,
     HandoffNoteSpecification,
     FirstThenBoardSpecification,
@@ -37,6 +42,11 @@ from app.schemas.v2_dto import (
     LessonPackageUpdateRequest,
     LessonPackageVersionComparisonDto,
     LessonPackageVersionDto,
+    LessonSpec,
+    LessonSpecFieldResolution,
+    MaterialVisualAssetRequest,
+    StructuredSafetyIssue,
+    PackageContentPlan,
     QuantityCardsSpecification,
     PromptingPlanDto,
     PrintLayout,
@@ -61,20 +71,26 @@ from app.schemas.v2_dto import (
 from app.services.v2_repositories import V2Repositories, repositories
 from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_ai_context_service import (
-    build_lesson_generation_context,
     build_image_generation_context,
     build_safe_image_prompt,
     personalization_sources,
 )
 from app.services.v2_learner_service import V2LearnerService
+from app.services.v2_record_service import V2RecordService
+from app.services.v2_instructional_constraint_service import (
+    build_instructional_constraint_snapshot,
+)
 from app.services.v2_material_service import V2MaterialService
+from app.services.v2_material_spec_service import V2MaterialSpecService
 from app.services.v2_material_blueprint_service import V2MaterialBlueprintService
 from app.services.v2_lesson_package_quality_service import (
     V2LessonPackageQualityService,
 )
+from app.services.v2_lesson_spec_service import V2LessonSpecService
+from app.services.v2_package_content_plan_service import V2PackageContentPlanService
 from app.services.v2_safety_harness_service import V2SafetyHarnessService
+from app.services.v2_visual_asset_plan_service import V2VisualAssetPlanService
 from app.services.v2_standards_skill_service import V2StandardsSkillService
-
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +115,7 @@ class V2LessonPackageService:
         "break_card",
         "teacher_cue_card",
         "token_board",
+        "blue_line_activity",
     }
 
     def __init__(
@@ -119,6 +136,40 @@ class V2LessonPackageService:
         self.images = images or V2ImageAssetService(repos, ai=self.ai)
         self.config = config
         self.learners = V2LearnerService(repos)
+        self.records = V2RecordService(repos)
+        self.lesson_specs = V2LessonSpecService()
+        self.material_specs = V2MaterialSpecService(config)
+        self.visual_plans = V2VisualAssetPlanService()
+        self.content_plans = V2PackageContentPlanService(config)
+
+    def preview_content_plan(self, draft: LessonDesignDraftDto) -> PackageContentPlan:
+        lesson_spec = self._lesson_spec_for_content_plan(draft)
+        return self.content_plans.validate(self.content_plans.build(lesson_spec), lesson_spec)
+
+    def validate_content_plan(
+        self, draft: LessonDesignDraftDto, plan: PackageContentPlan
+    ) -> PackageContentPlan:
+        lesson_spec = self._lesson_spec_for_content_plan(draft)
+        return self.content_plans.validate(plan, lesson_spec)
+
+    def _lesson_spec_for_content_plan(self, draft: LessonDesignDraftDto) -> LessonSpec:
+        learner = self.learners.get(draft.learnerId)
+        latest_snapshot = build_instructional_constraint_snapshot(
+            learner, self.records.list_for_learner(draft.learnerId)
+        )
+        snapshot = (
+            draft.instructionalConstraintSnapshot
+            if draft.instructionalConstraintSnapshot
+            and draft.instructionalConstraintSnapshot.profile_revision == latest_snapshot.profile_revision
+            else latest_snapshot
+        )
+        prepared = draft.model_copy(update={
+            "profileRevision": snapshot.profile_revision,
+            "instructionalConstraintSnapshot": snapshot,
+        })
+        return self.lesson_specs.require_valid(
+            self.lesson_specs.from_draft(prepared, learner, snapshot), snapshot
+        )
 
     def get(self, package_id: str) -> LessonPackage:
         package = self.repos.packages.get(package_id)
@@ -174,14 +225,90 @@ class V2LessonPackageService:
             raise ValidationError(
                 "Confirmed goal and materials are required before generation"
             )
+        material_decision = next(
+            (item for item in draft.decisions if item.field == "material_requests"),
+            None,
+        )
+        if material_decision is not None and hasattr(material_decision.value, "materials"):
+            blocked = [
+                item for item in material_decision.value.materials
+                if not item.supported and item.origin != "future_unsupported"
+            ]
+            if blocked:
+                labels = [item.custom_label or item.material_type for item in blocked]
+                raise ValidationError(
+                    "Unsupported material requests must be changed, matched to a supported equivalent, or saved for future use before generation: "
+                    + ", ".join(labels)
+                )
+            library_types = [
+                item.material_type for item in material_decision.value.materials
+                if item.origin == "library_reused"
+            ]
+            future_labels = {
+                item.custom_label for item in material_decision.value.materials
+                if item.origin == "future_unsupported" and item.custom_label
+            }
+            draft = draft.model_copy(update={
+                "selectedMaterials": list(dict.fromkeys([
+                    *[item for item in draft.selectedMaterials if item not in future_labels],
+                    *library_types,
+                ]))
+            })
+            if not draft.selectedMaterials:
+                raise ValidationError(
+                    "Select at least one supported material for this package; future requests are saved but not generated."
+                )
 
         package_id = self.repos.next_id("package")
         learner = self.learners.get(draft.learnerId)
-        learner_context = build_lesson_generation_context(learner, draft)
+        latest_snapshot = build_instructional_constraint_snapshot(
+            learner, self.records.list_for_learner(draft.learnerId)
+        )
+        if (
+            draft.profileRevision
+            and draft.profileRevision != latest_snapshot.profile_revision
+        ):
+            raise ConflictError(
+                "Learner information changed after this lesson draft was created. Restart planning before generation."
+            )
+        snapshot = (
+            draft.instructionalConstraintSnapshot
+            if draft.instructionalConstraintSnapshot
+            and draft.instructionalConstraintSnapshot.profile_revision
+            == latest_snapshot.profile_revision
+            else latest_snapshot
+        )
+        draft = draft.model_copy(
+            update={
+                "profileRevision": snapshot.profile_revision,
+                "instructionalConstraintSnapshot": snapshot,
+                "profileStale": False,
+                "profileStaleMessage": "",
+            }
+        )
+        lesson_spec = self.lesson_specs.require_valid(
+            self.lesson_specs.from_draft(draft, learner, snapshot), snapshot
+        )
+        content_plan = draft.packageContentPlan
+        confirmed_fields = {item.field for item in draft.decisions}
+        if content_plan is None and {
+            "goal", "practice_contexts", "material_requests"
+        }.issubset(confirmed_fields):
+            raise ConflictError(
+                "Preview and confirm the complete package contents before material generation"
+            )
+        if (
+            content_plan is None
+            or content_plan.lesson_spec_id != lesson_spec.id
+            or content_plan.lesson_spec_revision != lesson_spec.revision
+        ):
+            content_plan = self.content_plans.build(lesson_spec)
+        content_plan = self.content_plans.validate(content_plan, lesson_spec)
+        lesson_spec = self.content_plans.apply_to_lesson_spec(content_plan, lesson_spec)
         provider_name = getattr(self.ai, "provider_name", self.ai.__class__.__name__)
         fallback_material_metadata = None
         try:
-            generated_content = self.ai.generate_lesson_package(draft, learner_context)
+            generated_content = self.ai.generate_lesson_package(lesson_spec)
             generation_metadata = getattr(self.ai, "last_generation_metadata", None)
             fallback_used = bool(getattr(self.ai, "last_fallback_used", False))
         except Exception as exc:
@@ -194,9 +321,7 @@ class V2LessonPackageService:
             from app.integrations.mock_ai_provider import MockV2AIProvider
 
             fallback_provider = MockV2AIProvider(config=self.config)
-            generated_content = fallback_provider.generate_lesson_package(
-                draft, learner_context
-            )
+            generated_content = fallback_provider.generate_lesson_package(lesson_spec)
             generation_metadata = fallback_provider.last_generation_metadata
             fallback_material_metadata = (
                 fallback_provider.generation_metadata_by_skill.get(
@@ -218,7 +343,7 @@ class V2LessonPackageService:
                     }
                 )
             fallback_used = True
-        fallback_content = self._fallback_product_content(draft, learner_context)
+        fallback_content = self._fallback_product_content(lesson_spec)
         material_generation_metadata = fallback_material_metadata or getattr(
             self.ai, "generation_metadata_by_skill", {}
         ).get("material_generation")
@@ -227,7 +352,7 @@ class V2LessonPackageService:
         invalid_provider_output = provider_name != "mock" and (
             not self._is_valid_product_flow(generated_content.get("teachingFlow"))
             or not self._generated_materials_cover_draft(
-                generated_content.get("materials"), draft
+                generated_content.get("materials"), lesson_spec
             )
         )
         if invalid_provider_output:
@@ -242,10 +367,10 @@ class V2LessonPackageService:
         teaching_flow = self._parse_product_flow(
             generated_content.get("teachingFlow"), fallback_content["teachingFlow"]
         )
-        teaching_flow = self._enrich_product_flow(teaching_flow, draft)
+        teaching_flow = self._enrich_product_flow(teaching_flow, lesson_spec)
         materials = self._build_product_materials(
             package_id,
-            draft,
+            lesson_spec,
             generated_content.get("materials"),
             fallback_content["materials"],
         )
@@ -262,9 +387,9 @@ class V2LessonPackageService:
                 )
                 for material in materials
             ]
-        safety_review = self.safety.review_product(draft, generated_content)
+        safety_review = self.safety.review_product(lesson_spec, generated_content)
         standards_checks = self.standards.evaluate_product(
-            draft, materials, generated_content
+            lesson_spec, materials, generated_content
         )
         package_status = (
             "safety_review_needed"
@@ -278,17 +403,21 @@ class V2LessonPackageService:
 
         package = LessonPackageDto(
             id=package_id,
-            learnerId=draft.learnerId,
+            learnerId=lesson_spec.learner_id,
             draftId=draft.id,
-            goal=draft.goalText,
-            duration=draft.duration,
-            theme=draft.theme,
+            goal=lesson_spec.goal.display_text,
+            duration=f"{lesson_spec.duration.total_minutes} min",
+            theme=lesson_spec.theme,
             lessonBrief=generated_content.get("lessonBrief")
             or fallback_content["lessonBrief"],
             teachingFlow=teaching_flow,
             materials=materials,
             summaryTemplate=generated_content.get("summaryTemplate")
             or fallback_content["summaryTemplate"],
+            documentContent={
+                "teacherRequest": lesson_spec.teacher_request,
+                "teacherEdits": lesson_spec.teacher_edits,
+            },
             safetyReview=safety_review,
             standardsChecks=standards_checks,
             aiProvider=provider_name,
@@ -304,13 +433,31 @@ class V2LessonPackageService:
                 else None
             ),
             personalizationSources=personalization_sources(learner, draft),
+            profileRevision=snapshot.profile_revision,
+            instructionalConstraintSnapshot=snapshot,
+            teacherDecisions=draft.decisions,
+            lessonSpec=lesson_spec,
+            packageContentPlan=content_plan,
+            validationPolicy=(
+                "strict_v1"
+                if materials and all(item.materialSchemaVersion == 1 for item in materials)
+                else "legacy_compatibility"
+            ),
+            validationStatus="passed" if package_status == "teacher_review_needed" else "failed",
+            validatedRevision=1 if package_status == "teacher_review_needed" else None,
+            validatedLessonSpecRevision=(
+                lesson_spec.revision if package_status == "teacher_review_needed" else None
+            ),
             status=package_status,
-            targetSkill=draft.goalText,
-            observableResponse=draft.observableResponse or draft.goalText,
+            targetSkill=lesson_spec.goal.display_text,
+            observableResponse=lesson_spec.goal.observable_behavior,
             baseline=draft.baseline,
-            objective=draft.goalText,
-            successCriterion=f"Teacher confirms success across {draft.opportunities} planned opportunities.",
-            responseModality=draft.responseLevel,
+            objective=lesson_spec.goal.display_text,
+            successCriterion=(
+                f"{lesson_spec.goal.success_criterion.required_successful_opportunities} successful opportunities out of "
+                f"{lesson_spec.goal.success_criterion.total_opportunities}"
+            ),
+            responseModality=", ".join(lesson_spec.goal.accepted_response_modes),
             preparationChecklist=[
                 "Review learner communication access and accepted responses",
                 "Prepare selected materials and a brief break option",
@@ -318,60 +465,46 @@ class V2LessonPackageService:
                 "Prepare the aligned data sheet",
             ],
             promptingPlan=PromptingPlanDto(
-                startingPrompt=draft.promptingStart,
-                permittedHierarchy=[
-                    "Natural cue",
-                    "Wait time",
-                    "Visual or gestural prompt",
-                    "Model prompt",
-                    "Teacher-selected additional support",
-                ],
-                waitTime="5 seconds unless the teacher adapts it",
-                fadingIntention="Reduce support as independent responding becomes stable",
+                startingPrompt=lesson_spec.promptingStart,
+                permittedHierarchy=lesson_spec.prompting_plan.sequence,
+                waitTime=(
+                    f"{lesson_spec.prompting_plan.wait_time_seconds} seconds"
+                    if lesson_spec.prompting_plan.wait_time_seconds is not None else "Teacher confirmation required"
+                ),
+                fadingIntention=lesson_spec.prompting_plan.fade_rule,
                 reduceSupportCriteria="Reduce one level after teacher-observed successful responding without distress",
-                teacherOverride=draft.promptingLimits,
+                teacherOverride=lesson_spec.prompting_plan.teacher_override,
             ),
             reinforcementPlan=ReinforcementPlanDto(
-                selectedSupport=draft.reinforcementPlan,
+                selectedSupport=lesson_spec.reinforcement_plan.earned_reward,
                 deliveryTiming="Immediately after the confirmed target response or meaningful approximation",
-                targetResponse=draft.observableResponse or draft.goalText,
+                targetResponse=lesson_spec.goal.observable_behavior,
                 learnerChoice="Offer a choice when more than one confirmed support is available",
                 alternativeWhenIneffective="Pause and offer another confirmed engagement support without withholding basic needs",
             ),
             errorCorrectionPlan=ErrorCorrectionPlanDto(
-                neutralResponse="Use a neutral acknowledgement and preserve communication access",
-                repeatOpportunity="Model or clarify, then offer another opportunity",
+                neutralResponse=(lesson_spec.error_correction_plan.strategies[0] if lesson_spec.error_correction_plan.strategies else "Teacher confirmation required"),
+                repeatOpportunity=(lesson_spec.error_correction_plan.strategies[-1] if lesson_spec.error_correction_plan.strategies else "Teacher confirmation required"),
                 supportAfterRepeatedError="Reduce difficulty, offer a break, or stop for team review",
                 dataRecording="Record the outcome and prompt level without labeling the learner",
             ),
             generalizationPlan=GeneralizationPlanDto(
-                examples=draft.scenarios or ["A familiar classroom example"],
+                examples=lesson_spec.scenarios,
                 people=["Teacher", "Another familiar adult after initial success"],
                 settings=[
                     "Teaching area",
                     "Another familiar setting after initial success",
                 ],
                 wording=[
-                    draft.responseLevel,
-                    "A teacher-confirmed equivalent response",
+                    *lesson_spec.goal.accepted_response_modes,
                 ],
-                materials=draft.selectedMaterials,
+                materials=lesson_spec.selectedMaterials,
                 responseFormats=[
-                    draft.responseLevel,
-                    "Established AAC, gesture, or picture response when applicable",
+                    *lesson_spec.goal.accepted_response_modes,
                 ],
             ),
             dataSheetSpecification=DataSheetSpecificationDto(
-                columns=[
-                    "opportunity",
-                    "independent",
-                    "prompted",
-                    "incorrect",
-                    "no_response",
-                    "prompt_level",
-                    "latency",
-                    "notes",
-                ],
+                columns=lesson_spec.data_plan.measures,
                 summaryCalculation="Summarize independent and prompted responses separately; also note participation, regulation, and generalization attempts.",
             ),
             teacherAdaptation=TeacherAdaptationPlanDto(
@@ -400,7 +533,7 @@ class V2LessonPackageService:
                 ],
             ),
         )
-        quality_score = self.quality.evaluate(draft, package)
+        quality_score = self.quality.evaluate(lesson_spec, package)
         if quality_score.overallStatus == "blocked":
             package = package.model_copy(
                 update={
@@ -426,6 +559,25 @@ class V2LessonPackageService:
         package = self.get_product(package_id)
         material_service = V2MaterialService(self.repos)
         for material in package.materials:
+            if material.visualAssetPlan is not None:
+                queued_items = [
+                    item.model_copy(update={"status": "planned"})
+                    if item.generation_method == "ai_generated"
+                    else item
+                    for item in material.visualAssetPlan.visual_items
+                ]
+                queued = material.visualAssetPlan.model_copy(
+                    update={"visual_items": queued_items}
+                )
+                material_service.attach_visual_plan(
+                    material.id, queued,
+                    overall_status=(
+                        "pending"
+                        if any(item.generation_method == "ai_generated" for item in queued_items)
+                        else "ready"
+                    ),
+                )
+                continue
             if material.type not in self.image_material_types:
                 continue
             visual_items = material.content.get("visualItems")
@@ -490,6 +642,24 @@ class V2LessonPackageService:
             raise ValidationError("This material does not require generated artwork")
         package = self.get_product(material.packageId)
         learner = self.learners.get(package.learnerId)
+        if material.visualAssetPlan is not None and material.materialSpec is not None:
+            if not force_generation and all(
+                item.generation_method != "ai_generated"
+                or (
+                    item.status in {"ready", "needs_review"}
+                    and bool(item.asset_id)
+                )
+                or (
+                    item.status == "failed"
+                    and bool(item.fallback_asset_id)
+                    and bool(item.design_constraints.get("fallbackVisible"))
+                )
+                for item in material.visualAssetPlan.visual_items
+            ):
+                return material
+            return self._prepare_typed_material_visuals(
+                material, learner, force_generation=force_generation
+            )
         planned_items = material.content.get("visualItems")
         if not isinstance(planned_items, list) or not planned_items:
             raise ValidationError("This material does not have a visual asset plan")
@@ -520,7 +690,9 @@ class V2LessonPackageService:
                     learner,
                     material.type,
                     safe_concept,
-                    str(item.get("prompt") or material.content.get("imagePrompt") or ""),
+                    str(
+                        item.get("prompt") or material.content.get("imagePrompt") or ""
+                    ),
                 )
                 asset = self.images.prepare_generated_image_for_material(
                     learner_id=learner.id,
@@ -551,8 +723,7 @@ class V2LessonPackageService:
                         if asset.sourceType in {"generated", "internal"}
                         else (
                             "needs_review"
-                            if asset.sourceType
-                            in {"pexels", "pixabay", "unsplash"}
+                            if asset.sourceType in {"pexels", "pixabay", "unsplash"}
                             else "failed"
                         )
                     ),
@@ -567,9 +738,7 @@ class V2LessonPackageService:
         overall_status = (
             "failed"
             if "failed" in item_statuses
-            else "needs_review"
-            if "needs_review" in item_statuses
-            else "ready"
+            else "needs_review" if "needs_review" in item_statuses else "ready"
         )
         material_service.attach_visual_assets(
             material.id,
@@ -581,17 +750,154 @@ class V2LessonPackageService:
             raise NotFoundError("Generated material not found")
         return updated
 
+    def _prepare_typed_material_visuals(
+        self, material: GeneratedMaterialDto, learner, *, force_generation: bool,
+        only_visual_ids: set[str] | None = None,
+    ) -> GeneratedMaterialDto:
+        """Generate semantic AI items with bounded concurrency and fallbacks."""
+
+        if material.visualAssetPlan is None or material.materialSpec is None:
+            raise ValidationError("This material does not have a typed visual plan")
+        plan = self.visual_plans.require_valid(
+            material.visualAssetPlan, material.materialSpec
+        )
+        service = V2MaterialService(self.repos)
+        generating = plan.model_copy(update={
+            "visual_items": [
+                item.model_copy(update={"status": "generating"})
+                if item.generation_method == "ai_generated"
+                and (only_visual_ids is None or item.id in only_visual_ids)
+                else item
+                for item in plan.visual_items
+            ]
+        })
+        service.attach_visual_plan(material.id, generating, overall_status="processing")
+
+        ai_items = [
+            item for item in generating.visual_items
+            if item.generation_method == "ai_generated"
+            and (only_visual_ids is None or item.id in only_visual_ids)
+        ]
+
+        def generate(item):
+            last_error: Exception | None = None
+            for _attempt in range(max(0, self.config.VISUAL_IMAGE_MAX_RETRIES) + 1):
+                try:
+                    concept = str(item.design_constraints.get("concept") or item.visible_label)
+                    safe_concept = build_image_generation_context(
+                        learner, material.type, concept
+                    )["concept"]
+                    prompt, _ = build_safe_image_prompt(
+                        learner, material.type, safe_concept, item.prompt or ""
+                    )
+                    # All instructional labels remain renderer text. This suffix
+                    # is applied after the profile-safe prompt builder.
+                    prompt = (
+                        f"{prompt} Do not include text, letters, numerals, captions, "
+                        "labels, logos, or watermarks in the image."
+                    )
+                    asset = self.images.prepare_generated_image_for_material(
+                        learner_id=learner.id,
+                        material_id="",
+                        material_type=material.type,
+                        concept=safe_concept,
+                        prompt=prompt,
+                        style="literal neutral low-clutter instructional symbol; plain light background; no text",
+                        size="1024x1024",
+                        force_generation=force_generation,
+                    )
+                    if asset.sourceType == "mock":
+                        raise RuntimeError("Image provider returned a non-semantic placeholder")
+                    status = (
+                        "ready"
+                        if asset.sourceType in {"generated", "internal"}
+                        else "needs_review"
+                    )
+                    return item.model_copy(update={
+                        "status": status,
+                        "asset_id": asset.id,
+                        "review_status": "unreviewed",
+                    })
+                except Exception as exc:  # provider and persistence failures use the planned fallback
+                    last_error = exc
+            logger.warning(
+                "visual_item_generation_failed",
+                extra={"material_id": material.id, "visual_item_id": item.id},
+            )
+            return item.model_copy(update={
+                "status": "failed",
+                "asset_id": item.fallback_asset_id,
+                "review_status": "unreviewed",
+                "design_constraints": {
+                    **item.design_constraints,
+                    "fallbackVisible": bool(item.fallback_asset_id),
+                    "failureReason": type(last_error).__name__ if last_error else "unknown",
+                },
+            })
+
+        completed_by_id = {}
+        worker_count = max(1, min(self.config.VISUAL_IMAGE_MAX_CONCURRENCY, len(ai_items) or 1))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {
+                executor.submit(copy_context().run, generate, item): item.id
+                for item in ai_items
+            }
+            for future in as_completed(futures):
+                completed = future.result()
+                completed_by_id[completed.id] = completed
+
+        completed_items = [completed_by_id.get(item.id, item) for item in generating.visual_items]
+        token_master = next(
+            (item for item in completed_items if item.semantic_key == "token-symbol" and item.asset_id),
+            None,
+        )
+        if token_master:
+            completed_items = [
+                item.model_copy(update={"asset_id": token_master.asset_id})
+                if item.design_constraints.get("reusesTokenSemanticKey") == "token-symbol"
+                else item
+                for item in completed_items
+            ]
+        completed_plan = generating.model_copy(update={"visual_items": completed_items})
+        self.visual_plans.require_valid(completed_plan, material.materialSpec)
+        blockers = self.visual_plans.approval_blockers(completed_plan)
+        overall = (
+            "failed" if blockers
+            else "needs_review" if any(item.status in {"failed", "needs_review"} for item in completed_items)
+            else "ready"
+        )
+        return service.attach_visual_plan(material.id, completed_plan, overall_status=overall)
+
+    def prepare_material_visual(
+        self, material_id: str, visual_item_id: str, *, force_generation: bool = True
+    ) -> GeneratedMaterialDto:
+        material = self.repos.generated_materials.get(material_id)
+        if not material or not isinstance(material, GeneratedMaterialDto):
+            raise NotFoundError("Generated material not found")
+        if material.visualAssetPlan is None or material.materialSpec is None:
+            raise ValidationError("This material does not have a typed visual plan")
+        selected = next(
+            (item for item in material.visualAssetPlan.visual_items if item.id == visual_item_id),
+            None,
+        )
+        if selected is None:
+            raise NotFoundError("Visual item not found")
+        if selected.generation_method != "ai_generated":
+            return V2MaterialService(self.repos).choose_visual_fallback(
+                material_id, visual_item_id
+            )
+        package = self.get_product(material.packageId)
+        learner = self.learners.get(package.learnerId)
+        return self._prepare_typed_material_visuals(
+            material, learner, force_generation=force_generation,
+            only_visual_ids={visual_item_id},
+        )
+
     def get_product(self, package_id: str) -> LessonPackageDto:
         package = self.repos.lesson_packages.get(package_id)
         if not package or not isinstance(package, LessonPackageDto):
             raise NotFoundError("Lesson package not found")
-        current_score = self.quality.evaluate(
-            self._draft_for_product_quality(package),
-            package,
-        )
-        if current_score != package.qualityScore:
-            return package.model_copy(update={"qualityScore": current_score})
-        return package
+        return self._reevaluate_product(package)
 
     def update_product(
         self, package_id: str, payload: LessonPackageUpdateRequest
@@ -605,13 +911,128 @@ class V2LessonPackageService:
         if payload.teachingFlow is not None:
             updates["teachingFlow"] = payload.teachingFlow
         if payload.documentContent is not None:
-            updates["documentContent"] = payload.documentContent
+            updates["documentContent"] = {**package.documentContent, **payload.documentContent}
+            old_materials_text = str(package.documentContent.get("materialsNeeded", "")).strip()
+            new_materials_text = str(payload.documentContent.get("materialsNeeded", "")).strip()
+            old_contexts = package.documentContent.get("practiceContexts")
+            new_contexts = payload.documentContent.get("practiceContexts")
+            if new_materials_text and old_materials_text and new_materials_text != old_materials_text:
+                updates.update({
+                    "staleOutputs": list(dict.fromkeys([
+                        *package.staleOutputs, "materials", "data_sheet", "teaching_flow"
+                    ])),
+                    "status": "teacher_review_needed",
+                })
+            if new_contexts is not None and new_contexts != old_contexts:
+                updates.update({
+                    "staleOutputs": list(dict.fromkeys([
+                        *updates.get("staleOutputs", package.staleOutputs),
+                        "teaching_flow", "scenario_cards", "generalization_plan", "data_sheet",
+                    ])),
+                    "status": "teacher_review_needed",
+                })
+            edited_goal = str(payload.documentContent.get("goal", "")).strip()
+            if edited_goal and edited_goal != package.goal:
+                # Package edits create a new persisted revision and invalidate all
+                # outputs whose semantics were derived from the prior goal.
+                updates.update(
+                    {
+                        "goal": edited_goal,
+                        "targetSkill": edited_goal,
+                        "observableResponse": edited_goal,
+                        "objective": edited_goal,
+                        "staleOutputs": list(dict.fromkeys([
+                            *updates.get("staleOutputs", package.staleOutputs),
+                            "teaching_flow", "materials", "data_sheet",
+                            "generalization_plan", "summary_template",
+                        ])),
+                        "status": "teacher_review_needed",
+                    }
+                )
+                goal_decision = next(
+                    (item for item in package.teacherDecisions if item.field == "goal"),
+                    None,
+                )
+                if goal_decision is not None:
+                    prior_value = (
+                        goal_decision.value
+                        if isinstance(goal_decision.value, GoalDecisionValue)
+                        else GoalDecisionValue()
+                    )
+                    revised = goal_decision.model_copy(update={
+                        "source": "teacher_edited",
+                        "value": prior_value.model_copy(update={
+                            "interpreted_goal": edited_goal,
+                            "observable_behavior": edited_goal,
+                        }),
+                        "affects": [
+                            "lesson", "teaching_flow", "materials", "data_sheet",
+                            "generalization_plan", "summary_template",
+                        ],
+                        "revision": goal_decision.revision + 1,
+                    })
+                    updates["teacherDecisions"] = [
+                        item for item in package.teacherDecisions if item.field != "goal"
+                    ] + [revised]
+                if package.lessonSpec is not None:
+                    provenance = package.lessonSpec.provenance
+                    updates["lessonSpec"] = package.lessonSpec.model_copy(update={
+                        "revision": package.lessonSpec.revision + 1,
+                        "goal": package.lessonSpec.goal.model_copy(update={
+                            "display_text": edited_goal,
+                            "observable_behavior": edited_goal,
+                        }),
+                        "provenance": provenance.model_copy(update={
+                            "teacher_authored_fields": list(dict.fromkeys([
+                                *provenance.teacher_authored_fields, "goal"
+                            ])),
+                            "field_resolutions": [
+                                *provenance.field_resolutions,
+                                LessonSpecFieldResolution(
+                                    fieldPath="goal",
+                                    source="teacher_authored",
+                                    reason="Teacher edited the goal after package generation; dependent outputs are stale.",
+                                ),
+                            ],
+                        }),
+                    })
         if payload.expectedVersion is not None:
             updates["version"] = payload.expectedVersion
         if package.status == "approved" and updates:
             updates["status"] = "teacher_review_needed"
-        updated = self._reevaluate_product(package.model_copy(update=updates))
-        return self.repos.lesson_packages.save(updated)
+        candidate = package.model_copy(update=updates)
+        if candidate.lessonSpec is not None and package.lessonSpec is not None and candidate.lessonSpec.revision != package.lessonSpec.revision:
+            material_validator = V2MaterialSpecService()
+            stale_materials: list[GeneratedMaterialDto] = []
+            for material in candidate.materials:
+                if material.materialSchemaVersion != 1 or material.materialSpec is None:
+                    stale_materials.append(material)
+                    continue
+                spec = material.materialSpec.model_copy(update={
+                    "approval": material.materialSpec.approval.model_copy(update={
+                        "status": "not_reviewed", "reviewed_revision": None,
+                        "approved_revision": None,
+                    })
+                })
+                semantic = material_validator.validate(spec, candidate.lessonSpec, material.content)
+                safety = material_validator.validate_safety(spec, candidate.lessonSpec, semantic, material.content)
+                stale_materials.append(material.model_copy(update={
+                    "status": "validation_failed",
+                    "materialSpec": spec.model_copy(update={
+                        "semantic_validation": semantic,
+                        "safety_validation": safety,
+                    }),
+                }))
+            candidate = candidate.model_copy(update={"materials": stale_materials})
+        updated = self._reevaluate_product(candidate)
+        if updated.validationStatus == "passed":
+            updated = updated.model_copy(update={"validatedRevision": package.version + 1})
+        with self.repos.transaction():
+            for material in updated.materials:
+                stored = self.repos.generated_materials.get(material.id)
+                if isinstance(stored, GeneratedMaterialDto) and stored != material:
+                    self.repos.generated_materials.save(material.model_copy(update={"version": stored.version}))
+            return self.repos.lesson_packages.save(updated)
 
     def approve_product(
         self, package_id: str, payload: LessonPackageDecisionRequest
@@ -633,8 +1054,18 @@ class V2LessonPackageService:
             raise ConflictError(
                 "Resolve blocked lesson package quality items before approval"
             )
+        if package.validationPolicy == "strict_v1":
+            if package.validationStatus != "passed":
+                raise ConflictError("The current package revision has not passed semantic and safety validation")
+            if package.lessonSpec is None or package.validatedLessonSpecRevision != package.lessonSpec.revision:
+                raise ConflictError("The package was not validated against the current LessonSpec revision")
+            if any(item.blocking for item in package.lessonSpec.unresolved_assumptions):
+                raise ConflictError("Resolve blocking LessonSpec assumptions before approval")
         return self.repos.lesson_packages.save(
-            package.model_copy(update={"status": "approved"})
+            package.model_copy(update={
+                "status": "approved",
+                "validatedRevision": package.version + 1,
+            })
         )
 
     def reject_product(
@@ -834,14 +1265,94 @@ class V2LessonPackageService:
             ],
             "documentContent": package.documentContent,
         }
-        safety_review = self.safety.review_product(draft, content)
+        safety_review = self.safety.review_product(
+            draft, content, detected_revision=package.version
+        )
+        structured_issues = list(safety_review.structuredIssues)
+        material_failures = False
+        if package.validationPolicy == "strict_v1":
+            if package.lessonSpec is None:
+                material_failures = True
+            else:
+                validator = V2MaterialSpecService()
+                refreshed_materials: list[GeneratedMaterialDto] = []
+                for material in package.materials:
+                    if material.materialSchemaVersion != 1 or material.materialSpec is None:
+                        material_failures = True
+                        refreshed_materials.append(material)
+                        continue
+                    semantic = validator.validate(material.materialSpec, package.lessonSpec, material.content)
+                    visual_issues = (
+                        self.visual_plans.validate(material.visualAssetPlan, material.materialSpec)
+                        if material.visualAssetPlan is not None else []
+                    )
+                    visual_blockers = (
+                        self.visual_plans.approval_blockers(material.visualAssetPlan)
+                        if material.visualAssetPlan is not None else []
+                    )
+                    if visual_issues or visual_blockers:
+                        from app.schemas.v2_dto import MaterialValidationIssue
+                        semantic = semantic.model_copy(update={
+                            "status": "failed",
+                            "issues": [
+                                *semantic.issues,
+                                *visual_issues,
+                                *[
+                                    MaterialValidationIssue(
+                                        fieldPath="visualAssetPlan.visualItems",
+                                        code="missing_required_visual",
+                                        message=message,
+                                        remediation="Regenerate the item, replace it, or choose a visible deterministic fallback.",
+                                    )
+                                    for message in visual_blockers
+                                ],
+                            ],
+                        })
+                    material_safety = validator.validate_safety(material.materialSpec, package.lessonSpec, semantic, material.content)
+                    spec = material.materialSpec.model_copy(update={
+                        "semantic_validation": semantic,
+                        "safety_validation": material_safety,
+                    })
+                    if semantic.status != "passed" or material_safety.status != "passed":
+                        material_failures = True
+                    structured_issues.extend(material_safety.issues)
+                    refreshed_materials.append(material.model_copy(update={
+                        "materialSpec": spec,
+                        "status": (
+                            "validation_failed" if semantic.status != "passed"
+                            else "safety_review_needed" if material_safety.status != "passed"
+                            else material.status
+                        ),
+                    }))
+                package = package.model_copy(update={"materials": refreshed_materials})
+                if any(item.blocking for item in package.lessonSpec.unresolved_assumptions):
+                    material_failures = True
+                    for index, assumption in enumerate(package.lessonSpec.unresolved_assumptions, 1):
+                        if not assumption.blocking:
+                            continue
+                        structured_issues.append(StructuredSafetyIssue(
+                            id=f"{package.id}-assumption-{index}", scope="package",
+                            category="unsupported_assumption", severity="blocking",
+                            message=assumption.text, profileFactorIds=package.lessonSpec.profile_factor_ids,
+                            lessonSpecPath="unresolvedAssumptions",
+                            suggestedCorrection="Resolve this assumption with the teacher and revalidate the package.",
+                            detectedAtRevision=package.lessonSpec.revision,
+                        ))
+        if structured_issues:
+            safety_review = safety_review.model_copy(update={
+                "status": "blocked" if any(item.severity == "blocking" for item in structured_issues) else "needs_review",
+                "riskLevel": "high" if any(item.severity == "blocking" for item in structured_issues) else "medium",
+                "issues": list(dict.fromkeys([*safety_review.issues, *[item.message for item in structured_issues]])),
+                "recommendedEdits": list(dict.fromkeys([*safety_review.recommendedEdits, *[item.suggested_correction for item in structured_issues]])),
+                "structuredIssues": structured_issues,
+            })
         checks = self.standards.evaluate_product(draft, package.materials, content)
         status = (
             "safety_review_needed"
             if safety_review.status == "blocked"
             else (
                 "validation_failed"
-                if any(item.status == "blocked" for item in checks)
+                if material_failures or any(item.status == "blocked" for item in checks)
                 else "teacher_review_needed"
             )
         )
@@ -858,10 +1369,20 @@ class V2LessonPackageService:
             and status != "safety_review_needed"
         ):
             status = "validation_failed"
+        validation_failed = (
+            material_failures
+            or safety_review.status == "blocked"
+            or any(item.status == "blocked" for item in checks)
+        )
+        if package.status == "approved" and not validation_failed and quality_score.overallStatus != "blocked":
+            status = "approved"
         return reevaluated.model_copy(
             update={
                 "qualityScore": quality_score,
                 "status": status,
+                "validationStatus": "failed" if validation_failed else "passed",
+                "validatedRevision": None if validation_failed else package.version,
+                "validatedLessonSpecRevision": None if validation_failed or package.lessonSpec is None else package.lessonSpec.revision,
             }
         )
 
@@ -914,7 +1435,7 @@ class V2LessonPackageService:
 
     @staticmethod
     def _enrich_product_flow(
-        flow: list[TeachingStepDto], draft: LessonDesignDraftDto
+        flow: list[TeachingStepDto], draft: LessonSpec
     ) -> list[TeachingStepDto]:
         """Fill the complete teacher-action contract without changing provider prose."""
 
@@ -976,7 +1497,7 @@ class V2LessonPackageService:
             return False
 
     def _generated_materials_cover_draft(
-        self, generated: object, draft: LessonDesignDraftDto
+        self, generated: object, draft: LessonSpec
     ) -> bool:
         if not isinstance(generated, list):
             return False
@@ -997,6 +1518,8 @@ class V2LessonPackageService:
 
     @staticmethod
     def _material_type_for_selection(value: str) -> str | None:
+        if re.fullmatch(r"[a-z][a-z0-9_]*", value):
+            return value
         normalized = " ".join(
             value.replace("_", " ")
             .replace("–", "-")
@@ -1098,22 +1621,19 @@ class V2LessonPackageService:
     def _build_product_materials(
         self,
         package_id: str,
-        draft: LessonDesignDraftDto,
+        draft: LessonSpec,
         generated: object,
         fallback: list[dict],
     ) -> list[GeneratedMaterialDto]:
-        teacher_selected_types = [
-            material_type
-            for material_type in (
-                self._material_type_for_selection(item)
-                for item in draft.selectedMaterials
-            )
-            if material_type
-        ]
-        # The material question is a teacher decision, not a decorative filter.
-        # Generate exactly the confirmed pages; the later print review controls
-        # which of those generated pages are included in a combined PDF.
-        selected_types = list(dict.fromkeys(teacher_selected_types))
+        # PackageContentPlan has already projected core, required companions,
+        # and enabled optional enrichments into LessonSpec.material_requests.
+        # This typed list is the only generation inventory.
+        selected_types = list(dict.fromkeys(
+            self._material_type_for_selection(item.material_type)
+            or item.material_type
+            for item in draft.material_requests
+            if item.required and item.supported
+        ))
         definitions = generated if isinstance(generated, list) else []
         fallback_by_type = {item["type"]: item for item in fallback}
         generated_by_type = {
@@ -1132,6 +1652,7 @@ class V2LessonPackageService:
             for key in ("imageConcept", "imagePrompt", "imageAltText"):
                 if isinstance(definition.get(key), str):
                     content[key] = definition[key]
+            content = self._enforce_lesson_spec_content(material_type, content, draft)
             content = self._ensure_visual_content(material_type, content, draft)
             content.setdefault(
                 "designVariants",
@@ -1178,26 +1699,91 @@ class V2LessonPackageService:
                 ],
             )
             content.setdefault("selectedDesignVariant", "calm-blue")
+            material_id = self.repos.next_id("material")
+            title = str(
+                definition.get("title")
+                or (
+                    V2MaterialBlueprintService.blueprint(material_type).display_name
+                    if V2MaterialBlueprintService.blueprint(material_type)
+                    else material_type.replace("_", " ").title()
+                )
+            )
+            material_spec = self.material_specs.build(
+                material_id=material_id,
+                package_id=package_id,
+                material_type=material_type,
+                title=title,
+                lesson_spec=draft,
+                repair=self.ai.repair_material_spec,
+                visual_asset_requests=[],
+            )
+            visual_plan = None
+            if material_spec is not None:
+                title = material_spec.title
+                content = self.material_specs.render_projection(material_spec, content)
+                visual_plan = self.visual_plans.require_valid(
+                    self.visual_plans.build(material_spec), material_spec
+                )
+                content["visualItems"] = self.visual_plans.to_renderer_items(visual_plan)
+                first_visual = next(iter(content["visualItems"]), None)
+                if first_visual:
+                    content["imageConcept"] = first_visual.get("concept")
+                    content["imagePrompt"] = first_visual.get("prompt") or "Deterministic instructional visual"
+                    content["imageAltText"] = first_visual.get("imageAltText")
+                    content["imageAssetId"] = first_visual.get("imageAssetId")
+                    content["imageUrl"] = first_visual.get("imageUrl")
+                    content["imageBase64"] = first_visual.get("imageBase64")
+                content["imageGenerationStatus"] = (
+                    "not_started"
+                    if any(item.generation_method == "ai_generated" for item in visual_plan.visual_items)
+                    else "ready"
+                )
+                visual_requests = [
+                    MaterialVisualAssetRequest(
+                        id=item.id,
+                        purpose=item.instructional_purpose,
+                        description=str(item.design_constraints.get("concept") or item.visible_label),
+                        altText=item.alt_text,
+                        status="ready" if item.status == "ready" else "not_requested",
+                    )
+                    for item in visual_plan.visual_items
+                ]
+                material_spec = material_spec.model_copy(update={"visual_asset_requests": visual_requests})
+                semantic = self.material_specs.validate(material_spec, draft, content)
+                safety = self.material_specs.validate_safety(material_spec, draft, semantic, content)
+                if semantic.status != "passed" or safety.status != "passed":
+                    raise ValidationError(
+                        "Generated material projection failed semantic validation",
+                        payload={
+                            "materialSpecId": material_spec.id,
+                            "semantic": semantic.model_dump(mode="json", by_alias=True),
+                            "safety": safety.model_dump(mode="json", by_alias=True),
+                        },
+                    )
+                material_spec = material_spec.model_copy(update={
+                    "semantic_validation": semantic,
+                    "safety_validation": safety,
+                })
             materials.append(
                 GeneratedMaterialDto(
-                    id=self.repos.next_id("material"),
+                    id=material_id,
                     packageId=package_id,
                     type=material_type,
-                    title=str(
-                        definition.get("title")
-                        or (
-                            V2MaterialBlueprintService.blueprint(material_type).display_name
-                            if V2MaterialBlueprintService.blueprint(material_type)
-                            else material_type.replace("_", " ").title()
-                        )
-                    ),
+                    title=title,
                     status="teacher_review_needed",
+                    # Deprecated schema-v0 render projection. Schema-v1
+                    # semantics live only in the typed materialSpec; this
+                    # deterministic projection remains temporarily for existing
+                    # printable and image-review consumers.
                     content=content,
                     printLayout={
                         "pageSize": "Letter",
                         "orientation": (
                             "landscape"
-                            if material_type == "token_board"
+                            if material_type in {
+                                "token_board", "first_then_board", "data_sheet",
+                                "blue_line_activity", "scenario_cards",
+                            }
                             else "portrait"
                         ),
                         "color": "blue",
@@ -1205,13 +1791,54 @@ class V2LessonPackageService:
                     specification=self._build_material_specification(
                         material_type, content, draft
                     ),
+                    materialSchemaVersion=1 if material_spec is not None else 0,
+                    materialSpec=material_spec,
+                    visualAssetPlan=visual_plan,
                 )
             )
         return materials
 
     @staticmethod
+    def _enforce_lesson_spec_content(
+        material_type: str, content: dict, lesson_spec: LessonSpec
+    ) -> dict:
+        """Apply non-overridable LessonSpec semantics after AI prose proposals."""
+
+        enforced = dict(content)
+        enforced["lessonSpecId"] = lesson_spec.id
+        enforced["profileRevision"] = lesson_spec.profile_revision
+        enforced["acceptedResponseModes"] = lesson_spec.goal.accepted_response_modes
+        enforced["accessConstraints"] = {
+            "maximumPrimaryVisualChoices": lesson_spec.access_plan.maximum_primary_visual_choices,
+            "layoutRequirements": lesson_spec.access_plan.layout_requirements,
+            "prohibitedVisualFeatures": lesson_spec.access_plan.prohibited_visual_features,
+            "prohibitedAudioFeatures": lesson_spec.access_plan.prohibited_audio_features,
+            "motorAccessAlternatives": lesson_spec.access_plan.motor_access_alternatives,
+        }
+        if material_type == "token_board":
+            enforced["tokens"] = lesson_spec.reinforcement_plan.token_count
+            enforced["tokenTheme"] = lesson_spec.reinforcement_plan.token_theme
+            enforced["reward"] = lesson_spec.reinforcement_plan.earned_reward
+            enforced["rewardDurationMinutes"] = lesson_spec.reinforcement_plan.reward_duration_minutes
+        elif material_type == "data_sheet":
+            enforced["columns"] = lesson_spec.data_plan.measures
+            enforced["trialDefinition"] = lesson_spec.data_plan.trial_definition
+            enforced["independenceDefinition"] = lesson_spec.data_plan.independence_definition
+            enforced["promptLevels"] = lesson_spec.data_plan.prompt_levels
+        elif material_type == "scenario_cards":
+            enforced["scenarios"] = lesson_spec.scenarios
+        elif material_type == "break_card":
+            enforced["breakRequest"] = lesson_spec.transition_plan.break_request
+            enforced["breakDurationMinutes"] = lesson_spec.transition_plan.break_duration_minutes
+            enforced["returnSupport"] = lesson_spec.transition_plan.return_support
+        elif material_type == "first_then_board":
+            enforced["warning"] = lesson_spec.transition_plan.warning
+            enforced["firstThenRequired"] = lesson_spec.transition_plan.first_then_required
+        return enforced
+
+    @staticmethod
     def _recommended_material_types(
-        draft: LessonDesignDraftDto,
+        draft: LessonSpec,
     ) -> list[str]:
         """Resolve a minimum complete kit from the instructional goal family."""
 
@@ -1222,7 +1849,7 @@ class V2LessonPackageService:
         cls,
         material_type: str,
         content: dict,
-        draft: LessonDesignDraftDto,
+        draft: LessonSpec,
     ) -> dict:
         """Guarantee that every visual classroom material requests real artwork.
 
@@ -1236,7 +1863,7 @@ class V2LessonPackageService:
             return content
 
         updated = dict(content)
-        theme = " ".join((draft.theme or "classroom").split())
+        theme = " ".join((draft.theme or "neutral classroom").split())
         scenario = next(
             (
                 " ".join(str(item).split())
@@ -1298,7 +1925,7 @@ class V2LessonPackageService:
         cls,
         material_type: str,
         content: dict,
-        draft: LessonDesignDraftDto,
+        draft: LessonSpec,
     ) -> list[dict]:
         """Describe the exact visual assets needed by a usable material.
 
@@ -1375,9 +2002,7 @@ class V2LessonPackageService:
                     item_concept = f"one isolated {clean_label}{variation}"
                     result.append(
                         {
-                            "id": (
-                                f"concept-exemplar-{len(result) + 1}"
-                            ),
+                            "id": (f"concept-exemplar-{len(result) + 1}"),
                             "label": clean_label,
                             "assetRole": "concept_exemplar",
                             "concept": item_concept,
@@ -1399,16 +2024,18 @@ class V2LessonPackageService:
             phrase = (
                 "Help, please."
                 if material_type == "help_card"
-                else "Break, please."
-                if material_type == "break_card"
-                else "Teacher cue"
+                else (
+                    "Break, please." if material_type == "break_card" else "Teacher cue"
+                )
             )
             item_concept = (
                 "one simple universal classroom help symbol with a raised hand"
                 if material_type == "help_card"
-                else "one simple universal classroom break symbol"
-                if material_type == "break_card"
-                else "one simple neutral teacher cue symbol"
+                else (
+                    "one simple universal classroom break symbol"
+                    if material_type == "break_card"
+                    else "one simple neutral teacher cue symbol"
+                )
             )
             return [
                 {
@@ -1477,7 +2104,7 @@ class V2LessonPackageService:
         cls,
         material_type: str,
         content: dict,
-        draft: LessonDesignDraftDto,
+        draft: LessonSpec,
     ) -> list[str]:
         if material_type == "number_cards":
             return cls._counting_labels(
@@ -1519,18 +2146,22 @@ class V2LessonPackageService:
             value = content.get(key)
             if isinstance(value, list) and value:
                 return [str(item) for item in value]
-        if material_type in {
-            "scenario_cards",
-            "sequence_cards",
-            "social_narrative",
-            "core_word_board",
-            "choice_board",
-            "sorting_page",
-            "matching_page",
-            "visual_schedule",
-            "task_analysis_cards",
-            "emotion_scale",
-        } and draft.scenarios:
+        if (
+            material_type
+            in {
+                "scenario_cards",
+                "sequence_cards",
+                "social_narrative",
+                "core_word_board",
+                "choice_board",
+                "sorting_page",
+                "matching_page",
+                "visual_schedule",
+                "task_analysis_cards",
+                "emotion_scale",
+            }
+            and draft.scenarios
+        ):
             return [str(item) for item in draft.scenarios]
         label = (
             content.get("phrase")
@@ -1543,7 +2174,7 @@ class V2LessonPackageService:
         return [str(label)]
 
     @staticmethod
-    def _goal_visual_labels(draft: LessonDesignDraftDto) -> list[str]:
+    def _goal_visual_labels(draft: LessonSpec) -> list[str]:
         """Extract discrete reference-card concepts from a confirmed goal.
 
         This intentionally handles a narrow, high-value pattern rather than
@@ -1560,16 +2191,16 @@ class V2LessonPackageService:
         source = (
             draft.goalText
             if isinstance(draft.goalText, str) and draft.goalText.strip()
-            else draft.observableResponse
-            if isinstance(draft.observableResponse, str)
-            else ""
+            else (
+                draft.observableResponse
+                if isinstance(draft.observableResponse, str)
+                else ""
+            )
         )
         if not source:
             return []
         normalized = " ".join(source.split())
-        action = (
-            r"(?:identify|identifies|label|labels|name|names|recognize|recognizes)"
-        )
+        action = r"(?:identify|identifies|label|labels|name|names|recognize|recognizes)"
         patterns = (
             r"(?:pictures?|images?|photos?|objects?)\s+of\s+(.+?)(?:\s+when\b|\s+after\b|\s+from\b|[.;]|$)",
             rf"{action}(?:\s+and\s+{action})?\s+"
@@ -1621,9 +2252,7 @@ class V2LessonPackageService:
     def _counting_labels(text: str) -> list[str]:
         import re
 
-        match = re.search(
-            r"\b(\d{1,2})\s+(?:to|through|-)\s+(\d{1,2})\b", text, re.I
-        )
+        match = re.search(r"\b(\d{1,2})\s+(?:to|through|-)\s+(\d{1,2})\b", text, re.I)
         if not match:
             return []
         start, end = int(match.group(1)), int(match.group(2))
@@ -1633,7 +2262,7 @@ class V2LessonPackageService:
 
     @classmethod
     def _default_material_definition(
-        cls, material_type: str, draft: LessonDesignDraftDto
+        cls, material_type: str, draft: LessonSpec
     ) -> dict:
         counting_labels = cls._counting_labels(
             " ".join(
@@ -1696,9 +2325,11 @@ class V2LessonPackageService:
         elif material_type == "social_narrative":
             content.update(
                 {
-                    "situation": draft.scenarios[0]
-                    if draft.scenarios
-                    else "A familiar teaching situation",
+                    "situation": (
+                        draft.scenarios[0]
+                        if draft.scenarios
+                        else "A familiar teaching situation"
+                    ),
                     "responseOptions": [
                         draft.observableResponse or draft.goalText,
                         "Ask for help, more time, or a break",
@@ -1759,7 +2390,7 @@ class V2LessonPackageService:
 
     @staticmethod
     def _build_material_specification(
-        material_type: str, content: dict, draft: LessonDesignDraftDto
+        material_type: str, content: dict, draft: LessonSpec
     ):
         blueprint = V2MaterialBlueprintService.blueprint(material_type)
         common = {
@@ -1855,12 +2486,21 @@ class V2LessonPackageService:
         if material_type == "break_card":
             return BreakCardSpecification(
                 **common,
-                requestText="Break, please",
-                returnCue="Return when ready with teacher support",
+                requestText=(
+                    draft.transition_plan.break_request
+                    or draft.observableResponse
+                    or "Teacher confirmation required"
+                ),
+                returnCue=(
+                    draft.transition_plan.return_support
+                    or "Teacher confirmation required"
+                ),
             )
         if material_type == "token_board":
             return TokenBoardSpecification(
-                **common, tokenCount=5, rewardLabel="Teacher-confirmed choice"
+                **common,
+                tokenCount=draft.reinforcement_plan.token_count or 1,
+                rewardLabel=draft.reinforcement_plan.earned_reward or "Teacher confirmation required",
             )
         if material_type == "sorting_page":
             return SortingPageSpecification(
@@ -1960,17 +2600,11 @@ class V2LessonPackageService:
         if material_type == "data_sheet":
             return DataSheetMaterialSpecification(
                 **{**common, "audience": "teacher", "imageNeed": "none"},
-                columns=[
-                    "Opportunity",
-                    "Independent",
-                    "Prompted",
-                    "Incorrect",
-                    "No response",
-                    "Prompt level",
-                    "Latency",
-                    "Notes",
-                ],
-                summaryCalculation="Summarize independent and prompted outcomes separately.",
+                columns=draft.data_plan.measures,
+                summaryCalculation=(
+                    "Summarize the LessonSpec success criterion, independence, "
+                    "response mode, and prompt level across selected contexts."
+                ),
             )
         if material_type in {"session_summary", "summary_template"}:
             return SessionSummarySpecification(
@@ -1987,26 +2621,23 @@ class V2LessonPackageService:
                     "Next step",
                 ],
             )
-        return HandoffNoteSpecification(
-            **{**common, "audience": "teacher", "imageNeed": "none"},
-            fields=["Goal", "Support used", "Learner response", "Next step"],
+        if material_type == "handoff_note":
+            return HandoffNoteSpecification(
+                **{**common, "audience": "teacher", "imageNeed": "none"},
+                fields=["Goal", "Support used", "Learner response", "Next step"],
+            )
+        return GenericMaterialProposalSpecification(
+            **{**common, "audience": "shared", "imageNeed": "optional"},
+            type=material_type,
+            fields=["Goal-aligned content", "Teacher directions", "Access constraints"],
         )
 
     @staticmethod
     def _fallback_product_content(
-        draft: LessonDesignDraftDto, learner_context: dict
+        lesson_spec: LessonSpec,
     ) -> dict:
         from app.integrations.mock_ai_provider import MockV2AIProvider
-
-        selected = list(draft.selectedMaterials)
-        if "ask for help" in draft.goalText.casefold() and "Help Card" not in selected:
-            selected.append("Help Card")
-        if "Summary Template" not in selected:
-            selected.append("Summary Template")
-        fallback_draft = draft.model_copy(update={"selectedMaterials": selected})
-        return MockV2AIProvider().generate_lesson_package(
-            fallback_draft, learner_context
-        )
+        return MockV2AIProvider().generate_lesson_package(lesson_spec)
 
     @staticmethod
     def _build_flow() -> list[TeachingStep]:

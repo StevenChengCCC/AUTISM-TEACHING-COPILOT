@@ -21,6 +21,7 @@ from app.schemas.v2_dto import (
     AIChatState,
     GeneratedMaterial,
     GeneratedMaterialDto,
+    GenerationJobDto,
     ImageAssetDto,
     LearnerProfile,
     LearnerProgressSummaryDto,
@@ -30,12 +31,14 @@ from app.schemas.v2_dto import (
     LessonPackageExportJobDto,
     LessonSession,
     MaterialLibraryItem,
+    NextSessionRecommendationDto,
+    NextSessionMaterialImpactPlanDto,
     ProgressDataPointDto,
     ProgressObservation,
     ProgressSignalDto,
     RecentLessonDto,
+    SessionOutcomeDto,
 )
-
 
 T = TypeVar("T", bound=BaseModel)
 ModelFactory = Callable[[Session, T, dict[str, Any]], Any]
@@ -167,6 +170,7 @@ class SQLAlchemyDtoRepository(Generic[T]):
                 row.updated_at = _utc_now()
                 self._sync_indexed_columns(row, item)
                 action = "update"
+            self._sync_relational_columns(session, row, item)
             payload["version"] = row.version
             row.payload = payload
             self._save_version(session, row, payload)
@@ -198,6 +202,37 @@ class SQLAlchemyDtoRepository(Generic[T]):
             row.file_size_bytes = item.fileSizeBytes
             row.completed_at = _parse_datetime(item.completedAt)
             row.expires_at = _parse_datetime(item.expiresAt)
+        elif isinstance(row, entities.GenerationJob):
+            row.status = item.status
+            row.lesson_spec_revision = item.lessonSpecRevision
+            row.package_plan_revision = item.packageContentPlanRevision
+        elif isinstance(row, entities.NextSessionRecommendation):
+            row.goal_revision = item.goalRevision
+            row.recommendation_type = item.type
+            row.status = item.status
+            row.reviewed_at = item.reviewedAt
+        elif isinstance(row, entities.NextSessionMaterialImpactPlan):
+            row.status = item.status
+
+    def _sync_relational_columns(self, session: Session, row: Any, item: T) -> None:
+        if not isinstance(row, entities.NextSessionMaterialImpactPlan):
+            return
+        created_package_id = getattr(item, "createdPackageId", None)
+        if created_package_id is None:
+            row.created_package_id = None
+            return
+        scope = self.registry._resolve_scope(session)
+        package = session.scalar(
+            select(entities.LessonPackage).where(
+                entities.LessonPackage.organization_id == scope.organization_id,
+                entities.LessonPackage.created_by_user_id == scope.user_id,
+                entities.LessonPackage.external_id == created_package_id,
+                entities.LessonPackage.deleted_at.is_(None),
+            )
+        )
+        if package is None:
+            raise RuntimeError("Created lesson package persistence reference is missing")
+        row.created_package_id = package.id
 
     create = save
     update = save
@@ -376,7 +411,10 @@ class SQLAlchemyLearnerRepository(SQLAlchemyDtoRepository[LearnerProfile]):
             scope = self.registry._resolve_scope(session)
             profile = session.scalar(
                 select(entities.LearnerProfile)
-                .join(entities.Learner, entities.Learner.id == entities.LearnerProfile.learner_id)
+                .join(
+                    entities.Learner,
+                    entities.Learner.id == entities.LearnerProfile.learner_id,
+                )
                 .where(
                     entities.Learner.external_id == item_id,
                     entities.Learner.organization_id == scope.organization_id,
@@ -391,7 +429,8 @@ class SQLAlchemyLearnerRepository(SQLAlchemyDtoRepository[LearnerProfile]):
                 select(entities.LearnerProfileVersion)
                 .where(
                     entities.LearnerProfileVersion.profile_id == profile.id,
-                    entities.LearnerProfileVersion.organization_id == scope.organization_id,
+                    entities.LearnerProfileVersion.organization_id
+                    == scope.organization_id,
                     entities.LearnerProfileVersion.created_by_user_id == scope.user_id,
                     entities.LearnerProfileVersion.deleted_at.is_(None),
                 )
@@ -399,18 +438,21 @@ class SQLAlchemyLearnerRepository(SQLAlchemyDtoRepository[LearnerProfile]):
             ).all()
             return [
                 LearnerProfile.model_validate(
-                    {**dict(row.payload or {}), "version": row.snapshot_version}
+                    {
+                        **{
+                            key: value
+                            for key, value in dict(row.payload or {}).items()
+                            if key != "_dtoType"
+                        },
+                        "version": row.snapshot_version,
+                    }
                 )
                 for row in rows
             ]
 
     def get_version(self, item_id: str, version: int) -> LearnerProfile | None:
         return next(
-            (
-                item
-                for item in self.list_versions(item_id)
-                if item.version == version
-            ),
+            (item for item in self.list_versions(item_id) if item.version == version),
             None,
         )
 
@@ -638,9 +680,7 @@ class SQLAlchemyRecordRepository(SQLAlchemyDtoRepository[LearnerRecord]):
                 text.teacher_corrected_text = None
                 text.deleted_at = deleted_at
                 text.version += 1
-            self.registry._audit(
-                session, "soft_delete", "v2_learner_records", item_id
-            )
+            self.registry._audit(session, "soft_delete", "v2_learner_records", item_id)
             return True
 
     @staticmethod
@@ -1001,11 +1041,36 @@ class SQLAlchemyV2Repositories:
             {"ImageAssetDto": ImageAssetDto},
             model_factory=self._image_factory,
         )
+        self.generation_jobs = SQLAlchemyDtoRepository(
+            self,
+            entities.GenerationJob,
+            {"GenerationJobDto": GenerationJobDto},
+            key_field="jobId",
+            model_factory=self._generation_job_factory,
+        )
         self.sessions = SQLAlchemyDtoRepository(
             self,
             entities.TeachingSession,
             {"LessonSession": LessonSession},
             model_factory=self._teaching_session_factory,
+        )
+        self.session_outcomes = SQLAlchemyDtoRepository(
+            self,
+            entities.SessionOutcome,
+            {"SessionOutcomeDto": SessionOutcomeDto},
+            model_factory=self._session_outcome_factory,
+        )
+        self.next_session_recommendations = SQLAlchemyDtoRepository(
+            self,
+            entities.NextSessionRecommendation,
+            {"NextSessionRecommendationDto": NextSessionRecommendationDto},
+            model_factory=self._next_session_recommendation_factory,
+        )
+        self.next_session_impact_plans = SQLAlchemyDtoRepository(
+            self,
+            entities.NextSessionMaterialImpactPlan,
+            {"NextSessionMaterialImpactPlanDto": NextSessionMaterialImpactPlanDto},
+            model_factory=self._next_session_impact_plan_factory,
         )
         self.export_jobs = SQLAlchemyExportRepository(
             self,
@@ -1292,10 +1357,116 @@ class SQLAlchemyV2Repositories:
     def _teaching_session_factory(self, session: Session, item, payload):
         scope = self._resolve_scope(session)
         learner = self._learner_row(session, item.learner_id)
+        package = session.scalar(
+            select(entities.LessonPackage).where(
+                entities.LessonPackage.organization_id == scope.organization_id,
+                entities.LessonPackage.created_by_user_id == scope.user_id,
+                entities.LessonPackage.external_id == item.lesson_package_id,
+                entities.LessonPackage.deleted_at.is_(None),
+            )
+        ) if item.lesson_package_id else None
         return entities.TeachingSession(
             external_id=item.id,
             learner_id=learner.id,
+            lesson_package_id=package.id if package is not None else None,
             status=item.status,
+            payload=payload,
+            organization_id=scope.organization_id,
+            created_by_user_id=scope.user_id,
+        )
+
+    def _session_outcome_factory(self, session: Session, item, payload):
+        scope = self._resolve_scope(session)
+        learner = self._learner_row(session, item.learnerId)
+        teaching_session = self._session_row(session, item.sessionId)
+        if teaching_session is None:
+            raise RuntimeError("Teaching session persistence reference is missing")
+        package = session.scalar(
+            select(entities.LessonPackage).where(
+                entities.LessonPackage.organization_id == scope.organization_id,
+                entities.LessonPackage.created_by_user_id == scope.user_id,
+                entities.LessonPackage.external_id == item.lessonPackageId,
+                entities.LessonPackage.deleted_at.is_(None),
+            )
+        )
+        return entities.SessionOutcome(
+            external_id=item.id,
+            learner_id=learner.id,
+            teaching_session_id=teaching_session.id,
+            lesson_package_id=package.id if package is not None else None,
+            lesson_package_revision=item.lessonPackageRevision,
+            lesson_spec_id=item.lessonSpecId,
+            goal_id=item.goalId,
+            goal_revision=item.goalRevision,
+            completed_at=item.completedAt,
+            payload=payload,
+            organization_id=scope.organization_id,
+            created_by_user_id=scope.user_id,
+        )
+
+    def _next_session_recommendation_factory(self, session: Session, item, payload):
+        scope = self._resolve_scope(session)
+        learner = self._learner_row(session, item.learnerId)
+        return entities.NextSessionRecommendation(
+            external_id=item.id,
+            learner_id=learner.id,
+            goal_id=item.goalId,
+            goal_revision=item.goalRevision,
+            recommendation_type=item.type,
+            status=item.status,
+            reviewed_at=item.reviewedAt,
+            payload=payload,
+            organization_id=scope.organization_id,
+            created_by_user_id=scope.user_id,
+        )
+
+    def _next_session_impact_plan_factory(self, session: Session, item, payload):
+        scope = self._resolve_scope(session)
+        learner = self._learner_row(session, item.learnerId)
+        package = session.scalar(
+            select(entities.LessonPackage).where(
+                entities.LessonPackage.organization_id == scope.organization_id,
+                entities.LessonPackage.created_by_user_id == scope.user_id,
+                entities.LessonPackage.external_id == item.previousPackageId,
+                entities.LessonPackage.deleted_at.is_(None),
+            )
+        )
+        if package is None:
+            raise RuntimeError("Previous lesson package persistence reference is missing")
+        return entities.NextSessionMaterialImpactPlan(
+            external_id=item.id,
+            learner_id=learner.id,
+            previous_package_id=package.id,
+            status=item.status,
+            created_package_id=None,
+            payload=payload,
+            organization_id=scope.organization_id,
+            created_by_user_id=scope.user_id,
+        )
+
+    def _generation_job_factory(self, session: Session, item, payload):
+        scope = self._resolve_scope(session)
+        learner = self._learner_row(session, item.learnerId)
+        package = session.scalar(
+            select(entities.LessonPackage).where(
+                entities.LessonPackage.organization_id == scope.organization_id,
+                entities.LessonPackage.created_by_user_id == scope.user_id,
+                entities.LessonPackage.external_id == item.packageId,
+                entities.LessonPackage.deleted_at.is_(None),
+            )
+        )
+        if item.packageId and package is None:
+            raise RuntimeError("Lesson package persistence reference is missing")
+        return entities.GenerationJob(
+            external_id=item.jobId,
+            learner_id=learner.id,
+            lesson_package_id=package.id if package is not None else None,
+            draft_external_id=item.draftId,
+            lesson_spec_id=item.lessonSpecId,
+            lesson_spec_revision=item.lessonSpecRevision,
+            package_plan_revision=item.packageContentPlanRevision,
+            status=item.status,
+            idempotency_key=item.idempotencyKey,
             payload=payload,
             organization_id=scope.organization_id,
             created_by_user_id=scope.user_id,

@@ -1,5 +1,5 @@
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
-from app.core.exceptions import AIProviderUnavailableError, ValidationError
+from app.core.exceptions import ValidationError
 from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerProfileExtractionDto,
@@ -14,6 +14,13 @@ from app.services.v2_repositories import V2Repositories, repositories
 from app.services.v2_upload_security_service import (
     V2UploadSecurityService,
     upload_security_service,
+)
+from app.services.v2_profile_normalization_service import (
+    canonicalize_profile,
+    merge_canonical_profiles,
+)
+from app.services.v2_instructional_constraint_service import (
+    build_instructional_constraint_snapshot,
 )
 
 
@@ -43,8 +50,8 @@ class V2ProfileExtractionService:
             not force
             and getattr(self.learners.repos, "is_durable", False)
             and (
-            learner.profile_review_status in {"reviewed", "confirmed"}
-            or learner.profile_signals
+                learner.profile_review_status in {"reviewed", "confirmed"}
+                or learner.profile_signals
             )
         ):
             return self._current_extraction(learner, records, len(eligible_records))
@@ -63,19 +70,9 @@ class V2ProfileExtractionService:
             )
             for record in eligible_records
         ]
-        try:
-            provider_result = self.ai.extract_profile(learner, records_for_ai)
-        except AIProviderUnavailableError:
-            # A saved learner profile remains useful when the optional AI
-            # enrichment provider is temporarily unavailable.  Do not replace
-            # it with realistic mock claims and do not turn a read page into a
-            # blocking 503.
-            return self._current_extraction(
-                learner,
-                records,
-                len(eligible_records),
-                generation_status="provider_failure",
-            )
+        # Provider and schema failures are recoverable API errors. The reviewed
+        # text remains stored on the record and no empty profile is persisted.
+        provider_result = self.ai.extract_profile(learner, records_for_ai)
         if isinstance(provider_result, tuple):
             # Compatibility for locally implemented providers using the earlier contract.
             extracted, insights = provider_result
@@ -86,6 +83,7 @@ class V2ProfileExtractionService:
                 insights=insights,
             )
         saved = self.learners.save(self._merge_profile(learner, provider_result))
+        snapshot = build_instructional_constraint_snapshot(saved, records)
         metadata = getattr(self.ai, "last_generation_metadata", None)
         return LearnerProfileExtractionDto(
             learner=self.learners.to_dto(saved),
@@ -103,6 +101,7 @@ class V2ProfileExtractionService:
                 if metadata
                 else None
             ),
+            instructionalConstraintSnapshot=snapshot,
         )
 
     def _current_extraction(
@@ -122,6 +121,9 @@ class V2ProfileExtractionService:
             analyzedRecordCount=analyzed_record_count,
             status="complete",
             generationStatus=generation_status,
+            instructionalConstraintSnapshot=build_instructional_constraint_snapshot(
+                learner, records
+            ),
         )
 
     @staticmethod
@@ -285,4 +287,5 @@ class V2ProfileExtractionService:
         updates["profile_review_status"] = "draft"
         updates["id"] = current.id
         updates["code"] = current.code
-        return current.model_copy(update=updates)
+        updates["normalized_profile"] = merge_canonical_profiles(current, extracted)
+        return canonicalize_profile(current.model_copy(update=updates))

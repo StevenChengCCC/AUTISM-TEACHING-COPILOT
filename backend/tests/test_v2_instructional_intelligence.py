@@ -446,6 +446,7 @@ def test_selected_records_to_teacher_approved_package_end_to_end():
         chat.draft.model_dump(mode="json", by_alias=True)
     )
     packages = V2LessonPackageService(repos)
+    draft = draft.model_copy(update={"packageContentPlan": packages.preview_content_plan(draft)})
     package = packages.generate_product(draft)
     assert package.status == "teacher_review_needed"
     assert package.safetyReview and package.safetyReview.status == "pass"

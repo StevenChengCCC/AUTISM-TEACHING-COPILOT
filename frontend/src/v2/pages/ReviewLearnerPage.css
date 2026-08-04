@@ -288,6 +288,27 @@
   min-width: 180px;
 }
 
+.v2-structured-edit-note { margin: 12px 0 4px; color: var(--color-muted); font-size: 13px; }
+.v2-factor-sections { display: grid; gap: 18px; padding: 24px 28px 4px; }
+.v2-factor-sections h3 { margin: 0 0 9px; font-size: 15px; }
+.v2-factor-sections > section > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.v2-factor-card { padding: 14px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
+.v2-factor-card > div:first-child { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.v2-factor-card p { margin: 9px 0; color: #334155; font-size: 13px; line-height: 1.5; }
+.v2-factor-card small { color: var(--color-muted); line-height: 1.45; }
+.v2-factor-card details { margin-top: 9px; }
+.v2-factor-card summary { color: var(--color-primary); cursor: pointer; font-size: 12px; }
+.v2-factor-card textarea { width: 100%; min-height: 76px; margin-top: 10px; }
+.v2-factor-status { flex: 0 0 auto; padding: 3px 7px; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 10px; font-weight: 800; }
+.v2-factor-status--unconfirmed { background: #fef3c7; color: #92400e; }
+.v2-factor-status--historical { background: #e2e8f0; color: #475569; }
+.v2-factor-status--access { background: #dbeafe; color: #1d4ed8; }
+.v2-factor-status--not_approved,
+.v2-factor-status--not_meaningful,
+.v2-factor-status--omitted { background: #fee2e2; color: #991b1b; }
+.v2-factor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.v2-factor-actions button { padding: 5px 9px; color: var(--color-primary); border: 1px solid #c9daf5; border-radius: 7px; background: #fff; cursor: pointer; font-size: 11px; font-weight: 700; }
+
 @media (max-width: 700px) {
   .v2-learner-summary-card {
     padding: 0;
@@ -306,7 +327,8 @@
 
   .v2-summary-grid,
   .v2-summary-cues ul,
-  .v2-summary-record-list {
+  .v2-summary-record-list,
+  .v2-factor-sections > section > div {
     grid-template-columns: 1fr;
   }
 
@@ -329,7 +351,8 @@
 
   .v2-summary-details,
   .v2-summary-cues,
-  .v2-summary-records {
+  .v2-summary-records,
+  .v2-factor-sections {
     margin-right: 20px;
     margin-left: 20px;
   }

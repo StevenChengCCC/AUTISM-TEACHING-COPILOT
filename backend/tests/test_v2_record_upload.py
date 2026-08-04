@@ -35,7 +35,6 @@ from app.services.v2_profile_extraction_service import V2ProfileExtractionServic
 from app.services.v2_sqlalchemy_repositories import SQLAlchemyV2Repositories
 from app.services.v2_upload_security_service import V2UploadSecurityService
 
-
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -141,6 +140,25 @@ def test_real_txt_pdf_and_docx_parsing(tmp_path, name, content_type, data, expec
     assert expected in record.extractedText
     assert record.malwareScanStatus == "not_configured"
     assert record.objectSizeBytes == len(data)
+
+
+def test_n482_synthetic_fixture_survives_docx_extraction(tmp_path):
+    source = (
+        Path(__file__).parent / "fixtures" / "synthetic_learner_profile_n482.txt"
+    ).read_text()
+    service, storage = _service(tmp_path)
+    record = _upload(
+        service,
+        storage,
+        name="Synthetic_Learner_Profile_N482.docx",
+        content_type=DOCX_MIME,
+        data=_docx(source),
+    )
+    assert record.status == "needs_review"
+    assert "2-by-3 AAC grid" in record.extractedText
+    assert "Subway maps" in record.extractedText
+    assert "hand-over-hand prompting" in record.extractedText
+    assert "UNCONFIRMED" in record.extractedText
 
 
 def test_image_only_pdf_requires_ocr_and_does_not_silently_continue(tmp_path):
