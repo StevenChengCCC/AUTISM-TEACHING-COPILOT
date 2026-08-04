@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { applyDraftOutcome,applyRecorderResult,autosaveLabel,codingDefinitions,draftPatch,incompleteTrialDetails,materialCooccurrenceNotice,rawTrialCounts,resultPathForOutcome,trialRequirementReasons } from "../src/v2/sessionRunDraftModel.ts";
+import { formatLocalDateTime } from "../src/v2/dateTime.ts";
 
 const trial={trialId:"trial-1",opportunityNumber:1,contextId:"context-1",contextLabel:"Transit to table",valid:null,outcome:null,responseMode:null,promptLevel:null,latencySeconds:null,breakRequested:null,breakDelivered:null,returnedAfterBreak:null,materialIdsUsed:[],note:""};
 const draft={id:"draft-1",sessionId:"session-1",snapshotId:"use-1",status:"in_progress",trials:[trial],generalization:{status:null,people:[],settings:[],materials:[]},helpfulMaterialIds:[],unhelpfulMaterialIds:[],observations:{engagementLevel:null,regulationLevel:null,teacherNotes:"",rawCountsConfirmed:false},activeTrialNumber:1,lastSavedAt:"2026-08-04T09:00:00Z",version:3};
@@ -73,7 +74,9 @@ test("session UI uses start continue reload and debounced durable draft APIs",()
   assert.match(form,/saveInFlightRef/);
   assert.match(form,/const rebased=\{\.\.\.latest,version:value\.draft\.version/);
   assert.match(form,/Retry local changes/);
-  assert.match(form,/Frozen revisions/);
+  assert.doesNotMatch(form,/Frozen revisions/);
+  assert.doesNotMatch(form,/manifest v/);
+  assert.match(form,/formatLocalDateTime\(run\.snapshot\.startedAt\)/);
   assert.match(form,/advanceLockRef/);
   assert.match(form,/Context remembered/);
   assert.match(form,/Generalization status/);
@@ -85,6 +88,14 @@ test("session UI uses start continue reload and debounced durable draft APIs",()
   assert.match(sessions,/atc-active-session-run/);
   const mock=fs.readFileSync(new URL("../src/v2/mockApi.ts",import.meta.url),"utf8");
   assert.match(mock,/generalization: \{ status: null/);
+});
+
+test("teacher-facing timestamps use a concise local timezone format",()=>{
+  const formatted=formatLocalDateTime("2026-07-27T05:09:54.826582+00:00");
+  assert.doesNotMatch(formatted,/T05:09:54/);
+  assert.doesNotMatch(formatted,/826582/);
+  assert.match(formatted,/2026/);
+  assert.equal(formatLocalDateTime("Just now"),"Just now");
 });
 
 test("recorder CSS provides visible focus, touch targets, and single-column phone flow",()=>{
