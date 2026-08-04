@@ -8,6 +8,7 @@ import {
   trialRequirementReasons,type AutosavePhase,type RecorderResultPath,
 } from "../sessionRunDraftModel";
 import type { SessionOutcome,SessionPromptLevel,SessionResponseMode,SessionRunDraft,SessionRunDraftTrial,SessionRunState } from "../types";
+import { formatLocalDateTime } from "../dateTime";
 
 const promptLabels:Record<SessionPromptLevel,string>={independent:"Independent",gesture:"Gesture",visual:"Visual",model:"Model",brief_verbal:"Brief verbal",other:"Other"};
 const promptChoices=(Object.entries(promptLabels) as Array<[SessionPromptLevel,string]>).filter(([value])=>value!=="independent");
@@ -65,7 +66,7 @@ export function SessionCompletionForm({sessionId,onCancel,onCompleted}:{sessionI
 
   return <div className="v2-session-completion v2-classroom-recorder">
     <header className="v2-recorder-sticky"><div><h3>{closeout?"Review and close out":"Record session"}</h3><p><strong>{counts.recorded} completed</strong> · {counts.remaining} remaining</p></div><p className={`v2-autosave-state is-${phase}`} role="status">{autosaveLabel(phase,draft.lastSavedAt)}</p></header>
-    <div className="v2-recorder-lineage"><p><strong>Goal:</strong> {run.snapshot.operationalizedGoal}</p><p><strong>Frozen revisions:</strong> package {run.snapshot.packageRevision} · LessonSpec {run.snapshot.lessonSpecRevision} · {Object.keys(run.snapshot.materialRevisions).length} materials</p>{run.snapshot.pdfArtifact&&<p><strong>Printed copy:</strong> {run.snapshot.pdfArtifact.printPreset.split("_").join(" ")} · manifest v{run.snapshot.pdfArtifact.manifestVersion} · {run.snapshot.pdfArtifact.pageSize} · {run.snapshot.pdfArtifact.textProfile === "large" ? "Large Print" : "Standard text"}</p>}</div>
+    <div className="v2-recorder-lineage"><p><strong>Goal:</strong> {run.snapshot.operationalizedGoal}</p><p><strong>Started:</strong> {formatLocalDateTime(run.snapshot.startedAt)}</p></div>
     {run.packageChanged&&<p className="v2-session-revision-warning" role="status">{run.packageChangeWarning}</p>}
     {closeout?<section className="v2-closeout" aria-label="Session closeout review">
       <section className="v2-closeout-summary"><h4>Raw trial count</h4><div className="v2-count-grid"><strong>{counts.valid}<span>Valid</span></strong><strong>{counts.invalid}<span>Invalid</span></strong><strong>{counts.recorded}<span>Recorded</span></strong></div><label className="v2-confirm-row"><input type="checkbox" checked={draft.observations.rawCountsConfirmed} onChange={(event)=>editWhole((current)=>({...current,observations:{...current.observations,rawCountsConfirmed:event.target.checked}}))}/> I confirm these raw valid and invalid counts match my observations.</label></section>
