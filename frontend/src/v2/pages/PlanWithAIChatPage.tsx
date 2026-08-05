@@ -64,6 +64,12 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
     if(!chat||planBusy)return;setPlanBusy(true);setChatError(null);setRetryAction(null);
     try{const next=await lessonKitApi.previewPackageContentPlan(chat.conversationId,chat.draft.version??1);setChat(next);setShowPlan(true);}
     catch(error){
+      if(error instanceof LessonKitApiError&&error.status===409){
+        try{
+          const latest=await lessonKitApi.getLessonChat(chat.conversationId);setChat(latest);
+          const next=await lessonKitApi.previewPackageContentPlan(latest.conversationId,latest.draft.version??1);setChat(next);setShowPlan(true);return;
+        }catch(retryError){setChatError(retryError instanceof Error?retryError.message:"The refreshed package preview could not be prepared.");setRetryAction("content_plan");return;}
+      }
       const issue=error instanceof LessonKitApiError?error.issues?.[0]:undefined;
       setChatError(issue?`Review this lesson choice: ${issue}.`:error instanceof Error?error.message:"Package contents could not be planned.");
       setRetryAction("content_plan");

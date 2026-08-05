@@ -48,6 +48,7 @@ class V2PrintReadinessService:
         config: Settings = settings,
     ) -> None:
         self.repos = repos
+        self.config = config
         self.visual_assets = V2VisualAssetResolver(
             repos, storage=storage, config=config
         )
@@ -126,13 +127,32 @@ class V2PrintReadinessService:
             if job.status == "failed":
                 add("generation_job_failed", "Package generation stopped before every required stage completed.", "retry_generation", "lessonPackageReady", retry=job.recoverable)
             elif job.status in {"pending", "in_progress"}:
-                add("generation_job_incomplete", "Package generation is still completing required stages.", "wait_for_generation", "lessonPackageReady", retry=False)
+                try:
+                    last_updated = datetime.fromisoformat(job.lastUpdatedAt.replace("Z", "+00:00"))
+                    if last_updated.tzinfo is None:
+                        last_updated = last_updated.replace(tzinfo=timezone.utc)
+                    stale = (
+                        datetime.now(timezone.utc) - last_updated
+                    ).total_seconds() >= self.config.GENERATION_STALE_JOB_SECONDS
+                except (TypeError, ValueError):
+                    stale = True
+                add(
+                    "generation_job_incomplete",
+                    "Package generation paused before every required stage completed."
+                    if stale else "Package generation is still completing required stages.",
+                    "retry_generation" if stale else "wait_for_generation",
+                    "lessonPackageReady",
+                    retry=stale,
+                )
 
         lesson_spec = package.lessonSpec
         spec_id = lesson_spec.id if lesson_spec else "legacy-lesson-spec"
         spec_revision = lesson_spec.revision if lesson_spec else 1
         if package.validationPolicy == "strict_v1":
-            if lesson_spec is None or package.validatedLessonSpecRevision != spec_revision:
+            if lesson_spec is None or (
+                package.validationStatus != "failed"
+                and package.validatedLessonSpecRevision != spec_revision
+            ):
                 add(
                     "stale_lesson_spec_revision",
                     "The package was not validated against the current lesson specification.",
@@ -284,6 +304,24 @@ class V2PrintReadinessService:
                 manifests_compatible = False
                 add("renderer_manifest_incompatibility", "The existing PDF uses an older renderer manifest and must be rebuilt.", "regenerate_pdf", "lessonPackageReady", severity="warning", retry=True)
 
+        # A package-level validation summary must not hide the exact material
+        # the teacher can repair.  The gate remains fail-closed; only the more
+        # actionable, material-scoped blocker is shown first.
+        material_validation_categories = {
+            item.category
+            for item in blockers
+            if item.materialId is not None
+            and item.category in {"semantic_validation_failure", "safety_validation_failure"}
+        }
+        if material_validation_categories:
+            blockers = [
+                item
+                for item in blockers
+                if not (
+                    item.materialId is None
+                    and item.category in material_validation_categories
+                )
+            ]
         blockers.sort(key=lambda item: (self._priority[item.category], item.materialId or "", item.visualId or ""))
         blocking = [item for item in blockers if item.severity == "blocking"]
         return PackagePrintReadiness(

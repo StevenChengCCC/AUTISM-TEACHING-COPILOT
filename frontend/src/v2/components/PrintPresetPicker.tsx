@@ -5,13 +5,15 @@ export function PrintPresetPicker({
   catalog,
   selected,
   onSelect,
+  compact = false,
 }: {
   catalog: PrintPresetCatalog | null;
   selected: PrintPreset;
   onSelect: (preset: PrintPreset) => void;
+  compact?: boolean;
 }) {
   const preview = catalog?.presets.find((item) => item.printPreset === selected);
-  return <div className="v2-print-presets" aria-label="Print preset">
+  return <div className={`v2-print-presets ${compact ? "is-compact" : ""}`} aria-label="Print preset">
     <div className="v2-print-preset-tabs" role="radiogroup" aria-label="Choose pages to print">
       {(catalog?.presets ?? []).map((item) => <button
         type="button"
@@ -27,7 +29,7 @@ export function PrintPresetPicker({
       </button>)}
     </div>
     {!catalog && <p role="status">Loading print choices…</p>}
-    {preview && <div className="v2-print-preset-preview">
+    {!compact && preview && <div className="v2-print-preset-preview">
       <p>{preview.description}</p>
       {!preview.available && <p role="alert">{preview.unavailableReason}</p>}
       <strong>Included</strong>
@@ -42,7 +44,7 @@ export function PrintPresetPicker({
         </li>)}</ul>
       </details>}
     </div>}
-    {selected !== "complete_kit" && <button type="button" className="v2-print-return-complete" onClick={() => onSelect("complete_kit")}>
+    {!compact && selected !== "complete_kit" && <button type="button" className="v2-print-return-complete" onClick={() => onSelect("complete_kit")}>
       Return to {printPresetLabels.complete_kit}
     </button>}
   </div>;

@@ -15,19 +15,15 @@ export function PrintReadinessPanel({
     return <div className="v2-print-readiness" role="status"><strong>Checking print readiness…</strong></div>;
   }
   const next = readiness.recommendedNextAction ?? readiness.blockers[0] ?? null;
-  const visible = readiness.blockers.slice(0, 3);
-  const remaining = readiness.blockers.slice(3);
-  const blockerItem = (item: (typeof readiness.blockers)[number]) => <li key={item.blockerId} className={item.severity === "warning" ? "is-warning" : ""}>
-    <div><b>{item.category.replace(/_/g," ")}</b><p>{item.explanation}</p>{item.materialId&&<small>Material {item.materialId}{item.visualId?` · visual ${item.visualId}`:""}</small>}</div>
-    <em>{item.retryPossible ? "Recovery available" : item.severity === "warning" ? "Approved fallback" : "Teacher action required"}</em>
-  </li>;
+  const blockingCount = readiness.blockers.filter((item)=>item.severity==="blocking").length;
+  const remaining = readiness.blockers.slice(1);
   return <section className={`v2-print-readiness ${readiness.ready ? "is-ready" : "is-blocked"}`} aria-label="Complete package print readiness">
     <div className="v2-print-readiness__heading">
-      <div><strong>{readiness.ready ? "Complete package ready" : `${readiness.blockers.filter((item)=>item.severity==="blocking").length} issue${readiness.blockers.filter((item)=>item.severity==="blocking").length===1?"":"s"} block printing`}</strong><small>Package revision {readiness.packageRevision} · Lesson specification revision {readiness.lessonSpecRevision}</small></div>
+      <div><strong>{readiness.ready ? "Ready to print" : "Printing needs attention"}</strong><small>{readiness.ready ? "All required reviews are complete." : `${blockingCount} check${blockingCount===1?"":"s"} remaining`}</small></div>
       <span aria-label={readiness.ready ? "Ready" : "Blocked"}>{readiness.ready ? "✓" : "!"}</span>
     </div>
-    {visible.length > 0 && <ol>{visible.map(blockerItem)}</ol>}
-    {remaining.length > 0 && <details><summary>Show {remaining.length} more readiness checks</summary><ol start={4}>{remaining.map(blockerItem)}</ol></details>}
-    {next && <Button fullWidth disabled={busy} onClick={()=>onFix(next)}>{busy ? "Updating readiness…" : `Fix next issue · ${readinessActionLabel(next)}`}</Button>}
+    {next && !readiness.ready && <div className="v2-print-readiness__next"><b>{next.category.replace(/_/g," ")}</b><p>{next.explanation}</p></div>}
+    {remaining.length > 0 && <details><summary>View {remaining.length} more check{remaining.length===1?"":"s"}</summary><ol>{remaining.map((item)=><li key={item.blockerId} className={item.severity === "warning" ? "is-warning" : ""}><div><b>{item.category.replace(/_/g," ")}</b><p>{item.explanation}</p></div></li>)}</ol></details>}
+    {next && <Button fullWidth disabled={busy} onClick={()=>onFix(next)}>{busy ? "Checking…" : readinessActionLabel(next)}</Button>}
   </section>;
 }

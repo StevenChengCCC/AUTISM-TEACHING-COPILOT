@@ -897,6 +897,14 @@ def approve_lesson_package(
     return V2LessonPackageService().approve_product(package_id, payload)
 
 
+@router.post(
+    "/lesson-packages/{package_id}/revalidate",
+    response_model=LessonPackageDto,
+)
+def revalidate_lesson_package(package_id: str) -> LessonPackageDto:
+    return V2LessonPackageService().revalidate_product(package_id)
+
+
 @router.post("/lesson-packages/{package_id}/reject", response_model=LessonPackageDto)
 def reject_lesson_package(
     package_id: str, payload: LessonPackageDecisionRequest

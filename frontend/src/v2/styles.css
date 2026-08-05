@@ -581,3 +581,31 @@ html,body,#root { min-height:100%; margin:0; }
 @media(max-width:720px){.v2-print-preset-tabs{grid-template-columns:1fr}.v2-print-preset-tabs button{min-height:56px}}
 /* Development-only, privacy-safe teacher study controls. */
 .v2-usability-study{margin:20px 0;padding:18px;border:1px solid #cbd5e1;border-radius:14px;background:#f8fafc}.v2-usability-study h3{margin-top:0}.v2-usability-study>label{display:flex;gap:10px;align-items:flex-start}.v2-study-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.v2-study-controls label{display:grid;gap:5px}.v2-study-controls input,.v2-study-controls select{min-height:44px;padding:8px;border:1px solid #94a3b8;border-radius:8px;background:#fff}.v2-study-actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}@media(max-width:700px){.v2-study-controls{grid-template-columns:1fr}.v2-study-actions{grid-column:1/-1}}
+
+/* Compact classroom review: keep recovery clear without exposing internal IDs. */
+.v2-print-readiness__next{margin:11px 0;padding:10px;border-radius:8px;background:rgba(255,255,255,.72)}
+.v2-print-readiness__next b{text-transform:capitalize}
+.v2-print-readiness__next p{margin:4px 0 0;font-size:13px;line-height:1.35}
+.v2-print-readiness details{margin:8px 0}
+.v2-print-readiness details>summary{cursor:pointer;color:#475569;font-size:12px;font-weight:700}
+.v2-print-readiness details ol{max-height:160px;margin:8px 0}
+.v2-personalization-trace{margin:0;border:1px solid var(--color-border);border-radius:var(--radius-md);background:#fff}
+.v2-personalization-trace>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;cursor:pointer;list-style:none}
+.v2-personalization-trace>summary::-webkit-details-marker{display:none}
+.v2-personalization-trace>summary span{display:grid;gap:2px}
+.v2-personalization-trace>summary small{color:var(--color-muted);font-weight:400}
+.v2-personalization-trace>summary em{color:var(--color-primary);font-style:normal;font-weight:700}
+.v2-personalization-trace>div{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 20px 20px}
+.v2-print-controls{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:12px 18px;margin:0!important;padding:16px 20px}
+.v2-print-controls>span{grid-column:1/-1;font-weight:800}
+.v2-print-controls>.v2-print-presets{grid-column:1/-1;margin:0}
+.v2-print-controls .v2-print-profile-note{grid-column:1/-1}
+.v2-print-presets.is-compact .v2-print-preset-tabs{grid-template-columns:repeat(4,minmax(0,1fr))}
+.v2-print-presets.is-compact .v2-print-preset-tabs button{min-height:50px;padding:8px}
+.v2-visual-review-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.v2-visual-review-grid article{grid-template-columns:88px minmax(0,1fr);gap:10px;padding:10px}
+.v2-visual-review-image{width:88px;height:88px}
+.v2-visual-review-copy p{font-size:12px}
+.v2-visual-review-actions button,.v2-visual-review-actions summary{padding:6px 8px;font-size:11px}
+@media(max-width:900px){.v2-visual-review-grid{grid-template-columns:1fr}}
+@media(max-width:720px){.v2-print-presets.is-compact .v2-print-preset-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.v2-print-controls{grid-template-columns:1fr}.v2-print-controls>*{grid-column:1!important}.v2-personalization-trace>div{grid-template-columns:1fr}}

@@ -41,10 +41,11 @@ export function readinessActionLabel(
     retry_generation: "Retry package generation",
     wait_for_generation: "Check generation progress",
     repair_material: "Open material repair",
-    repair_package: "Open package repair",
+    repair_package: "Recheck package",
+    revalidate_package: "Recheck package",
     retry_pdf: "Retry PDF preparation",
     regenerate_pdf: "Build a current PDF",
     review_fallback: "Review fallback",
   };
-  return labels[item.recoveryAction] ?? "Fix next issue";
+  return labels[item.recoveryAction] ?? "Refresh readiness";
 }

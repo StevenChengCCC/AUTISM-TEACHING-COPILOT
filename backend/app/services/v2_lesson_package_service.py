@@ -1075,6 +1075,35 @@ class V2LessonPackageService:
             })
         )
 
+    def revalidate_product(self, package_id: str) -> LessonPackageDto:
+        """Persist current semantic and safety validation without approving it.
+
+        Material and visual review actions can advance the package revision.  The
+        readiness gate must then be able to record that the new package revision
+        was evaluated before the teacher makes the separate package-approval
+        decision.
+        """
+
+        package = self.repos.lesson_packages.get(package_id)
+        if not isinstance(package, LessonPackageDto):
+            raise NotFoundError("Lesson package not found")
+        updated = self._reevaluate_product(package)
+        if updated.validationStatus == "passed":
+            updated = updated.model_copy(update={
+                "validatedRevision": package.version + 1,
+                "validatedLessonSpecRevision": (
+                    package.lessonSpec.revision if package.lessonSpec is not None else None
+                ),
+            })
+        with self.repos.transaction():
+            for material in updated.materials:
+                stored = self.repos.generated_materials.get(material.id)
+                if isinstance(stored, GeneratedMaterialDto) and stored != material:
+                    self.repos.generated_materials.save(
+                        material.model_copy(update={"version": stored.version})
+                    )
+            return self.repos.lesson_packages.save(updated)
+
     def reject_product(
         self, package_id: str, payload: LessonPackageDecisionRequest
     ) -> LessonPackageDto:
