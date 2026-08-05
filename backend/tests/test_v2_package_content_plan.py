@@ -1,7 +1,7 @@
 import pytest
 
 from app.core.exceptions import ConflictError
-from app.schemas.v2_dto import MaterialRequestDecisionValue, QuestionAnswerUpdate
+from app.schemas.v2_dto import LearnerProfile, MaterialRequestDecisionValue, QuestionAnswerUpdate
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_lesson_spec_service import V2LessonSpecService
@@ -95,6 +95,28 @@ def test_prohibited_or_unsupported_material_is_explicitly_excluded():
     assert plan.excluded_materials[0].material_type == "scented_holographic_spinner"
     assert "sensory-access" in plan.excluded_materials[0].reason_excluded
     assert "scented_holographic_spinner" not in V2PackageContentPlanService().included_types(plan)
+
+
+def test_token_board_without_confirmed_reward_is_excluded_without_blocking_preview():
+    repos = V2Repositories()
+    repos.learners.save(LearnerProfile(id="no-reward", code="N-000", age=8))
+    draft = fruit_identification_draft().model_copy(
+        update={"learnerId": "no-reward"}
+    )
+
+    plan = V2LessonPackageService(repos).preview_content_plan(draft)
+
+    assert "token_board" not in V2PackageContentPlanService().included_types(plan)
+    excluded = next(
+        item for item in plan.excluded_materials if item.material_type == "token_board"
+    )
+    assert "no teacher-confirmed earned reward" in excluded.reason_excluded
+    assert {item.material_type for item in plan.teacher_selected_core} >= {
+        "visual_card",
+        "matching_page",
+        "data_sheet",
+        "summary_template",
+    }
 
 
 def test_n482_plan_and_generated_package_are_complete_and_within_configured_bounds():
