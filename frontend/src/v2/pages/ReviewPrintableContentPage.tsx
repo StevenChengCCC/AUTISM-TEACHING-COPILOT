@@ -75,6 +75,15 @@ function hasCompleteVisualSet(material: GeneratedMaterial): boolean {
   return Boolean(material.content.imageUrl || material.content.imageBase64);
 }
 
+function isCurrentRevisionApproved(material: GeneratedMaterial): boolean {
+  if (material.status !== "approved") return false;
+  if (!material.materialSpec) return true;
+  return (
+    material.materialSpec.approval.status === "approved" &&
+    material.materialSpec.approval.approvedRevision === material.materialSpec.revision
+  );
+}
+
 function materialIcon(type: string): string {
   if (type === "visual_card") return "▧";
   if (type === "help_card") return "◉";
@@ -116,6 +125,7 @@ export function ReviewPrintableContentPage({
   const [printPresetCatalog, setPrintPresetCatalog] = useState<PrintPresetCatalog | null>(null);
   const [printPreset, setPrintPreset] = useState<PrintPreset>(() => lessonPackage ? readSelectedPrintPreset(lessonPackage.id) : "complete_kit");
   const reviewRequests = useRef(new Set<string>());
+  const packageApprovalAttempts = useRef(new Set<string>());
   const refreshPrintReadiness = useCallback(async () => {
     if (!lessonPackage) return null;
     const value = await lessonKitApi.getPackagePrintReadiness(lessonPackage.id);
@@ -210,6 +220,44 @@ export function ReviewPrintableContentPage({
       window.clearInterval(timer);
     };
   }, [lessonPackage?.id, imageStateKey,refreshPrintReadiness]);
+
+  const approvalStateKey = materials
+    .map((item) => `${item.id}:${item.status}:${item.materialSpec?.revision ?? item.version}:${item.materialSpec?.approval.approvedRevision ?? 0}`)
+    .join("|");
+  useEffect(() => {
+    if (!lessonPackage || materials.length === 0 || !materials.every(isCurrentRevisionApproved)) return;
+    const attemptKey = `${lessonPackage.id}:${approvalStateKey}`;
+    if (packageApprovalAttempts.current.has(attemptKey)) return;
+    packageApprovalAttempts.current.add(attemptKey);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const latest = await lessonKitApi.getLessonPackage(lessonPackage.id);
+        const approved = latest.status === "approved"
+          ? latest
+          : await lessonKitApi.approveLessonPackage(
+              latest.id,
+              latest.version ?? 1,
+              "Teacher approved every current printable material revision",
+            );
+        if (cancelled) return;
+        setMaterials(approved.materials);
+        const readiness = await refreshPrintReadiness();
+        if (cancelled) return;
+        if (readiness?.ready) {
+          setLocalMessage("All pages are approved. PDF download is ready.");
+          onFeedback("All pages approved. PDF download is now available.");
+        } else {
+          setLocalMessage("Your approvals are saved. Finishing the PDF readiness check…");
+        }
+      } catch (reason) {
+        if (!cancelled) {
+          setLocalMessage(reason instanceof Error ? reason.message : "The approved package could not be finalized.");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lessonPackage?.id, approvalStateKey, refreshPrintReadiness, onFeedback]);
 
   useEffect(() => {
     if (!selected) return;
