@@ -78,6 +78,7 @@ test("both print screens consume the backend contract and disable silent downloa
   assert.match(reviewPage, /Approve and open next pending item/);
   assert.doesNotMatch(reviewPage, /const generating = visualMaterials\.find/);
   assert.match(readyPage, /revalidateLessonPackage/);
+  assert.match(readyPage, /Teacher approved every current printable material revision/);
   assert.match(reviewPage, /revalidateLessonPackage/);
   assert.doesNotMatch(reviewPage, /decisionIds\.map/);
   assert.doesNotMatch(reviewPage, /Profile revision/);
