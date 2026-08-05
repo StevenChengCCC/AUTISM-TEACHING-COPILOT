@@ -398,11 +398,7 @@ class V2LessonPackageService:
         package_status = (
             "safety_review_needed"
             if safety_review.status == "blocked"
-            else (
-                "validation_failed"
-                if any(check.status == "blocked" for check in standards_checks)
-                else "teacher_review_needed"
-            )
+            else "teacher_review_needed"
         )
 
         package = LessonPackageDto(
@@ -541,19 +537,10 @@ class V2LessonPackageService:
             ),
         )
         quality_score = self.quality.evaluate(lesson_spec, package)
-        if quality_score.overallStatus == "blocked":
-            package = package.model_copy(
-                update={
-                    "qualityScore": quality_score,
-                    "status": (
-                        package.status
-                        if package.status == "safety_review_needed"
-                        else "validation_failed"
-                    ),
-                }
-            )
-        else:
-            package = package.model_copy(update={"qualityScore": quality_score})
+        # Automatic classroom-readiness scoring remains visible decision
+        # support. It must not replace the strict semantic/safety validators or
+        # the teacher's explicit approval of every current material revision.
+        package = package.model_copy(update={"qualityScore": quality_score})
         with self.repos.transaction():
             package = self.repos.lesson_packages.save(package)
             for material in materials:
@@ -1051,16 +1038,11 @@ class V2LessonPackageService:
             raise VersionConflictError(
                 "The lesson package changed after it was loaded. Refresh and try again."
             )
+        # Re-evaluate with the current policy so packages created before an
+        # advisory-quality rule change do not remain permanently blocked.
+        package = self._reevaluate_product(package)
         if package.safetyReview and package.safetyReview.status == "blocked":
             raise ConflictError("A safety-blocked lesson package cannot be approved")
-        if any(check.status == "blocked" for check in package.standardsChecks):
-            raise ConflictError(
-                "Resolve blocked instructional quality checks before approval"
-            )
-        if package.qualityScore and package.qualityScore.overallStatus == "blocked":
-            raise ConflictError(
-                "Resolve blocked lesson package quality items before approval"
-            )
         if package.validationPolicy == "strict_v1":
             if package.validationStatus != "passed":
                 raise ConflictError("The current package revision has not passed semantic and safety validation")
@@ -1388,7 +1370,7 @@ class V2LessonPackageService:
             if safety_review.status == "blocked"
             else (
                 "validation_failed"
-                if material_failures or any(item.status == "blocked" for item in checks)
+                if material_failures
                 else "teacher_review_needed"
             )
         )
@@ -1400,17 +1382,11 @@ class V2LessonPackageService:
             }
         )
         quality_score = self.quality.evaluate(draft, reevaluated)
-        if (
-            quality_score.overallStatus == "blocked"
-            and status != "safety_review_needed"
-        ):
-            status = "validation_failed"
         validation_failed = (
             material_failures
             or safety_review.status == "blocked"
-            or any(item.status == "blocked" for item in checks)
         )
-        if package.status == "approved" and not validation_failed and quality_score.overallStatus != "blocked":
+        if package.status == "approved" and not validation_failed:
             status = "approved"
         return reevaluated.model_copy(
             update={
