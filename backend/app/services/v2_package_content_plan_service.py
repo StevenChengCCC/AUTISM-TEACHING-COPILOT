@@ -141,7 +141,7 @@ class V2PackageContentPlanService:
                 issues.append("The token board has no named pictured earned reward")
         if "blue_line_activity" in included and not lesson_spec.contexts:
             issues.append("The personalized activity has no executable context or required components")
-        if lesson_spec.generalization_plan.required:
+        if lesson_spec.generalization_plan.required and not compact_concept:
             required = max(3, lesson_spec.goal.success_criterion.required_contexts)
             if len(lesson_spec.contexts) < required or "scenario_cards" not in included:
                 issues.append("Required generalization has fewer than three contexts or no scenario material")
@@ -282,6 +282,15 @@ class V2PackageContentPlanService:
 
     def _generalization_companions(self, spec: LessonSpec, plan: PackageContentPlan) -> None:
         if not spec.generalization_plan.required:
+            return
+        if self._is_concept_identification_goal(self._goal_text(spec)):
+            self._require(
+                plan,
+                "data_sheet",
+                "Records concept identification across varied real-object or picture exemplars.",
+                "Concept generalization measurement",
+                spec.profile_factor_ids,
+            )
             return
         self._require(plan, "scenario_cards", "Represents at least three confirmed contexts or exemplars.", "Required generalization across contexts", spec.profile_factor_ids)
         self._require(plan, "data_sheet", "Records performance separately by context and response mode.", "Generalization measurement", spec.profile_factor_ids)
