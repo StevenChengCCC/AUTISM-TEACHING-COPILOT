@@ -17,7 +17,6 @@ from app.integrations.openai_provider import (
     _ProfileExtractionTransport,
 )
 from app.schemas.v2_dto import (
-    CanonicalLearnerProfile,
     LearnerProfile,
     LearnerRecord,
     AIQuestion,
@@ -28,7 +27,6 @@ from app.schemas.v2_dto import (
     LessonSpecMaterialRequest,
     LessonSuccessCriterion,
     InstructionalConstraintSnapshot,
-    ProfileFactor,
 )
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
@@ -112,23 +110,18 @@ class _FakeParsedResponses:
             output_parsed=kwargs["text_format"](
                 learner={
                     "age": 7,
-                    "normalizedProfile": CanonicalLearnerProfile(
-                        learnerId="a102",
-                        age=7,
-                        factors=[
-                            ProfileFactor(
-                                id="communication-short-phrases",
-                                category="communication",
-                                label="Short phrases",
-                                value="Uses short phrases",
-                                status="confirmed_current",
-                                confidence=0.9,
-                                sourceEvidence="Synthetic classroom note.",
-                                sourceRecordId="record-1",
-                                instructionalImplication="Accept short phrase responses.",
-                            )
-                        ],
-                    )
+                    "factors": [
+                        {
+                            "category": "communication",
+                            "value": "Uses short phrases",
+                            "status": "confirmed_current",
+                            "confidence": 0.9,
+                            "sourceEvidence": "Synthetic classroom note.",
+                            "sourceRecordId": "record-1",
+                            "instructionalImplication": "Accept short phrase responses.",
+                            "generationConstraints": [],
+                        }
+                    ],
                 },
                 unknownFields=[],
                 insights=["Use visual supports"],
@@ -310,7 +303,11 @@ def test_profile_extraction_uses_typed_responses_parse():
     assert "generationConstraints" in responses.request["instructions"]
     schema = _ProfileExtractionTransport.model_json_schema()
     assert "profileSignals" not in schema["properties"]
+    learner_schema = schema["$defs"]["_ProfileLearnerTransport"]
+    assert set(learner_schema["properties"]) == {"age", "factors"}
+    assert "normalizedProfile" not in learner_schema["properties"]
     assert result.learner.communication_mode == "Uses short phrases"
+    assert result.learner.normalized_profile.factors[0].id.startswith("factor-ai-")
     assert result.insights == ["Use visual supports"]
     assert provider.last_fallback_used is False
     assert provider.last_generation_metadata.model == "gpt-4.1-mini"
