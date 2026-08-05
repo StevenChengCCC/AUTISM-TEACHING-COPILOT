@@ -74,6 +74,35 @@ def test_profile_extraction_saves_anonymous_record_signals_and_draft_status():
     assert result.profileSignals == stored.profile_signals
 
 
+def test_durable_profile_read_never_invokes_ai_for_an_unextracted_learner():
+    class _UnexpectedProvider(MockV2AIProvider):
+        def extract_profile(self, learner, records):
+            raise AssertionError("A durable profile read must not invoke AI")
+
+    repos = V2Repositories()
+    repos.is_durable = True
+    repos.learners.save(LearnerProfile(id="durable-new", code="N-NEW", age=9))
+    repos.records.save(
+        LearnerRecord(
+            id="record-durable-new",
+            learner_id="durable-new",
+            file_name="reviewed-notes.txt",
+            file_type="TXT",
+            status="reviewed",
+            uploaded_at=datetime.now(timezone.utc),
+            extracted_text="Synthetic reviewed classroom notes.",
+        )
+    )
+
+    result = V2ProfileExtractionService(
+        repos, ai=_UnexpectedProvider()
+    ).extract("durable-new")
+
+    assert result.status == "complete"
+    assert result.analyzedRecordCount == 1
+    assert result.learner.id == "durable-new"
+
+
 class _ConflictingExtractionProvider(MockV2AIProvider):
     def extract_profile(self, learner, records):
         extracted = learner.model_copy(

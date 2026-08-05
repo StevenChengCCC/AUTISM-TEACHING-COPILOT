@@ -46,14 +46,11 @@ class V2ProfileExtractionService:
             for record in records
             if record.status in {"ready", "reviewed"} and record.effective_text.strip()
         ]
-        if (
-            not force
-            and getattr(self.learners.repos, "is_durable", False)
-            and (
-                learner.profile_review_status in {"reviewed", "confirmed"}
-                or learner.profile_signals
-            )
-        ):
+        # A GET in production must remain a fast, side-effect-free read. Running
+        # the provider here can outlive the load balancer timeout and turns a
+        # normal profile page visit into a 504. Explicit regeneration continues
+        # to use force=True through the POST endpoint.
+        if not force and getattr(self.learners.repos, "is_durable", False):
             return self._current_extraction(learner, records, len(eligible_records))
         if records and not eligible_records:
             raise ValidationError(
