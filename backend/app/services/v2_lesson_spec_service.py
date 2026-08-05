@@ -209,6 +209,26 @@ class V2LessonSpecService:
         resolved("accessPlan", "profile_derived", "Copied from confirmed visual, sensory, and motor-access constraints.")
 
         materials = self._materials(draft, by_field.get("material_requests"), snapshot)
+        # A token board without a teacher-confirmed earned reward is not an
+        # executable reinforcement system. Do not block the entire lesson kit
+        # or invent a reward: retain the request as an explicit exclusion so
+        # every other confirmed material can continue to package preview.
+        if not earned_reward:
+            materials = [
+                item.model_copy(
+                    update={
+                        "required": False,
+                        "supported": False,
+                        "unsupported_reason": (
+                            "Not included because no teacher-confirmed earned "
+                            "reward is available for this token board."
+                        ),
+                    }
+                )
+                if item.material_type == "token_board"
+                else item
+                for item in materials
+            ]
         resolved("materialRequests", self._decision_source(by_field.get("material_requests")), "Preserves the complete confirmed material-request decision.")
 
         assumptions = self._assumptions(learner, snapshot)
