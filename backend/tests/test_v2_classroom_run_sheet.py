@@ -82,6 +82,18 @@ def test_run_sheet_projects_rich_steps_prep_materials_data_and_closeout():
     assert sheet.beforeClassChecklist.count("Print at actual size") == 1
     assert "Cut apart the three station cards" in sheet.beforeClassChecklist
     assert all("margin" not in item.casefold() for item in sheet.beforeClassChecklist)
+    assert any(
+        "goal-specific data sheet" in item.casefold()
+        for item in sheet.beforeClassChecklist
+    )
+    assert any(
+        "set first" in item.casefold() and "then" in item.casefold()
+        for item in sheet.beforeClassChecklist
+    )
+    assert any(
+        "5 bus tokens" in item.casefold()
+        for item in sheet.beforeClassChecklist
+    )
     assert sheet.steps[0].teacherScript == 'Say, "The route is ready."'
     assert sheet.steps[0].expectedLearnerResponse.startswith("Orients to the station")
     assert sheet.steps[0].waitTime == "5 seconds"
@@ -202,9 +214,9 @@ def test_complete_pdf_contains_run_sheet_current_revisions_edits_and_no_sensitiv
         for index, value in enumerate(page_text)
         if index > run_sheet_page and "Complete the Blue Line" in value
     )
-    # Preserve readable teacher-facing type when approved teacher edits expand
-    # the run sheet instead of shrinking content to force a two-page limit.
-    assert 1 <= first_material_page - run_sheet_page <= 3
+    # Standard text keeps the operational guide to at most two pages without
+    # shrinking classroom-facing text.
+    assert 1 <= first_material_page - run_sheet_page <= 2
     download = service.create_download(artifact.artifactId)
     assert download.downloadUrl
     assert repos.export_jobs.get(artifact.artifactId).downloadCount == 2

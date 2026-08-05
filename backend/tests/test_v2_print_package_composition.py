@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from pypdf import PdfReader
+from reportlab.platypus import Table
 
 from app.core.exceptions import ConflictError, ValidationError
 from app.integrations.private_object_storage import LocalPrivateObjectStorage
@@ -102,7 +103,8 @@ def test_n482_complete_approved_package_persists_one_valid_mixed_layout_pdf(tmp_
     text = _pdf_text(reader)
     assert body.startswith(b"%PDF") and len(body) > 0
     assert job.fileName == "learner-N-482-break-request-kit-letter-standard.pdf"
-    assert job.pageCount == len(reader.pages) == 18
+    # Renderer v5 keeps the Standard Classroom Run Sheet to two pages.
+    assert job.pageCount == len(reader.pages) == 17
     assert job.printPackageManifest.pageCount == len(reader.pages)
     assert job.artifactSha256 and len(job.artifactSha256) == 64
     assert any(float(page.mediabox.width) < float(page.mediabox.height) for page in reader.pages)
@@ -170,7 +172,9 @@ def test_ready_visual_with_missing_asset_fails_closed(tmp_path):
         _settings(tmp_path),
     )
 
-    with pytest.raises(ConflictError, match="must resolve before printing"):
+    with pytest.raises(
+        ConflictError, match="storage_download_preparation_failure"
+    ):
         service.create(
             package.id,
             PrintableLessonKitRequest(
@@ -254,6 +258,34 @@ def test_three_short_scenarios_paginate_two_then_one():
     assert "Context 1" in (reader.pages[0].extract_text() or "")
     assert "Context 2" in (reader.pages[0].extract_text() or "")
     assert "Context 3" in (reader.pages[1].extract_text() or "")
+
+
+def test_scenario_response_modes_and_generalization_are_teacher_readable():
+    repos, package = n482_runtime()
+    material = next(item for item in package.materials if item.type == "scenario_cards")
+    service = V2PrintableLessonKitService(repos)
+    story = service._material_story(material, package, service._styles())
+    text = " ".join(
+        (page.extract_text() or "")
+        for page in PdfReader(
+            BytesIO(service._render_story(story, (612, 792), material.title))
+        ).pages
+    )
+
+    assert "Accepted response: speech or AAC" in text
+    assert "Accepted response: speech -> AAC" not in text
+    assert "Generalization: Generalization:" not in text
+
+
+def test_data_sheet_rows_match_lesson_spec_opportunity_budget():
+    repos, package = n482_runtime()
+    material = next(item for item in package.materials if item.type == "data_sheet")
+    service = V2PrintableLessonKitService(repos)
+    story = service._material_story(material, package, service._styles())
+    table = next(item for item in story if isinstance(item, Table))
+    expected = package.lessonSpec.goal.success_criterion.total_opportunities
+
+    assert table._nrows == expected + 1
 
 
 def test_legacy_package_complete_inventory_is_preserved_and_stably_ordered():

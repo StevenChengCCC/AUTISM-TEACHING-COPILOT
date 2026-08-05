@@ -127,6 +127,52 @@ def test_readiness_reports_ordered_material_visual_and_revision_recovery():
     assert required.retryPossible is True
 
 
+def test_readiness_blocks_ready_visual_when_stored_bytes_are_missing(tmp_path):
+    repos = V2Repositories()
+    package = _generated_package(repos)
+    material = next(
+        item
+        for item in repos.generated_materials.for_package(package.id)
+        if item.visualAssetPlan is not None
+    )
+    target = material.visualAssetPlan.visual_items[0]
+    plan = material.visualAssetPlan.model_copy(
+        update={
+            "visual_items": [
+                target.model_copy(update={"status": "ready"}),
+                *material.visualAssetPlan.visual_items[1:],
+            ]
+        }
+    )
+    content = {
+        **material.content,
+        "visualItems": [
+            {
+                "id": target.id,
+                "required": True,
+                "generationStatus": "ready",
+                "imageAssetId": "missing-durable-asset",
+                "imageUrl": "/storage/generated-images/missing.png",
+            }
+        ],
+    }
+    repos.generated_materials.save(
+        material.model_copy(update={"visualAssetPlan": plan, "content": content})
+    )
+
+    result = V2PrintReadinessService(repos).evaluate(package.id)
+    blocker = next(
+        item
+        for item in result.blockers
+        if item.category == "storage_download_preparation_failure"
+        and item.visualId == target.id
+    )
+
+    assert result.ready is False
+    assert blocker.materialId == material.id
+    assert blocker.recoveryAction == "retry_visual"
+
+
 def test_readiness_reports_jobs_storage_renderer_and_privacy_safe_text():
     repos = V2Repositories()
     package = _ready_package(repos)

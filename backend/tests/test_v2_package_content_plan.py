@@ -4,6 +4,7 @@ from app.core.exceptions import ConflictError
 from app.schemas.v2_dto import MaterialRequestDecisionValue, QuestionAnswerUpdate
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
+from app.services.v2_lesson_spec_service import V2LessonSpecService
 from app.services.v2_package_content_plan_service import V2PackageContentPlanService
 from app.services.v2_repositories import V2Repositories
 from test_v2_lesson_spec import (
@@ -12,6 +13,7 @@ from test_v2_lesson_spec import (
     n482_learner,
 )
 from test_v2_teacher_decision_snapshot import planned_chat
+from test_v2_image_generation_strategy import fruit_identification_draft
 
 
 def n482_three_selection_case():
@@ -161,3 +163,87 @@ def test_content_plan_persists_on_resume_and_refresh_preserves_decisions():
     )
     assert [item.model_dump(mode="json") for item in refreshed.draft.decisions] == decisions
     assert refreshed.draft.package_content_plan == plan
+
+
+def test_concept_identification_prefers_object_practice_over_scenarios_or_task_analysis():
+    repos = V2Repositories()
+    draft = fruit_identification_draft().model_copy(
+        update={
+            "goalText": "Identify or name Apple across six visibly varied real-object exemplars.",
+            "observableResponse": "Point to or say Apple.",
+            "responseLevel": "pointing, speech",
+            "scenarios": ["Tabletop object identification"],
+            "selectedMaterials": ["Visual Cards", "Data Sheet", "Summary Template"],
+        }
+    )
+    plan = V2LessonPackageService(repos).preview_content_plan(draft)
+    included = V2PackageContentPlanService().included_types(plan)
+
+    assert {"visual_card", "data_sheet", "summary_template"} <= included
+    assert "teacher_cue_card" in included
+    assert len(included) == 4
+    assert "scenario_cards" not in included
+    assert "task_analysis_cards" not in included
+    assert "session_summary" not in included
+    assert "matching_page" not in included
+    assert "choice_board" not in included
+
+
+def test_concept_identification_summary_and_cue_exclude_break_request_template_fields():
+    repos = V2Repositories()
+    draft = fruit_identification_draft().model_copy(
+        update={
+            "goalText": "Identify or name Apple across six visibly varied real-object exemplars.",
+            "observableResponse": "Point to or say Apple.",
+            "responseLevel": "pointing, speech",
+            "scenarios": ["Tabletop object identification"],
+            "selectedMaterials": ["Visual Cards", "Data Sheet", "Summary Template"],
+        }
+    )
+    packages = V2LessonPackageService(repos)
+    draft = draft.model_copy(
+        update={"packageContentPlan": packages.preview_content_plan(draft)}
+    )
+    package = packages.generate_product(draft)
+    by_type = {material.type: material for material in package.materials}
+    summary = by_type["summary_template"].materialSpec.content
+    cue = by_type["teacher_cue_card"].materialSpec.content
+
+    assert summary.reporting_fields == [
+        "Opportunities completed",
+        "Successful responses (independent / prompted)",
+        "Prompt level and latency notes",
+        "Next teaching step",
+        "Teacher notes",
+    ]
+    assert not any(
+        term in " ".join(summary.reporting_fields).casefold()
+        for term in ("request", "aac", "returned after break")
+    )
+    assert "does not prescribe a break-return sequence" in (
+        cue.regulation_and_break_notes
+    )
+
+
+def test_combined_bus_token_reward_does_not_block_content_plan_preview():
+    learner = n482_learner()
+    snapshot = build_instructional_constraint_snapshot(learner, [])
+    snapshot = snapshot.model_copy(update={
+        "engagement": snapshot.engagement.model_copy(update={
+            "effective_reinforcers": [
+                "bus tokens exchanged for two minutes with transit"
+            ],
+        }),
+    })
+    draft = n482_draft(snapshot)
+    spec = V2LessonSpecService().require_valid(
+        V2LessonSpecService().from_draft(draft, learner, snapshot), snapshot
+    )
+
+    assert spec.reinforcement_plan.token_count == 5
+    assert spec.reinforcement_plan.token_theme == "bus"
+    assert spec.reinforcement_plan.earned_reward == "2 minutes with transit"
+    plan = V2PackageContentPlanService().validate(
+        V2PackageContentPlanService().build(spec), spec
+    )
+    assert "token_board" in V2PackageContentPlanService().included_types(plan)

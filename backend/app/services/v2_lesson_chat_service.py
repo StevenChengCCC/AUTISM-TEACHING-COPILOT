@@ -50,7 +50,10 @@ class V2LessonChatService:
             id="visual-cards",
             label="Visual Cards",
             value="Visual Cards",
-            description="Printable visual examples tailored to the lesson goal.",
+            description=(
+                "Printable object and visual examples tailored to the lesson goal; "
+                "concept goals use multiple varied real-object exemplars."
+            ),
             icon="▧",
             recommended=True,
         ),
@@ -732,7 +735,7 @@ class V2LessonChatService:
             )[:3]
             return AIQuestion(
                 id="scenarios",
-                prompt="Where will the learner practice?",
+                prompt="Which classroom moments should this lesson cover?",
                 field="scenarios",
                 inputType="multi_select",
                 options=[
@@ -884,11 +887,11 @@ class V2LessonChatService:
 
         prompt_by_field = {
             "goalText": "What should the learner practice?",
-            "scenarios": "Where will the learner practice?",
+            "scenarios": "Which classroom moments should this lesson cover?",
         }
         helper_by_field = {
             "goalText": "Choose the AI suggestion or write a short goal.",
-            "scenarios": "Pick up to three familiar situations.",
+            "scenarios": "Choose up to three familiar activities or transitions.",
         }
         if question.field == "goalText":
             input_type = "hybrid"

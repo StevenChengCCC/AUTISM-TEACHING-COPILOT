@@ -29,6 +29,7 @@ def test_n482_material_specs_golden_vertical_slice():
         "free choice to shared reading",
     ]
     assert "Place, point to, or order the 3 station cards" in activity.learner_action
+    assert ".." not in activity.learner_action
     assert {"Do not require handwriting", "Avoid fine-motor cutting"} <= set(activity.motor_access_requirements)
     assert communication.exact_communication_phrase == "Break, please"
     assert communication.accepted_communication_modes == ["speech", "AAC"]
@@ -54,9 +55,12 @@ def test_n482_material_specs_golden_vertical_slice():
     ]
     assert len(data.prompt_level_definitions) == 4
     assert summary.reporting_fields == [
-        "Opportunities completed", "Independent requests", "AAC requests",
-        "Spoken requests", "Lowest prompt used", "Returned after break",
-        "Context with strongest performance", "Context needing more support",
+        "Opportunities completed",
+        "Successful responses (independent / prompted)",
+        "Responses by mode (Speech / AAC)",
+        "Prompt level and latency notes",
+        "Break or stop honored / return status",
+        "Context comparison",
         "Suggested next generalization step", "Teacher notes",
     ]
 
@@ -90,7 +94,9 @@ def test_n482_deterministic_pdf_contains_executable_material_content():
         "Break, please", "Complete 3 table-work items", "2-minute transit-map break",
         "You asked for a break by yourself.", "No alarm or audio cue",
         "Scenario Cards 1", "Teacher wording", "Prompt and independence definitions",
-        "Context With Strongest Performance", "Teacher Notes",
+        "Context Comparison", "Teacher Notes", "Accepted responses",
+        "Wait 5 seconds before prompting", "Break and return",
+        "Teacher judgment overrides this guide",
     ):
         assert expected.casefold() in text.casefold()
 

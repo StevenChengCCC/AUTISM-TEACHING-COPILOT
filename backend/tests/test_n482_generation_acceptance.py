@@ -254,9 +254,9 @@ def test_n482_minimal_selection_complete_generation_download_and_persistence(tmp
     assert download.content.startswith(b"%PDF-")
     assert len(download.content) == artifact["sizeBytes"] > 0
     reader = PdfReader(BytesIO(download.content))
-    # Accessible heading and body-size policies may add a continuation page;
-    # the complete package inventory remains unchanged.
-    assert len(reader.pages) == artifact["pageCount"] == 18
+    # Renderer v5 keeps the Standard Classroom Run Sheet to two pages while
+    # preserving the complete package inventory.
+    assert len(reader.pages) == artifact["pageCount"] == 17
     text = _pdf_text(reader)
     for phrase in (
         "Complete the Blue Line",

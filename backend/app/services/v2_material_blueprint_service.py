@@ -107,6 +107,12 @@ class V2MaterialBlueprintService:
             "data_sheet",
             "summary_template",
         ),
+        "concept_identification": (
+            "visual_card",
+            "data_sheet",
+            "summary_template",
+            "teacher_cue_card",
+        ),
         "concepts_classification": (
             "sorting_page",
             "matching_page",
@@ -467,9 +473,14 @@ class V2MaterialBlueprintService:
 
     @classmethod
     def classify_goal(cls, draft: LessonDesignDraftDto) -> str:
+        # The instructional goal determines the bundle. A personalization theme
+        # can contain words such as "sorting", "bus", or "game", but those
+        # words describe motivating artwork rather than the skill being taught.
         primary_text = " ".join(
-            [draft.goalText, draft.observableResponse, draft.theme]
+            [draft.goalText, draft.observableResponse]
         ).casefold()
+        if not primary_text.strip():
+            primary_text = draft.theme.casefold()
         # Scenarios describe where a skill is practised, not what the skill is.
         # Classifying from them caused concrete objects such as toys, buses, or
         # sorting materials to override the teacher-confirmed instructional goal.
@@ -625,6 +636,25 @@ class V2MaterialBlueprintService:
             )
         ):
             return "concepts_classification"
+        if any(
+            term in text
+            for term in (
+                "identify",
+                "identifies",
+                "identification",
+                "name the",
+                "names the",
+                "recognize",
+                "recognizes",
+                "recognition",
+                "label the",
+                "labels the",
+                "\u8bc6\u522b",
+                "\u547d\u540d",
+                "\u8ba4\u51fa",
+            )
+        ):
+            return "concept_identification"
         if any(
             term in primary_text
             for term in (

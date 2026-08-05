@@ -21,6 +21,9 @@ class V2ClassroomRunSheetService:
     _generic_prep_noise = {
         "check margins",
         "check print margins",
+        "confirm prompting and reinforcement choices",
+        "prepare selected materials and a brief break option",
+        "prepare the aligned data sheet",
         "review wording",
         "review at actual size",
         "review at actual size before printing",
@@ -95,11 +98,57 @@ class V2ClassroomRunSheetService:
         for material in materials:
             if material.specification is not None:
                 values.extend(material.specification.printPreparation)
+            values.extend(self._material_setup_actions(material))
         return [
             value
             for value in self._dedupe(values)
             if self._key(value) not in self._generic_prep_noise
         ]
+
+    def _material_setup_actions(self, material: GeneratedMaterialDto) -> list[str]:
+        """Derive concrete setup from the approved, current MaterialSpec only."""
+
+        spec = material.materialSpec
+        if spec is None:
+            return []
+        content = spec.content
+        artifact_type = spec.artifact_type
+
+        if artifact_type == "personalized_instructional_activity":
+            return list(content.teacher_setup)
+        if artifact_type == "communication_card":
+            modes = " or ".join(content.accepted_communication_modes)
+            return [f"Place {material.title} within easy reach; accept {modes}."]
+        if artifact_type == "first_then_board":
+            return [
+                f"Set FIRST to {content.first_task} and THEN to {content.then_outcome}."
+            ]
+        if artifact_type == "token_board":
+            return [
+                f"Place {content.exact_token_count} {content.token_symbol_or_theme} "
+                f"tokens and the {content.earned_reward} reward picture on the board."
+            ]
+        if artifact_type == "visual_timer":
+            audio = (
+                "with audio off"
+                if not content.audio_allowed
+                else "using the approved audio setting"
+            )
+            return [
+                f"Set the visual timer to {content.duration_minutes} minutes {audio}."
+            ]
+        if artifact_type == "scenario_cards":
+            contexts = "; ".join(item.context for item in content.scenarios)
+            return [f"Arrange the scenario cards in this order: {contexts}."]
+        if artifact_type == "goal_specific_data_sheet":
+            return [
+                "Place the goal-specific data sheet where each planned opportunity can be recorded."
+            ]
+        if artifact_type == "lesson_summary" and material.type == "teacher_cue_card":
+            return ["Keep the Teacher Cue Card visible during instruction."]
+        if artifact_type == "lesson_summary":
+            return ["Keep the Lesson Summary available for the two-minute closeout."]
+        return []
 
     def _materials_needed(
         self,

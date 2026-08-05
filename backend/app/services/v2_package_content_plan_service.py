@@ -128,6 +128,7 @@ class V2PackageContentPlanService:
         text = self._goal_text(lesson_spec)
         communication = self._is_communication_goal(text)
         transition = self._is_transition_goal(lesson_spec, text)
+        compact_concept = self._is_compact_concept_package(lesson_spec, included)
         if communication:
             communication_types = {"help_card", "break_card", "scenario_cards", "blue_line_activity"}
             if not included & communication_types or "data_sheet" not in included:
@@ -151,13 +152,13 @@ class V2PackageContentPlanService:
         }
         mandatory_pages = sum(self._pages(item) for item in mandatory_types)
         artifact_outside = not self.config.PACKAGE_PLAN_MIN_ARTIFACTS <= recomputed.estimated_artifact_count <= self.config.PACKAGE_PLAN_MAX_ARTIFACTS
-        if artifact_outside and not (
+        if artifact_outside and not compact_concept and not (
             recomputed.estimated_artifact_count > self.config.PACKAGE_PLAN_MAX_ARTIFACTS
             and len(mandatory_types) > self.config.PACKAGE_PLAN_MAX_ARTIFACTS
         ):
             issues.append("Package artifact count is outside configured bounds")
         page_outside = not self.config.PACKAGE_PLAN_MIN_PAGES <= recomputed.estimated_page_count <= self.config.PACKAGE_PLAN_MAX_PAGES
-        if page_outside and not (
+        if page_outside and not compact_concept and not (
             recomputed.estimated_page_count > self.config.PACKAGE_PLAN_MAX_PAGES
             and mandatory_pages > self.config.PACKAGE_PLAN_MAX_PAGES
         ):
@@ -287,14 +288,22 @@ class V2PackageContentPlanService:
 
     def _add_contextual_enrichments(self, spec: LessonSpec, plan: PackageContentPlan) -> None:
         text = self._goal_text(spec)
-        candidates = [
-            ("teacher_cue_card", "Adds a compact teacher setup, prompting, and correction guide."),
-            ("task_analysis_cards", "Adds an executable step sequence when the goal benefits from component teaching."),
-            ("summary_template", "Adds a concise post-lesson reflection and next-step record."),
-            ("session_summary", "Adds a second teacher-facing session summary for handoff or another setting."),
-            ("choice_board", "Offers an additional supported choice-based practice format."),
-            ("visual_schedule", "Adds an optional compact sequence for use in another routine or setting."),
-        ]
+        if self._is_concept_identification_goal(text):
+            # A concept lesson needs varied object discrimination and matching,
+            # not a one-step task analysis or a duplicate session summary. Keep
+            # these teacher-controllable while making the default kit executable.
+            candidates = [
+                ("teacher_cue_card", "Keeps the concept cue, wait time, response modes, and neutral correction visible."),
+            ]
+        else:
+            candidates = [
+                ("teacher_cue_card", "Adds a compact teacher setup, prompting, and correction guide."),
+                ("task_analysis_cards", "Adds an executable step sequence when the goal benefits from component teaching."),
+                ("summary_template", "Adds a concise post-lesson reflection and next-step record."),
+                ("session_summary", "Adds a second teacher-facing session summary for handoff or another setting."),
+                ("choice_board", "Offers an additional supported choice-based practice format."),
+                ("visual_schedule", "Adds an optional compact sequence for use in another routine or setting."),
+            ]
         if self._is_transition_goal(spec, text):
             candidates.insert(0, ("sequence_cards", "Offers a second route or transition-sequencing variation."))
         for material_type, reason in candidates:
@@ -369,6 +378,28 @@ class V2PackageContentPlanService:
     @staticmethod
     def _is_transition_goal(spec: LessonSpec, text: str) -> bool:
         return "transition" in text or any(item.transition_from or item.transition_to for item in spec.contexts)
+
+    @staticmethod
+    def _is_concept_identification_goal(text: str) -> bool:
+        return any(
+            term in text
+            for term in (
+                "identify",
+                "identifies",
+                "name the",
+                "names the",
+                "recognize",
+                "recognizes",
+            )
+        )
+
+    @classmethod
+    def _is_compact_concept_package(
+        cls, spec: LessonSpec, included: set[str]
+    ) -> bool:
+        text = cls._goal_text(spec)
+        required = {"visual_card", "data_sheet"}
+        return cls._is_concept_identification_goal(text) and required <= included
 
     @classmethod
     def _pages(cls, material_type: str) -> int:

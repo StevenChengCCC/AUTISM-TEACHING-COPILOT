@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+import re
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -12,13 +13,13 @@ from app.core.exceptions import AIInvalidOutputError, AIProviderFailureError
 from app.integrations.ai_provider import V2AIProvider
 from app.schemas.v2_dto import (
     AIQuestion,
+    AIQuestionOption,
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
     LessonSpec,
     MaterialSpec,
     MaterialValidationIssue,
-    LessonPlanningResult,
     ProfileExtractionResult,
     ProfileSignal,
     InstructionalConstraintSnapshot,
@@ -41,23 +42,77 @@ class _LessonSectionRevision(BaseModel):
     revisedText: str
 
 
-class _LessonMaterialProposal(BaseModel):
+class _TeachingStepCopyTransport(BaseModel):
+    """Provider-authored classroom copy with no open-ended JSON fields."""
+
     model_config = ConfigDict(extra="forbid")
-    type: str
+    id: str
     title: str
-    content: dict[str, Any] = Field(default_factory=dict)
-    imageConcept: str | None = None
-    imagePrompt: str | None = None
-    imageAltText: str | None = None
+    description: str
+    duration: str
+    teacherAction: str
+    learnerAction: str
+    teacherScript: str
+    expectedLearnerResponse: str
+    waitTime: str
+    promptAction: str
+    reinforcementAction: str
+    errorCorrectionAction: str
+    dataToRecord: list[str]
+    transitionCue: str
+    breakOption: str
 
 
-class _LessonPackageProposal(BaseModel):
+class _LessonPackageCopyTransport(BaseModel):
+    """Small AI boundary; typed material semantics are projected locally."""
+
     model_config = ConfigDict(extra="forbid")
     lessonBrief: str
     summaryTemplate: str
-    teachingFlow: list[dict[str, Any]] = Field(default_factory=list)
-    materials: list[_LessonMaterialProposal] = Field(default_factory=list)
-    materialCopySuggestions: dict[str, Any] = Field(default_factory=dict)
+    teachingFlow: list[_TeachingStepCopyTransport] = Field(
+        min_length=3, max_length=6
+    )
+
+
+class _PlanningOptionTransport(BaseModel):
+    """Compact provider-only option; domain provenance is projected locally."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    label: str
+    value: str
+    description: str
+    recommended: bool
+    reason: str
+    profileFactorIds: list[str]
+    assumptions: list[str]
+
+
+class _PlanningQuestionTransport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    prompt: str
+    helperText: str
+    field: Literal["goalText", "scenarios", "selectedMaterials"]
+    inputType: Literal["single_select", "multi_select", "hybrid"]
+    options: list[_PlanningOptionTransport] = Field(min_length=1, max_length=3)
+    allowCustomAnswer: bool
+    maxSelections: int | None
+
+
+class _LessonPlanningTransport(BaseModel):
+    """Small AI boundary for the three strong teacher-selection decisions."""
+
+    model_config = ConfigDict(extra="forbid")
+    questions: list[_PlanningQuestionTransport] = Field(min_length=1, max_length=3)
+    goalText: str
+    observableResponse: str
+    responseLevel: str
+    scenarios: list[str]
+    selectedMaterials: list[str]
+    theme: str
+    duration: str
+    customNotes: str
 
 
 logger = logging.getLogger(__name__)
@@ -162,13 +217,37 @@ class OpenAIV2AIProvider(V2AIProvider):
         try:
             if response_model is not None and hasattr(client.responses, "parse"):
                 used_typed_parse = True
-                response = client.responses.parse(
-                    model=request_model,
-                    instructions=prompt.system_instructions,
-                    input=prompt.user_input,
-                    text_format=response_model,
-                    **reasoning_options,
-                )
+                try:
+                    response = client.responses.parse(
+                        model=request_model,
+                        instructions=prompt.system_instructions,
+                        input=prompt.user_input,
+                        text_format=response_model,
+                        **reasoning_options,
+                    )
+                except Exception as exc:
+                    # Some otherwise supported models reject a particular strict
+                    # JSON schema before generating tokens. Retry exactly once in
+                    # JSON-object mode, then apply the same Pydantic validation
+                    # below. Authentication, rate-limit, timeout, and server
+                    # failures remain fail-closed and are not retried here.
+                    if getattr(exc, "status_code", None) != 400:
+                        raise
+                    logger.warning(
+                        "Structured output schema rejected; retrying JSON mode",
+                        extra={
+                            "event": "structured_output_retry",
+                            "error_code": "structured_output_schema_rejected",
+                        },
+                    )
+                    used_typed_parse = False
+                    response = client.responses.create(
+                        model=request_model,
+                        instructions=prompt.system_instructions,
+                        input=prompt.user_input,
+                        text={"format": {"type": "json_object"}},
+                        **reasoning_options,
+                    )
             else:
                 response = client.responses.create(
                     model=request_model,
@@ -306,6 +385,122 @@ class OpenAIV2AIProvider(V2AIProvider):
                     "A selection question did not include any answer options"
                 )
 
+    @staticmethod
+    def _planning_transport_to_domain(
+        planning: _LessonPlanningTransport,
+        learner: LearnerProfile,
+        teacher_request: str,
+        snapshot: InstructionalConstraintSnapshot,
+        supported_material_catalog: list[str],
+    ) -> tuple[list[AIQuestion], LessonDesignDraft]:
+        active_factor_ids = set(snapshot.profile_factor_ids)
+        supported_keys = {item.strip().casefold() for item in supported_material_catalog}
+        questions: list[AIQuestion] = []
+        affects = {
+            "goalText": ["lesson", "teaching_flow", "data_sheet", "materials"],
+            "scenarios": ["lesson", "scenario_cards", "generalization_plan"],
+            "selectedMaterials": ["materials", "printable_package"],
+        }
+        decision_fields = {
+            "goalText": "goal",
+            "scenarios": "practice_contexts",
+            "selectedMaterials": "material_requests",
+        }
+        profile_contexts = list(
+            dict.fromkeys(snapshot.generalization.contexts)
+        )[:3]
+        for item in planning.questions:
+            options: list[AIQuestionOption] = []
+            provider_options = item.options
+            if item.field == "scenarios" and profile_contexts:
+                options = [
+                    AIQuestionOption(
+                        id=f"profile-context-{index + 1}",
+                        label=context,
+                        value=context,
+                        description=(
+                            "Profile-confirmed classroom activity or transition."
+                        ),
+                        recommended=True,
+                        source="ai_generated",
+                        decisionField="practice_contexts",
+                        reason=(
+                            "Uses a reviewed learner-profile context instead of "
+                            "inventing a generic setting."
+                        ),
+                        profileFactorIds=list(snapshot.profile_factor_ids),
+                        affects=affects["scenarios"],
+                        assumptions=[],
+                        suggestionStatus="recommended",
+                    )
+                    for index, context in enumerate(profile_contexts)
+                ]
+                provider_options = []
+            for option in provider_options:
+                supported = True
+                unsupported_reason = None
+                if item.field == "selectedMaterials":
+                    material_key = option.value.strip().casefold()
+                    supported = material_key in supported_keys
+                    if not supported:
+                        unsupported_reason = (
+                            "This provider material is outside the supported catalog and will not be remapped."
+                        )
+                options.append(
+                    AIQuestionOption(
+                        id=option.id,
+                        label=option.label,
+                        value=option.value,
+                        description=option.description,
+                        recommended=option.recommended,
+                        source="ai_generated",
+                        decisionField=decision_fields[item.field],
+                        reason=option.reason,
+                        profileFactorIds=[
+                            factor_id
+                            for factor_id in option.profileFactorIds
+                            if factor_id in active_factor_ids
+                        ],
+                        affects=affects[item.field],
+                        assumptions=option.assumptions,
+                        suggestionStatus=(
+                            "recommended" if option.recommended else "optional"
+                        ),
+                        supported=supported,
+                        unsupportedReason=unsupported_reason,
+                    )
+                )
+            questions.append(
+                AIQuestion(
+                    id=item.id,
+                    prompt=item.prompt,
+                    helperText=item.helperText,
+                    field=item.field,
+                    inputType=item.inputType,
+                    options=options,
+                    selectedOptionIds=[],
+                    allowCustomAnswer=item.allowCustomAnswer,
+                    required=True,
+                    maxSelections=item.maxSelections,
+                )
+            )
+        draft = LessonDesignDraft(
+            id=f"ai-draft-{uuid4()}",
+            learnerId=learner.id,
+            goalText=planning.goalText,
+            observableResponse=planning.observableResponse,
+            responseLevel=planning.responseLevel,
+            scenarios=profile_contexts or planning.scenarios[:3],
+            selectedMaterials=planning.selectedMaterials,
+            theme=planning.theme,
+            duration=planning.duration,
+            customNotes=planning.customNotes,
+            teacherRequest=teacher_request,
+            profileRevision=snapshot.profile_revision,
+            instructionalConstraintSnapshot=snapshot,
+        )
+        return questions, draft
+
     def extract_profile(
         self, learner: LearnerProfile, records: list[LearnerRecord]
     ) -> ProfileExtractionResult:
@@ -422,8 +617,15 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._prompts.build(
                     skill,
                     output_contract={
-                        "questions": "a concise dynamic list of required and conditional AIQuestion-compatible objects",
-                        "draft": "LessonDesignDraft-compatible object",
+                        "questions": "one goal, one practice-context, and one printable-material question; each with 2-3 compact options",
+                        "goalText": "observable suggested goal",
+                        "observableResponse": "visible or countable response",
+                        "responseLevel": "accepted response modes",
+                        "scenarios": "up to three familiar practice contexts",
+                        "selectedMaterials": "recommended names from supportedMaterialCatalog only",
+                        "theme": "age-respectful personalization theme",
+                        "duration": "brief suggested duration",
+                        "customNotes": "concise access and safety reminders",
                     },
                     trusted_input={
                         "instructionalConstraintSnapshot": snapshot.model_dump(
@@ -437,17 +639,19 @@ class OpenAIV2AIProvider(V2AIProvider):
                     untrusted_input={"teacherRequest": teacher_request},
                     supplemental_skills=(ny_material_skill,),
                 ),
-                LessonPlanningResult,
+                _LessonPlanningTransport,
                 model=self._settings.OPENAI_PLANNING_MODEL,
                 timeout_seconds=self._settings.OPENAI_PLANNING_TIMEOUT_SECONDS,
             )
-            planning = LessonPlanningResult.model_validate(result)
-            questions = planning.questions
-            draft = planning.draft
+            planning = _LessonPlanningTransport.model_validate(result)
+            questions, draft = self._planning_transport_to_domain(
+                planning,
+                learner,
+                teacher_request,
+                snapshot,
+                supported_material_catalog,
+            )
             self._validate_lesson_questions(questions, draft)
-            draft.learner_id = learner.id
-            draft.profile_revision = snapshot.profile_revision
-            draft.instructional_constraint_snapshot = snapshot
             self._success("lesson_planning", self._settings.OPENAI_PLANNING_MODEL)
             return questions, draft
         except (
@@ -500,24 +704,33 @@ class OpenAIV2AIProvider(V2AIProvider):
         self.last_fallback_used = False
         try:
             lesson_skill = self._registry.get("lesson_generation")
-            material_skill = self._registry.get("material_generation")
             ny_material_skill = self._registry.get("ny_instructional_materials")
             prompt = self._prompts.build(
                 lesson_skill,
                 output_contract={
-                    "lessonBrief": "non-empty string",
-                    "summaryTemplate": "non-empty string",
-                    "teachingFlow": "array of TeachingStep objects",
-                    "materials": "array of selected material definitions with type title content",
+                    "lessonBrief": (
+                        "concise personalized teacher brief grounded only in the "
+                        "LessonSpec; no placeholders or unsupported claims"
+                    ),
+                    "summaryTemplate": (
+                        "goal-specific closeout reminder using observable language"
+                    ),
+                    "teachingFlow": (
+                        "3-6 complete classroom steps with compact scripts, exact "
+                        "wait/prompt/data actions, neutral correction, and break access. "
+                        "The success-criterion opportunity total is a budget for the "
+                        "whole lesson; allocate it once across steps and never repeat "
+                        "that full count in multiple steps"
+                    ),
                 },
                 trusted_input={
                     "lessonSpec": lesson_spec.model_dump(mode="json", by_alias=True),
                 },
-                supplemental_skills=(material_skill, ny_material_skill),
+                supplemental_skills=(ny_material_skill,),
             )
             result = self._request_json(
                 prompt,
-                _LessonPackageProposal,
+                _LessonPackageCopyTransport,
                 model=self._settings.OPENAI_PACKAGE_MODEL,
                 timeout_seconds=self._settings.OPENAI_PACKAGE_TIMEOUT_SECONDS,
             )
@@ -531,14 +744,25 @@ class OpenAIV2AIProvider(V2AIProvider):
             generated: dict[str, Any] = {
                 "lessonBrief": lesson_brief.strip(),
                 "summaryTemplate": summary_template.strip(),
+                "teachingFlow": self._normalize_opportunity_budget(
+                    lesson_spec, result["teachingFlow"]
+                ),
             }
-            suggestions = result.get("materialCopySuggestions")
-            if isinstance(suggestions, dict):
-                generated["materialCopySuggestions"] = suggestions
-            if isinstance(result.get("teachingFlow"), list):
-                generated["teachingFlow"] = result["teachingFlow"]
-            if isinstance(result.get("materials"), list):
-                generated["materials"] = result["materials"]
+            # The approved LessonSpec and PackageContentPlan already determine the
+            # exact artifact inventory. Reuse the deterministic typed projection
+            # instead of asking a model to author arbitrary nested material JSON.
+            # This preserves personalization in the lesson copy while preventing
+            # selected materials, counts, safety constraints, and revision lineage
+            # from drifting at the provider boundary.
+            generated["materials"] = [
+                {
+                    "type": request.material_type,
+                    "title": request.display_label,
+                    "content": {},
+                }
+                for request in lesson_spec.material_requests
+                if request.required and request.supported
+            ]
             self._success("lesson_generation", self._settings.OPENAI_PACKAGE_MODEL)
             self._record_generation(
                 self._registry,
@@ -557,6 +781,63 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._settings.OPENAI_PACKAGE_MODEL,
             )
             return self._fallback.generate_lesson_package(lesson_spec)
+
+    @staticmethod
+    def _normalize_opportunity_budget(
+        lesson_spec: LessonSpec, teaching_flow: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Prevent provider copy from multiplying the LessonSpec trial budget.
+
+        The model may correctly mention the total in one practice step and then
+        repeat the same total in a later generalization step. That changes a
+        five-opportunity lesson into ten teacher data entries. Keep the first
+        exact allocation and describe later occurrences as the remaining
+        opportunities without changing any teacher-authored LessonSpec value.
+        """
+
+        goal = getattr(lesson_spec, "goal", None)
+        criterion = getattr(goal, "success_criterion", None)
+        total = getattr(criterion, "total_opportunities", None)
+        if not isinstance(total, int) or total < 1:
+            return teaching_flow
+        words = {
+            1: "one",
+            2: "two",
+            3: "three",
+            4: "four",
+            5: "five",
+            6: "six",
+            7: "seven",
+            8: "eight",
+            9: "nine",
+            10: "ten",
+        }
+        variants = [str(total)]
+        if total in words:
+            variants.append(words[total])
+        pattern = re.compile(
+            rf"\b(?:{'|'.join(re.escape(item) for item in variants)})\s+opportunit(?:y|ies)\b",
+            re.IGNORECASE,
+        )
+        exact_allocation_seen = False
+        normalized: list[dict[str, Any]] = []
+        for step in teaching_flow:
+            candidate = dict(step)
+            for field in ("description", "teacherAction", "teacherScript"):
+                value = candidate.get(field)
+                if not isinstance(value, str):
+                    continue
+
+                def replace(match: re.Match[str]) -> str:
+                    nonlocal exact_allocation_seen
+                    if not exact_allocation_seen:
+                        exact_allocation_seen = True
+                        return match.group(0)
+                    return "the remaining planned opportunities"
+
+                candidate[field] = pattern.sub(replace, value)
+            normalized.append(candidate)
+        return normalized
 
     def revise_lesson_section(
         self,

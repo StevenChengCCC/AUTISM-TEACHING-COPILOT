@@ -249,6 +249,14 @@ def test_n482_material_specs_and_legacy_adapter():
     token_spec = next(item.materialSpec for item in package.materials if item.type == "token_board")
     assert token_spec.content.exact_token_count == 5
     assert token_spec.content.token_symbol_or_theme == "bus"
+    scenario_plan = next(
+        item.visualAssetPlan for item in package.materials if item.type == "scenario_cards"
+    )
+    assert all(
+        "never replace the named task" in (item.prompt or "")
+        for item in scenario_plan.visual_items
+        if item.generation_method == "ai_generated"
+    )
 
     legacy = next(item for item in package.materials if item.type == "break_card").model_copy(
         update={"materialSchemaVersion": 0, "materialSpec": None}
@@ -256,3 +264,74 @@ def test_n482_material_specs_and_legacy_adapter():
     adapted = V2MaterialSpecService().adapt_legacy(legacy, lesson_spec)
     assert adapted.materialSchemaVersion == 1
     assert isinstance(adapted.materialSpec, CommunicationCardSpec)
+
+
+def test_scenario_cards_use_non_coercive_break_outcome_without_inventing_reward():
+    package, lesson_spec = n482_package_and_spec()
+    scenario_material = next(
+        item for item in package.materials if item.type == "scenario_cards"
+    )
+    scenario_request = next(
+        item
+        for item in lesson_spec.material_requests
+        if item.material_type == "scenario_cards"
+    )
+    no_reward_spec = lesson_spec.model_copy(
+        update={
+            "reinforcement_plan": lesson_spec.reinforcement_plan.model_copy(
+                update={"earned_reward": "", "specific_praise": ""}
+            ),
+            "material_requests": [scenario_request],
+        }
+    )
+
+    built = V2MaterialSpecService().build(
+        material_id="scenario-without-reward",
+        package_id="package-without-reward",
+        material_type="scenario_cards",
+        title=scenario_material.title,
+        lesson_spec=no_reward_spec,
+    )
+
+    assert isinstance(built, ScenarioCardsSpec)
+    assert all(
+        item.consequence_or_reinforcement
+        == "Honor the communicated break or stop request and follow the confirmed return routine."
+        for item in built.content.scenarios
+    )
+    assert "reward" not in " ".join(
+        item.consequence_or_reinforcement for item in built.content.scenarios
+    ).casefold()
+
+
+def test_scenario_cards_project_each_exact_context_instead_of_reusing_first_condition():
+    _package, lesson_spec = n482_package_and_spec()
+    built = V2MaterialSpecService().build(
+        material_id="scenario-context-fidelity",
+        package_id="package-context-fidelity",
+        material_type="scenario_cards",
+        title="Scenario Cards",
+        lesson_spec=lesson_spec,
+    )
+
+    assert isinstance(built, ScenarioCardsSpec)
+    for scenario, context in zip(built.content.scenarios, lesson_spec.contexts, strict=True):
+        assert context.label in scenario.expected_response
+        assert context.transition_from in scenario.learner_opportunity
+        assert context.transition_to in scenario.learner_opportunity
+        assert "speech and AAC are both accepted" in scenario.expected_response
+    assert "table work" not in built.content.scenarios[1].expected_response.casefold()
+    assert "table work" not in built.content.scenarios[2].expected_response.casefold()
+
+
+def test_teacher_cue_card_contains_wait_prompt_break_return_and_teacher_judgment():
+    package, _lesson_spec = n482_package_and_spec()
+    cue = next(item for item in package.materials if item.type == "teacher_cue_card")
+    content = cue.materialSpec.content
+
+    assert content.prompts_used[0] == "Wait 5 seconds before prompting."
+    assert any("visual" in item.casefold() for item in content.prompts_used)
+    assert "2-minute timer" in content.regulation_and_break_notes
+    assert "First" in content.regulation_and_break_notes
+    assert "Neutral correction" in content.next_step
+    assert "Teacher judgment overrides this guide" in content.next_step

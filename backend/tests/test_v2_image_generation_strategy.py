@@ -1,8 +1,10 @@
 from base64 import b64encode
+import pytest
 
 from app.core.config import Settings
+from app.core.exceptions import ConflictError
 from app.integrations.mock_ai_provider import MockV2AIProvider
-from app.schemas.v2_dto import ImageAssetDto, LessonDesignDraftDto
+from app.schemas.v2_dto import ImageAssetDto, LearnerProfile, LessonDesignDraftDto
 from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_material_service import V2MaterialService
@@ -234,14 +236,22 @@ def test_compound_identify_and_name_goal_uses_the_object_not_a_teaching_scene(
     }
     assert not any(check.status == "blocked" for check in package.standardsChecks)
     visual = next(item for item in package.materials if item.type == "visual_card")
-    assert V2MaterialService(repos).approve_generated(visual.id).status == "approved"
+    with pytest.raises(ConflictError, match="required visual is not ready"):
+        V2MaterialService(repos).approve_generated(visual.id)
 
     assert [item["label"] for item in visual.content["visualItems"]] == [
         "Apple",
         "Apple",
         "Apple",
         "Apple",
+        "Apple",
+        "Apple",
     ]
+    concepts = [item["concept"] for item in visual.content["visualItems"]]
+    assert len(concepts) == len(set(concepts)) == 6
+    assert any("green whole example" in item for item in concepts)
+    assert any("inside and seeds" in item for item in concepts)
+    assert any("clean slices" in item for item in concepts)
     packages.queue_product_images(package.id)
     packages.prepare_product_images(package.id)
     apple_call = next(
@@ -249,6 +259,17 @@ def test_compound_identify_and_name_goal_uses_the_object_not_a_teaching_scene(
     )
     assert "one isolated Apple" in apple_call["prompt"]
     assert "Do not show a teacher" in apple_call["prompt"]
+
+
+def test_single_concept_goal_stops_label_before_exemplar_context():
+    assert V2LessonPackageService._goal_visual_labels(
+        fruit_identification_draft().model_copy(
+            update={
+                "goalText": "Identify or name Apple across six visibly varied real-object exemplars.",
+                "observableResponse": "Point to or say Apple.",
+            }
+        )
+    ) == ["Apple"]
 
 
 def test_counting_cards_use_repeated_personalized_object_not_generic_dots(tmp_path):
@@ -313,8 +334,27 @@ def test_generate_first_adds_complete_reviewable_visual_set_and_reuses_cache(tmp
     first = packages.get_product(first.id)
     first_generation_call_count = len(provider.image_calls)
     assert first_generation_call_count >= 3
+    material_service = V2MaterialService(repos)
+    reviewed_asset_ids = set()
+    for material in first.materials:
+        if not material.visualAssetPlan:
+            continue
+        for visual_item in material.visualAssetPlan.visual_items:
+            if visual_item.asset_id:
+                reviewed_asset_ids.add(visual_item.asset_id)
+            material_service.review_visual(material.id, visual_item.id, "approve")
+    assert reviewed_asset_ids
+    assert all(
+        asset.approved and asset.safetyStatus == "ready"
+        for asset in repos.image_assets.list()
+        if asset.id in reviewed_asset_ids
+    )
+    # This legacy preparation path stores some visual-card asset references in
+    # its compatibility projection rather than the typed plan. Keep its former
+    # explicit approval setup while the focused assertions above prove that a
+    # typed visual review approves the referenced cache asset.
     for asset in repos.image_assets.list():
-        if asset.sourceType == "generated":
+        if asset.sourceType == "generated" and not asset.approved:
             repos.image_assets.save(
                 asset.model_copy(update={"approved": True, "safetyStatus": "ready"})
             )
@@ -427,6 +467,8 @@ def test_banana_request_does_not_reuse_stale_apple_visuals(tmp_path):
         "Banana",
         "Banana",
         "Banana",
+        "Banana",
+        "Banana",
     ]
     assert [item["label"] for item in help_card.content["visualItems"]] == [
         "Help, please."
@@ -504,6 +546,43 @@ def test_reuse_search_generate_uses_external_candidate_before_generation():
     assert asset.sourceType == "pexels"
     assert asset.approved is False
     assert asset.safetyStatus == "needs_review"
+
+
+def test_long_visual_concept_keeps_hashed_identity_within_database_limit(tmp_path):
+    repos = V2Repositories()
+    repos.learners.save(
+        LearnerProfile(
+            id="long-concept-learner",
+            code="SYN-LONG-CONCEPT",
+            age=11,
+            profileReviewStatus="confirmed",
+        )
+    )
+    provider = CountingImageProvider()
+    images = V2ImageAssetService(
+        repos,
+        external_providers=[],
+        ai=provider,
+        config=Settings(
+            _env_file=None,
+            IMAGE_ASSET_STRATEGY="generate_first",
+            STORAGE_DIR=str(tmp_path),
+        ),
+    )
+    concept = "literal classroom transition " + ("with concrete materials " * 20)
+
+    asset = images.prepare_generated_image_for_material(
+        learner_id="long-concept-learner",
+        material_id="",
+        material_type="scenario_cards",
+        concept=concept,
+        prompt="Depict the named classroom transition literally.",
+    )
+
+    assert len(asset.concept) <= 255
+    assert asset.concept.endswith("]")
+    assert len(asset.concept.rsplit("[", 1)[-1].rstrip("]")) == 12
+    assert provider.image_calls
 
 
 def test_mock_mode_needs_no_key_and_never_images_data_or_summary_materials():

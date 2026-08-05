@@ -8,6 +8,7 @@ from app.core.exceptions import ValidationError
 from app.schemas.v2_dto import (
     ChoiceBoardSpec,
     CommunicationCardSpec,
+    ConceptExemplarCardsSpec,
     FirstThenBoardSpec,
     GoalSpecificDataSheetSpec,
     LessonSummarySpec,
@@ -233,13 +234,29 @@ class V2VisualAssetPlanService:
             prompt = None
             negative = None
             if method == "ai_generated":
-                prompt = (
-                    f"Create one literal, neutral, low-clutter instructional illustration of {concept}. "
-                    "Use one clear focal subject, a plain light background, and age-respectful concrete objects."
+                literal_direction = (
+                    " Depict the named classroom activity literally. The learner's "
+                    "interest may affect accent color only; never replace the named "
+                    "task, transition, or outcome with unrelated theme imagery."
+                    if role in {"scenario", "first", "then", "task_item"}
+                    else ""
                 )
+                if role == "concept_exemplar":
+                    prompt = (
+                        f"Create one realistic, literal, low-clutter instructional object image of {concept}. "
+                        f"Show only the named object '{label}' on a plain light studio background. "
+                        "Keep the whole object or requested cut form fully visible and centered."
+                    )
+                else:
+                    prompt = (
+                        f"Create one literal, neutral, low-clutter instructional illustration of {concept}. "
+                        "Use one clear focal subject, a plain light background, and age-respectful concrete objects."
+                        + literal_direction
+                    )
                 negative = (
                     "text, letters, numerals, captions, labels, logos, watermarks, decorative clutter, "
-                    "identifiable learner, exaggerated facial expressions, angry red faces"
+                    "identifiable learner, teacher, child, adult, person, hand, surrounding classroom scene, "
+                    "unrequested objects, other fruit, exaggerated facial expressions, angry red faces"
                 )
             fallback_id = f"deterministic:{spec.id}:{semantic_key}" if fallback_kind else None
             return VisualAssetPlanItem(
@@ -279,8 +296,8 @@ class V2VisualAssetPlanService:
                 "Depict this exact practice context and transition.", scenario.context,
                 method="ai_generated",
                 concept=(
-                    f"the setting {scenario.context}, the transition {scenario.trigger_or_transition}, "
-                    f"and materials relevant to {scenario.learner_opportunity}"
+                    f"a literal classroom scene for {scenario.context}; "
+                    f"show the transition {scenario.trigger_or_transition}"
                 ), fallback_kind="scenario",
                 extra={"context": scenario.context, "transition": scenario.trigger_or_transition},
             ) for index, scenario in enumerate(spec.content.scenarios)]
@@ -293,10 +310,27 @@ class V2VisualAssetPlanService:
                 fallback_kind="choice", extra={"choiceId": choice.id},
             ) for index, choice in enumerate(spec.content.choices)]
 
+        if isinstance(spec, ConceptExemplarCardsSpec):
+            return [item(
+                f"concept-exemplar-{index + 1}",
+                "concept_exemplar",
+                f"concept-exemplar:{self._key(exemplar.label)}:{index + 1}",
+                "Teach the same object concept across a meaningfully different real example.",
+                exemplar.label,
+                method="ai_generated",
+                concept=exemplar.concept_description,
+                fallback_kind=None,
+                extra={
+                    "targetLabel": exemplar.label,
+                    "exemplarIndex": index + 1,
+                    "objectOnly": True,
+                },
+            ) for index, exemplar in enumerate(spec.content.exemplars)]
+
         if isinstance(spec, FirstThenBoardSpec):
             return [
-                item("first", "first", "first-task", "Represent the concrete FIRST task.", spec.content.first_task, method="ai_generated", concept=spec.content.first_symbol_description, fallback_kind="first"),
-                item("then", "then", "then-outcome", "Represent the concrete THEN outcome.", spec.content.then_outcome, method="ai_generated", concept=spec.content.then_symbol_description, fallback_kind="then"),
+                item("first", "first", "first-task", "Represent the concrete FIRST task.", spec.content.first_task, method="ai_generated", concept=f"the concrete classroom task {spec.content.first_task}", fallback_kind="first"),
+                item("then", "then", "then-outcome", "Represent the concrete THEN outcome.", spec.content.then_outcome, method="ai_generated", concept=f"the concrete earned outcome {spec.content.then_outcome}", fallback_kind="then"),
             ]
 
         if isinstance(spec, TokenBoardSpec):

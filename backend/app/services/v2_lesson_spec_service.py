@@ -161,6 +161,10 @@ class V2LessonSpecService:
             resolved("teacherEdits", "teacher_authored", "Preserves explicit teacher notes and structured follow-up edits verbatim.")
 
         reinforcers = list(snapshot.engagement.effective_reinforcers)
+        raw_excluded_reinforcers = [
+            *snapshot.engagement.not_approved_reinforcers,
+            *snapshot.engagement.not_meaningful_reinforcers,
+        ]
         confirmed_token_count = self._first_number(reinforcers, ("token",))
         token_requested = any(
             self._material_type(item) == "token_board"
@@ -176,8 +180,12 @@ class V2LessonSpecService:
             (item for item in reinforcers if "token" not in item.casefold() and "praise" not in item.casefold()),
             "",
         )
+        if not earned_reward:
+            earned_reward = self._reward_after_token_exchange(reinforcers)
         reward_minutes = self._minutes(earned_reward)
         praise = next((item for item in reinforcers if "praise" in item.casefold()), "")
+        if not praise:
+            praise = self._explicit_acknowledgment(raw_excluded_reinforcers)
         earned_reward = self._concrete_reward_phrase(earned_reward, reward_minutes)
         praise = re.sub(r"^specific\s+praise\s*:\s*", "", praise, flags=re.I).strip()
         resolved(
@@ -253,10 +261,12 @@ class V2LessonSpecService:
                 earnedReward=earned_reward,
                 rewardDurationMinutes=reward_minutes,
                 specificPraise=praise,
-                excludedReinforcers=[
-                    *snapshot.engagement.not_approved_reinforcers,
-                    *snapshot.engagement.not_meaningful_reinforcers,
-                ],
+                excludedReinforcers=self._unique(
+                    [
+                        self._excluded_reinforcer_clause(item)
+                        for item in raw_excluded_reinforcers
+                    ]
+                ),
             ),
             transitionPlan=LessonTransitionPlan(
                 warning=warning,
@@ -530,7 +540,18 @@ class V2LessonSpecService:
     def _first_number(cls, values: list[str], required_terms: tuple[str, ...]) -> int | None:
         for value in values:
             if all(term in value.casefold() for term in required_terms):
-                match = re.search(r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b", value, re.I)
+                if required_terms == ("token",):
+                    # Only a number attached to the token phrase is a token
+                    # count. In "bus tokens exchanged for two minutes", two
+                    # is the reward duration and must not become two tokens.
+                    match = re.search(
+                        r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+                        r"(?:[-\s]+[a-z][a-z-]*){0,2}[-\s]+tokens?\b",
+                        value,
+                        re.I,
+                    )
+                else:
+                    match = re.search(r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b", value, re.I)
                 if match:
                     words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
                     return int(match.group(1)) if match.group(1).isdigit() else words[match.group(1).casefold()]
@@ -542,8 +563,36 @@ class V2LessonSpecService:
             match = re.search(r"with\s+([a-z]+)[- ]icon\s+tokens?", value, re.I)
             if not match:
                 match = re.search(r"([a-z]+)[- ]icon\s+tokens?", value, re.I)
+            if not match:
+                match = re.search(
+                    r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+                    r"([a-z][a-z-]*)\s+tokens?\b",
+                    value,
+                    re.I,
+                )
+            if not match:
+                match = re.search(r"\b([a-z][a-z-]*)\s+tokens?\b", value, re.I)
             if match:
-                return match.group(1).casefold()
+                candidate = match.group(1).casefold()
+                if candidate not in {
+                    "one", "two", "three", "four", "five", "six", "seven",
+                    "eight", "nine", "ten",
+                }:
+                    return candidate
+        return ""
+
+    @staticmethod
+    def _reward_after_token_exchange(values: list[str]) -> str:
+        """Preserve a reward stated in the same sentence as token delivery."""
+
+        for value in values:
+            match = re.search(
+                r"\btokens?\b.*?\b(?:exchanged?|traded?|redeemed?)\s+for\s+(.+)$",
+                value,
+                re.I,
+            )
+            if match:
+                return match.group(1).strip(" .;,")
         return ""
 
     @staticmethod
@@ -555,12 +604,51 @@ class V2LessonSpecService:
         normalized = value.casefold()
         if "transit" in normalized and "map" in normalized:
             return f"{minutes} minutes with the transit-route map"
+        already_concrete = re.match(
+            r"^(?:\d+|one|two|three|four|five)\s+minutes?\s+with\s+(.+)$",
+            value,
+            re.I,
+        )
+        if already_concrete:
+            return f"{minutes} minutes with {already_concrete.group(1).strip()}"
         subject = re.sub(
-            r"^(?:\d+|one|two|three|four|five)[- ]minute\s+", "", value,
+            r"^(?:\d+|one|two|three|four|five)[- ]minutes?\s+", "", value,
             flags=re.I,
         )
         subject = re.sub(r"\s+reward$", "", subject, flags=re.I).strip()
         return f"{minutes} minutes with {subject}" if subject else value
+
+    @staticmethod
+    def _explicit_acknowledgment(values: list[str]) -> str:
+        """Preserve an explicitly approved acknowledgment embedded in a limit.
+
+        Profiles sometimes say, for example, "Food rewards are not approved;
+        use specific verbal acknowledgment only." The first clause is an
+        exclusion while the second is a confirmed support, not an invented
+        reward.
+        """
+
+        for value in values:
+            match = re.search(
+                r"\buse\s+(.+?)(?:\s+only)?(?:[.;]|$)", value, re.I
+            )
+            if not match:
+                continue
+            support = re.sub(
+                r"\s+only$", "", match.group(1).strip(" .;:"), flags=re.I
+            )
+            if any(
+                term in support.casefold()
+                for term in ("acknowledgment", "acknowledgement", "praise")
+            ):
+                return support
+        return ""
+
+    @staticmethod
+    def _excluded_reinforcer_clause(value: str) -> str:
+        """Keep the prohibited clause separate from any approved alternative."""
+
+        return value.split(";", 1)[0].strip()
 
     @staticmethod
     def _scalar(value: Any) -> str | int | float | bool | None:

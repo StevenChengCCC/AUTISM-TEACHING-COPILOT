@@ -289,7 +289,7 @@ class V2LessonPackageQualityService:
             ):
                 ready += 1
             for item in valid_items:
-                if str(item.get("assetRole") or "") != "concept_exemplar":
+                if str(item.get("assetRole") or item.get("role") or "") != "concept_exemplar":
                     continue
                 exemplar_id = str(item.get("id") or "").strip()
                 image_ref = str(

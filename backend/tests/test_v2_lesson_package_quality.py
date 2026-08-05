@@ -85,3 +85,29 @@ def test_recursive_placeholder_check_does_not_reject_valid_instructional_copy():
             "visualItems": [{"label": "Banana"}],
         }
     )
+
+
+def test_typed_concept_exemplar_roles_are_counted_as_distinct_ready_images():
+    draft = _confirmed_draft()
+    package = V2LessonPackageService(V2Repositories()).generate_product(draft)
+    visual = next(item for item in package.materials if item.type == "visual_card")
+    visual_items = [
+        {
+            "id": f"exemplar-{index}",
+            "role": "concept_exemplar",
+            "label": "Apple",
+            "concept": f"Apple variation {index}",
+            "imageUrl": f"private://apple-{index}.png",
+            "generationStatus": "complete",
+        }
+        for index in range(1, 7)
+    ]
+    ready_visual = visual.model_copy(
+        update={"content": {**visual.content, "visualItems": visual_items}}
+    )
+    package = package.model_copy(update={"materials": [ready_visual]})
+
+    item = V2LessonPackageQualityService()._visual_semantics_score(package)
+
+    assert item.score == 2
+    assert "6 distinct concept exemplars are ready" in item.evidence

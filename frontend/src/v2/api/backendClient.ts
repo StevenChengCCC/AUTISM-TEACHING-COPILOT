@@ -24,6 +24,7 @@ export class LessonKitApiError extends Error {
     public retryable: boolean,
     public requestId?: string,
     public fieldErrors?: { field: string; message: string; code?: string }[],
+    public issues?: string[],
   ) { super(message); }
 }
 
@@ -85,17 +86,21 @@ async function request<T>(path: string, options: RequestOptions = {}, hasRetried
     let retryable = response.status >= 500;
     let responseRequestId = response.headers.get("X-Request-ID") ?? requestId;
     let fieldErrors: { field: string; message: string; code?: string }[] | undefined;
+    let issues: string[] | undefined;
     try {
-      const payload = (await response.json()) as { detail?: string; message?: string;code?:string;retryable?:boolean;requestId?:string;fieldErrors?:typeof fieldErrors };
+      const payload = (await response.json()) as { detail?: string; message?: string;code?:string;retryable?:boolean;requestId?:string;fieldErrors?:typeof fieldErrors;issues?:string[] };
       detail = payload.detail ?? payload.message ?? detail;
       code = payload.code ?? code;
       retryable = payload.retryable ?? retryable;
       responseRequestId = payload.requestId ?? responseRequestId;
       fieldErrors = payload.fieldErrors;
+      issues = Array.isArray(payload.issues)
+        ? payload.issues.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+        : undefined;
     } catch {
       // Keep the HTTP fallback when the server did not return JSON.
     }
-    throw new LessonKitApiError(detail,response.status,code,retryable,responseRequestId,fieldErrors);
+    throw new LessonKitApiError(detail,response.status,code,retryable,responseRequestId,fieldErrors,issues);
   }
 
   if (response.status === 204) return undefined as T;

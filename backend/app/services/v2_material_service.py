@@ -563,6 +563,17 @@ class V2MaterialService:
                 if action == "approve":
                     if item.status not in {"ready", "needs_review"} and not item.fallback_asset_id:
                         raise ConflictError("This visual is not ready for review")
+                    if item.asset_id:
+                        asset = self.repos.image_assets.get(item.asset_id)
+                        if asset and asset.safetyStatus != "blocked":
+                            self.repos.image_assets.save(
+                                asset.model_copy(
+                                    update={
+                                        "approved": True,
+                                        "safetyStatus": "ready",
+                                    }
+                                )
+                            )
                     item = item.model_copy(update={"review_status": "approved"})
                 else:
                     item = item.model_copy(update={

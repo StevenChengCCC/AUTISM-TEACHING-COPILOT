@@ -359,7 +359,7 @@ def test_printable_lesson_kit_rejects_incomplete_planned_visuals(tmp_path):
     )
 
     with pytest.raises(
-        ConflictError, match="Every planned classroom visual must be ready"
+        ConflictError, match="print-readiness:pending_visual:count-2"
     ):
         service.create(
             package.id,
