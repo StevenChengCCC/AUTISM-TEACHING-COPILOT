@@ -10,7 +10,7 @@ prohibitedUse:
   - Autonomous profile approval
 inputSchemaVersion: learner-profile-input-v2
 outputSchemaVersion: learner-profile-output-v2
-promptTemplateVersion: learner-profile-prompt-v2
+promptTemplateVersion: learner-profile-prompt-v2.1
 evaluatorVersion: learner-profile-evaluator-v2
 teacherReviewRequired: true
 sourceReviewStatus: reviewed

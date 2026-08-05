@@ -186,6 +186,16 @@ export function UploadRecordsPage({
     }
   };
 
+  if (isAnalyzing) {
+    return (
+      <section className="v2-profile-loading" aria-live="polite" aria-busy="true">
+        <span className="v2-profile-loading__spinner" aria-hidden="true" />
+        <h1>AI is preparing the learner summary</h1>
+        <p>Your reviewed record is safely saved. This usually takes less than a minute.</p>
+      </section>
+    );
+  }
+
   return (
     <section>
       <div className="v2-page-heading">

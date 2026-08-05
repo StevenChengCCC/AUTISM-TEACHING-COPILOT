@@ -12,6 +12,11 @@ stable ID, category, normalized actionable value, explicit status, confidence, s
 source evidence, source record ID, instructional implication, machine-readable
 generation constraints, and teacherReviewed=false.
 
+Return only the compact provider contract: verified age, one canonical
+normalizedProfile, unknownFields, and insights. Do not repeat canonical factors in
+legacy learner fields or a second signal array; the application projects those
+compatibility fields deterministically after validation.
+
 Map statuses exactly: CURRENT and teacher-confirmed current preferences to
 confirmed_current; HISTORICAL to historical; NOT APPROVED to not_approved; NOT
 MEANINGFUL to not_meaningful; UNCONFIRMED to unconfirmed; and OMITTED to omitted.
