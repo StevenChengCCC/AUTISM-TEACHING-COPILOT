@@ -17,6 +17,7 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
   const [sending,setSending]=useState(false);
   const [loadError,setLoadError]=useState<string|null>(null);
   const [chatError,setChatError]=useState<string|null>(null);
+  const [retryAction,setRetryAction]=useState<"message"|"content_plan"|null>(null);
   const [composer,setComposer]=useState("");
   const [savingQuestionId,setSavingQuestionId]=useState<string|null>(null);
   const [planBusy,setPlanBusy]=useState(false);
@@ -34,7 +35,7 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
   },[learnerId,resumeExisting]);
   async function answer(questionId:string,ids:string[],customAnswer="",saveForFuture=false) {
     if(!chat||savingQuestionId)return;
-    setChatError(null);
+    setChatError(null);setRetryAction(null);
     setSavingQuestionId(questionId);
     try{setChat(await lessonKitApi.updateAIQuestionAnswer(chat.conversationId,questionId,ids,customAnswer,chat.draft.version,saveForFuture));setShowPlan(false);}
     catch(error){
@@ -60,13 +61,17 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
     finally{if(packageController.current===controller){packageController.current=null;setGenerating(false);}}
   }
   async function previewContentPlan(){
-    if(!chat||planBusy)return;setPlanBusy(true);setChatError(null);
+    if(!chat||planBusy)return;setPlanBusy(true);setChatError(null);setRetryAction(null);
     try{const next=await lessonKitApi.previewPackageContentPlan(chat.conversationId,chat.draft.version??1);setChat(next);setShowPlan(true);}
-    catch(error){setChatError(error instanceof Error?error.message:"Package contents could not be planned.");}
+    catch(error){
+      const issue=error instanceof LessonKitApiError?error.issues?.[0]:undefined;
+      setChatError(issue?`Review this lesson choice: ${issue}.`:error instanceof Error?error.message:"Package contents could not be planned.");
+      setRetryAction("content_plan");
+    }
     finally{setPlanBusy(false);}
   }
   async function adjustPlan(action:"set_optional"|"set_companion"|"add_material",materialType:string,included=true){
-    if(!chat||planBusy)return;setPlanBusy(true);setChatError(null);
+    if(!chat||planBusy)return;setPlanBusy(true);setChatError(null);setRetryAction(null);
     try{const next=await lessonKitApi.adjustPackageContentPlan(chat.conversationId,{action,materialType,included,expectedDraftVersion:chat.draft.version??1});setChat(next);setShowPlan(true);}
     catch(error){setChatError(error instanceof Error?error.message:"The package preview could not be changed.");}
     finally{setPlanBusy(false);}
@@ -76,7 +81,7 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
     const content=composer.trim();if(!chat||!content||sending)return;
     const firstRequest=chat.questions.length===0;
     const controller=new AbortController();requestController.current=controller;
-    setSending(true);setChatError(null);setComposer("");
+    setSending(true);setChatError(null);setRetryAction(null);setComposer("");
     try{
       const next=await lessonKitApi.submitLessonRequest(chat.conversationId,learnerId,content,chat.draft,controller.signal);
       setChat(next);
@@ -85,6 +90,7 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
       if(controller.signal.aborted)return;
       setComposer(content);
       setChatError(error instanceof Error?error.message:"Lesson planning AI is temporarily unavailable.");
+      setRetryAction("message");
     }finally{if(requestController.current===controller){requestController.current=null;setSending(false);}}
   }
   async function cancelSuggestionGeneration(){
@@ -120,7 +126,7 @@ export function PlanWithAIChatPage({ learnerId,resumeExisting=false,onGenerate,o
       <Card className="v2-chat-panel"><div className="v2-chat-header"><h3>✦ &nbsp; Lesson Copilot</h3>{hasQuestions&&<div><button onClick={()=>void refreshRecommendations()} disabled={sending||Boolean(savingQuestionId)}>Refresh suggestions</button><button onClick={()=>void restartPlanning()} disabled={sending||Boolean(savingQuestionId)}>Change request</button></div>}</div>
         {!hasQuestions?<div className="v2-message-list">{chat.messages.slice(-2).map((message)=><div key={message.id} className={`v2-message v2-message--${message.role}`}><span>{message.role==="assistant"?"✦":<TeacherAvatar size={34} alt="Teacher"/>}</span><div><p>{message.content}</p></div></div>)}</div>:<div className="v2-ai-understood"><span aria-hidden="true">✓</span><div><strong>AI understood your teaching request</strong><p>Review these three suggestions. Change only what does not fit.</p></div></div>}
         {sending&&<div className="v2-chat-pending" role="status" aria-live="polite"><span className="v2-spinner"/><div><strong>Building suggestions for this lesson…</strong><small>This can take up to about 45 seconds.</small></div><button type="button" onClick={()=>void cancelSuggestionGeneration()}>Cancel</button></div>}
-        {chatError&&<div className="v2-inline-error" role="alert">{chatError} <button onClick={()=>void sendMessage()}>Try again</button></div>}
+        {chatError&&<div className="v2-inline-error" role="alert">{chatError}{retryAction&&<button onClick={()=>void (retryAction==="content_plan"?previewContentPlan():sendMessage())}>Try again</button>}</div>}
         {hasQuestions&&!showPlan&&<div className="v2-question-guide" role="note"><strong>{confirmedCount}/{chat.questions.length} confirmed</strong><span>Goal · classroom situations · printable pages</span></div>}
         {hasQuestions&&!showPlan&&<div className="v2-suggestion-board">{chat.questions.map((question,index)=><div className={`v2-suggestion-card ${answered(question)?"is-confirmed":""}`} key={question.id}><span className="v2-suggestion-number">{index+1}</span><AIQuestionBlock question={question} busy={Boolean(savingQuestionId)} onAnswer={(ids,custom,saveForFuture)=>answer(question.id,ids,custom,saveForFuture)}/>{savingQuestionId===question.id&&<small className="v2-saving-answer">Saving…</small>}</div>)}</div>}
         {!showPlan&&<div className={`v2-draft ${hasQuestions?"":"v2-draft--waiting"}`}><strong>✦ Current lesson plan <em>{hasQuestions?"(AI draft)":"Waiting for lesson request"}</em></strong><div><span><small>Goal</small>{chat.draft.goalText||"Not set yet"}</span><span><small>Theme</small>{chat.draft.theme||"—"}</span><span><small>Materials</small>{chat.draft.selectedMaterials.length?<span className="v2-draft-tags">{chat.draft.selectedMaterials.map((item)=><Tag key={item}>{item}</Tag>)}</span>:"—"}</span><span><small>Duration</small>{chat.draft.duration||"—"}</span></div></div>}

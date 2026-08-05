@@ -4,6 +4,7 @@ from app.core.exceptions import ConflictError
 from app.schemas.v2_dto import MaterialRequestDecisionValue, QuestionAnswerUpdate
 from app.services.v2_lesson_chat_service import V2LessonChatService
 from app.services.v2_lesson_package_service import V2LessonPackageService
+from app.services.v2_lesson_spec_service import V2LessonSpecService
 from app.services.v2_package_content_plan_service import V2PackageContentPlanService
 from app.services.v2_repositories import V2Repositories
 from test_v2_lesson_spec import (
@@ -222,3 +223,27 @@ def test_concept_identification_summary_and_cue_exclude_break_request_template_f
     assert "does not prescribe a break-return sequence" in (
         cue.regulation_and_break_notes
     )
+
+
+def test_combined_bus_token_reward_does_not_block_content_plan_preview():
+    learner = n482_learner()
+    snapshot = build_instructional_constraint_snapshot(learner, [])
+    snapshot = snapshot.model_copy(update={
+        "engagement": snapshot.engagement.model_copy(update={
+            "effective_reinforcers": [
+                "bus tokens exchanged for two minutes with transit"
+            ],
+        }),
+    })
+    draft = n482_draft(snapshot)
+    spec = V2LessonSpecService().require_valid(
+        V2LessonSpecService().from_draft(draft, learner, snapshot), snapshot
+    )
+
+    assert spec.reinforcement_plan.token_count == 5
+    assert spec.reinforcement_plan.token_theme == "bus"
+    assert spec.reinforcement_plan.earned_reward == "2 minutes with transit"
+    plan = V2PackageContentPlanService().validate(
+        V2PackageContentPlanService().build(spec), spec
+    )
+    assert "token_board" in V2PackageContentPlanService().included_types(plan)

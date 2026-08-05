@@ -289,7 +289,14 @@
 }
 
 .v2-structured-edit-note { margin: 12px 0 4px; color: var(--color-muted); font-size: 13px; }
-.v2-factor-sections { display: grid; gap: 18px; padding: 24px 28px 4px; }
+.v2-teaching-details { margin: 18px 28px 0; overflow: hidden; border: 1px solid var(--color-border); border-radius: 12px; background: #fbfdff; }
+.v2-teaching-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; color: var(--color-primary); cursor: pointer; list-style: none; font-weight: 750; }
+.v2-teaching-details > summary::-webkit-details-marker { display: none; }
+.v2-teaching-details > summary::after { content: "Show"; flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: var(--color-primary-soft); font-size: 11px; }
+.v2-teaching-details[open] > summary::after { content: "Hide"; }
+.v2-teaching-details > summary small { margin-left: auto; color: var(--color-muted); font-size: 11px; font-weight: 500; text-align: right; }
+.v2-teaching-details[open] > summary { border-bottom: 1px solid var(--color-border); background: #fff; }
+.v2-factor-sections { display: grid; gap: 18px; padding: 18px 16px; }
 .v2-factor-sections h3 { margin: 0 0 9px; font-size: 15px; }
 .v2-factor-sections > section > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .v2-factor-card { padding: 14px; border: 1px solid var(--color-border); border-radius: 12px; background: #fff; }
@@ -352,10 +359,13 @@
   .v2-summary-details,
   .v2-summary-cues,
   .v2-summary-records,
-  .v2-factor-sections {
+  .v2-teaching-details {
     margin-right: 20px;
     margin-left: 20px;
   }
+
+  .v2-teaching-details > summary { align-items: flex-start; flex-wrap: wrap; }
+  .v2-teaching-details > summary small { width: 100%; margin: 0; text-align: left; }
 
   .v2-summary-actions {
     padding: 18px 20px 22px;

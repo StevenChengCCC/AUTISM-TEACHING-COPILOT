@@ -5,6 +5,9 @@ import test from "node:test";
 const questionSource=readFileSync(new URL("../src/v2/components/AIQuestionBlock.tsx",import.meta.url),"utf8");
 const optionSource=readFileSync(new URL("../src/v2/components/OptionChip.tsx",import.meta.url),"utf8");
 const pageSource=readFileSync(new URL("../src/v2/pages/PlanWithAIChatPage.tsx",import.meta.url),"utf8");
+const backendClientSource=readFileSync(new URL("../src/v2/api/backendClient.ts",import.meta.url),"utf8");
+const profilePageSource=readFileSync(new URL("../src/v2/pages/ReviewLearnerPage.tsx",import.meta.url),"utf8");
+const profileStyles=readFileSync(new URL("../src/v2/pages/ReviewLearnerPage.css",import.meta.url),"utf8");
 const styles=readFileSync(new URL("../src/v2/styles.css",import.meta.url),"utf8");
 
 test("lesson suggestions use classroom-situation language and styled selection cards",()=>{
@@ -21,4 +24,25 @@ test("package review replaces the selection board and keeps optional content com
   assert.match(pageSource,/plan\.requiredCompanions\.length>0&&<section/);
   assert.match(pageSource,/<details className="v2-content-plan__disclosure">/);
   assert.match(pageSource,/Edit lesson choices/);
+});
+
+test("package-plan failures show the exact issue and retry package planning",()=>{
+  assert.match(backendClientSource,/public issues\?: string\[\]/);
+  assert.match(backendClientSource,/payload\.issues/);
+  assert.match(pageSource,/setRetryAction\("content_plan"\)/);
+  assert.match(pageSource,/retryAction==="content_plan"\?previewContentPlan\(\):sendMessage\(\)/);
+});
+
+test("learner profile keeps detailed factors available without showing every card",()=>{
+  assert.match(profilePageSource,/<details className="v2-teaching-details">/);
+  assert.match(profilePageSource,/Show teaching details/);
+  assert.match(profileStyles,/\.v2-teaching-details\s*>\s*summary/);
+  assert.doesNotMatch(profilePageSource,/<details className="v2-teaching-details" open/);
+});
+
+test("lesson planning layout wraps long tags and buttons inside their containers",()=>{
+  assert.match(styles,/\.v2-learner-context\s*\{[^}]*flex-wrap:wrap/);
+  assert.match(styles,/\.v2-button\s*\{[^}]*overflow-wrap:anywhere/);
+  assert.match(styles,/\.v2-tag\s*\{[^}]*overflow-wrap:anywhere/);
+  assert.match(styles,/grid-template-columns:340px minmax\(0,1fr\)/);
 });

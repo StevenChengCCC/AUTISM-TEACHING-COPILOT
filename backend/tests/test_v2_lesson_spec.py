@@ -166,6 +166,18 @@ def test_plain_language_bus_token_theme_is_preserved():
     ) == "bus"
 
 
+def test_combined_token_exchange_keeps_reward_duration_out_of_token_count():
+    source = ["bus tokens exchanged for two minutes with transit"]
+
+    assert V2LessonSpecService._first_number(source, ("token",)) is None
+    assert V2LessonSpecService._token_theme(source) == "bus"
+    reward = V2LessonSpecService._reward_after_token_exchange(source)
+    assert reward == "two minutes with transit"
+    assert V2LessonSpecService._concrete_reward_phrase(reward, 2) == (
+        "2 minutes with transit"
+    )
+
+
 def test_explicit_acknowledgment_is_separated_from_prohibited_reward_clause():
     source = [
         "Food rewards are not approved; use specific verbal acknowledgment only."
