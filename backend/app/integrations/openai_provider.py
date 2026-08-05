@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -14,7 +15,6 @@ from app.integrations.ai_provider import V2AIProvider
 from app.schemas.v2_dto import (
     AIQuestion,
     AIQuestionOption,
-    CanonicalLearnerProfile,
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
@@ -22,6 +22,9 @@ from app.schemas.v2_dto import (
     MaterialSpec,
     MaterialValidationIssue,
     ProfileExtractionResult,
+    ProfileFactor,
+    ProfileFactorCategory,
+    ProfileFactorStatus,
     InstructionalConstraintSnapshot,
 )
 from app.services.v2_ai_context_service import build_ai_safe_profile
@@ -116,21 +119,35 @@ class _LessonPlanningTransport(BaseModel):
     customNotes: str
 
 
+class _ProfileFactorTransport(BaseModel):
+    """Minimal paid-AI boundary; IDs, labels, and summaries are local projections."""
+
+    model_config = ConfigDict(extra="forbid")
+    category: ProfileFactorCategory
+    value: str = Field(min_length=1, max_length=500)
+    status: ProfileFactorStatus
+    confidence: float = Field(ge=0, le=1)
+    sourceEvidence: str = Field(min_length=1, max_length=300)
+    sourceRecordId: str | None
+    instructionalImplication: str = Field(min_length=1, max_length=300)
+    generationConstraints: list[str] = Field(max_length=12)
+
+
 class _ProfileLearnerTransport(BaseModel):
-    """Compact provider boundary; compatibility fields are derived locally."""
+    """Compact provider boundary; the canonical profile is assembled locally."""
 
     model_config = ConfigDict(extra="forbid")
     age: int = Field(ge=0, le=30)
-    normalizedProfile: CanonicalLearnerProfile
+    factors: list[_ProfileFactorTransport] = Field(min_length=1, max_length=30)
 
 
 class _ProfileExtractionTransport(BaseModel):
-    """Avoid duplicating the canonical factors in the paid AI response."""
+    """Small extraction contract designed to finish inside the request budget."""
 
     model_config = ConfigDict(extra="forbid")
     learner: _ProfileLearnerTransport
-    unknownFields: list[str] = Field(default_factory=list)
-    insights: list[str] = Field(default_factory=list)
+    unknownFields: list[str] = Field(max_length=20)
+    insights: list[str] = Field(max_length=4)
 
 
 logger = logging.getLogger(__name__)
@@ -536,9 +553,9 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._prompts.build(
                     skill,
                     output_contract={
-                        "learner": "verified age plus one complete normalizedProfile canonical profile",
+                        "learner": "verified age plus 1-30 evidence-linked instructional factors",
                         "unknownFields": "array of field names",
-                        "insights": "array of short strings",
+                        "insights": "up to four short teacher-review notes",
                     },
                     trusted_input={"learner": payload["learner"]},
                     untrusted_input={"records": payload["records"]},
@@ -550,18 +567,81 @@ class OpenAIV2AIProvider(V2AIProvider):
             extracted_values = result["learner"]
             if not isinstance(extracted_values, dict):
                 raise _OpenAIOutputError("Learner extraction must be an object")
-            preserved = learner.model_dump()
-            preserved.update(extracted_values)
-            preserved["id"] = learner.id
-            preserved["code"] = learner.code
-            extracted = canonicalize_profile(LearnerProfile.model_validate(preserved))
-            if (
-                extracted.normalized_profile is None
-                or not extracted.normalized_profile.factors
-            ):
+            raw_factors = extracted_values.get("factors")
+            if not isinstance(raw_factors, list) or not raw_factors:
                 raise _OpenAIOutputError(
                     "Learner extraction returned no structured profile factors"
                 )
+            known_record_ids = {record.id for record in records}
+            factors: list[ProfileFactor] = []
+            seen_factor_ids: set[str] = set()
+            for raw_factor in raw_factors:
+                factor = _ProfileFactorTransport.model_validate(raw_factor)
+                semantic_key = "|".join(
+                    (
+                        factor.category,
+                        factor.status,
+                        factor.value.strip().casefold(),
+                        factor.sourceRecordId or "",
+                    )
+                )
+                factor_id = f"factor-ai-{hashlib.sha256(semantic_key.encode('utf-8')).hexdigest()[:16]}"
+                if factor_id in seen_factor_ids:
+                    continue
+                seen_factor_ids.add(factor_id)
+                clean_value = " ".join(factor.value.split())
+                label = clean_value.split(";", 1)[0].split(".", 1)[0][:96].strip()
+                factors.append(
+                    ProfileFactor(
+                        id=factor_id,
+                        category=factor.category,
+                        label=label or factor.category.replace("_", " ").title(),
+                        value=clean_value,
+                        status=factor.status,
+                        confidence=factor.confidence,
+                        sourceEvidence=" ".join(factor.sourceEvidence.split()),
+                        sourceRecordId=(
+                            factor.sourceRecordId
+                            if factor.sourceRecordId in known_record_ids
+                            else None
+                        ),
+                        instructionalImplication=" ".join(
+                            factor.instructionalImplication.split()
+                        ),
+                        generationConstraints=list(
+                            dict.fromkeys(
+                                " ".join(item.split())
+                                for item in factor.generationConstraints
+                                if item.strip()
+                            )
+                        ),
+                        teacherReviewed=False,
+                    )
+                )
+            if not factors:
+                raise _OpenAIOutputError(
+                    "Learner extraction returned no unique profile factors"
+                )
+            # Explicitly keep Python field names here. V2Model serializes aliases
+            # by default; mixing that dump with normalized_profile would otherwise
+            # create both normalizedProfile and normalized_profile in one payload.
+            preserved = learner.model_dump(by_alias=False)
+            preserved.update(
+                {
+                    "age": extracted_values["age"],
+                    "normalized_profile": {
+                        "learnerId": learner.id,
+                        "age": extracted_values["age"],
+                        "factors": [
+                            factor.model_dump(mode="json", by_alias=True)
+                            for factor in factors
+                        ],
+                    },
+                }
+            )
+            preserved["id"] = learner.id
+            preserved["code"] = learner.code
+            extracted = canonicalize_profile(LearnerProfile.model_validate(preserved))
             insights = result["insights"]
             if not isinstance(insights, list) or not all(
                 isinstance(item, str) for item in insights
