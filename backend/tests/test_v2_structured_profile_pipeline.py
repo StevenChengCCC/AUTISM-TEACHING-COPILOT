@@ -385,7 +385,7 @@ def test_saved_canonical_profile_is_reused_without_a_second_paid_extraction():
     provider = _StructuredProvider()
     service = V2ProfileExtractionService(repos, ai=provider)
 
-    first = service.extract("cache-case")
+    first = service.extract("cache-case", force=True)
     second = service.extract("cache-case")
 
     assert first.learner.normalizedProfile.factors

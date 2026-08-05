@@ -1,8 +1,39 @@
 # Autism Teaching Copilot
 
-AI lesson planning for special educators. Autism Teaching Copilot helps teachers plan structured 1:1 sessions, manage generalization, choose reinforcement strategies, assemble teaching packages, and track progress over time.
+**A teacher-controlled AI workspace for personalized lesson preparation, classroom-ready materials, quick observation recording, and evidence-informed next-session planning.**
 
-This is not a PowerPoint generator, generic lesson planner, or chatbot. The teacher remains the decision maker; the system is a planning and execution assistant.
+Autism Teaching Copilot helps special educators turn reviewed learner information and a short teaching request into a complete, printable lesson kit. After the lesson, structured teacher observations flow into cautious progress summaries and teacher-approved next steps—so preparation, classroom execution, documentation, and iteration stay connected.
+
+[Open the deployed demo](https://autismteachingcopilot.com/) · [Frontend overview](frontend/README.md) · [Selected product screenshots](frontend/docs/marketing-screenshots/README.md)
+
+## One continuous teacher workflow
+
+```text
+Learner records
+    → Teacher-reviewed learner profile
+    → AI-assisted lesson-request interpretation
+    → Teacher-selected goals, contexts, and materials
+    → Personalized printable lesson kit
+    → Structured classroom observations
+    → Progress review and teacher-approved next lesson
+```
+
+### Why it is different
+
+- **Deep personalization:** communication modes, access needs, prompting limits, interests, motivators, and safety constraints remain traceable into lesson materials.
+- **Teacher authority:** AI suggests; the teacher selects, edits, rejects, reviews, and approves before content is used.
+- **Classroom-ready output:** one approved package can produce complete, teacher-desk, classroom-material, and data/closeout PDF presets in Letter or A4 format.
+- **Less duplicate work:** the same approved lesson data supports printing, session recording, progress review, and next-session planning.
+- **Feedback-driven iteration:** only completed teacher-recorded observations inform progress and proposed changes; rejected recommendations have no downstream effect.
+- **Privacy and safety by design:** printable views use learner codes, generation is revision-aware, and semantic, safety, visual, and approval gates fail closed.
+
+## Product preview
+
+![Teacher reviewing personalized AI lesson suggestions](frontend/docs/marketing-screenshots/03-ai-suggestions-confirmed.png)
+
+The interface turns an open-ended teaching request into a small set of structured choices. Teachers keep control of the goal, classroom situations, communication expectations, and printable pages instead of accepting an opaque AI-generated plan.
+
+> Autism Teaching Copilot supports teacher planning and documentation. It does not diagnose learners, make autonomous treatment decisions, or claim that a material caused progress.
 
 ## Product Principles
 

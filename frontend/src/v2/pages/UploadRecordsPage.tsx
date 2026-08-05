@@ -35,6 +35,8 @@ export function UploadRecordsPage({
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [correction, setCorrection] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisFailed, setAnalysisFailed] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   const selectedRecord = useMemo(
@@ -150,6 +152,21 @@ export function UploadRecordsPage({
       onFeedback(messageFromError(error));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const continueToProfile = async () => {
+    setIsAnalyzing(true);
+    setAnalysisFailed(false);
+    try {
+      await lessonKitApi.analyzeLearnerProfile(learnerId);
+      onFeedback("AI prepared a learner summary from the reviewed record.");
+      onContinue();
+    } catch (error: unknown) {
+      setAnalysisFailed(true);
+      onFeedback(`${messageFromError(error)} Your record is safely saved; select Try again when ready.`);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -276,7 +293,7 @@ export function UploadRecordsPage({
 
           <div className="v2-upload-actions">
             <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>＋ Add another file</Button>
-            <Button disabled={!canContinue || hasBusyRecord} onClick={onContinue}>Continue</Button>
+            <Button disabled={!canContinue || hasBusyRecord || isAnalyzing} onClick={() => void continueToProfile()}>{isAnalyzing ? "AI is preparing the summary…" : analysisFailed ? "Try profile analysis again" : "Continue"}</Button>
           </div>
         </Card>
 
