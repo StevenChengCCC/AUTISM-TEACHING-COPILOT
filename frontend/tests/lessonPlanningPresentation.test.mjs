@@ -39,6 +39,14 @@ test("learner profile keeps detailed factors available without showing every car
   assert.doesNotMatch(profilePageSource,/<details className="v2-teaching-details" open/);
 });
 
+test("learner profile analysis shows durable progress and a safe retry",()=>{
+  assert.match(profilePageSource,/Preparing learner summary/);
+  assert.match(profilePageSource,/Your reviewed record is safely saved/);
+  assert.match(profilePageSource,/Your uploaded record is safe/);
+  assert.match(profilePageSource,/Try profile analysis again/);
+  assert.match(profileStyles,/\.v2-profile-loading__spinner/);
+});
+
 test("lesson planning layout wraps long tags and buttons inside their containers",()=>{
   assert.match(styles,/\.v2-learner-context\s*\{[^}]*flex-wrap:wrap/);
   assert.match(styles,/\.v2-button\s*\{[^}]*overflow-wrap:anywhere/);
