@@ -310,7 +310,12 @@ def n482_factors() -> list[ProfileFactor]:
 
 
 class _StructuredProvider(MockV2AIProvider):
+    def __init__(self):
+        super().__init__()
+        self.profile_extraction_calls = 0
+
     def extract_profile(self, learner, records):
+        self.profile_extraction_calls += 1
         extracted = learner.model_copy(
             update={
                 "age": 9,
@@ -360,6 +365,32 @@ def test_n482_factors_survive_normalization_repository_and_api_serialization():
     assert len(frontend_state["factors"]) == len(factors)
     assert frontend_state["summary"]["communication"]
     assert "Subway maps" in frontend_state["summary"]["currentInterests"]
+
+
+def test_saved_canonical_profile_is_reused_without_a_second_paid_extraction():
+    repos = V2Repositories()
+    repos.is_durable = True
+    repos.learners.save(LearnerProfile(id="cache-case", code="APP-CACHE", age=0))
+    repos.records.save(
+        LearnerRecord(
+            id="record-cache",
+            learnerId="cache-case",
+            fileName="synthetic-cache-case.txt",
+            fileType="TXT",
+            status="reviewed",
+            uploadedAt=datetime.now(timezone.utc),
+            extractedText="Fully synthetic instructional information.",
+        )
+    )
+    provider = _StructuredProvider()
+    service = V2ProfileExtractionService(repos, ai=provider)
+
+    first = service.extract("cache-case", force=True)
+    second = service.extract("cache-case")
+
+    assert first.learner.normalizedProfile.factors
+    assert second.learner.normalizedProfile.factors
+    assert provider.profile_extraction_calls == 1
 
 
 def test_raw_provider_json_validates_without_losing_structured_factors():

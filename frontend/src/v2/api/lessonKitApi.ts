@@ -256,6 +256,12 @@ export const lessonKitApi = {
     useLocalMock
       ? lessonKitMockApi.getExtractedLearnerProfile(id)
       : backendClient.get(`/v2/learners/${id}/profile-extraction`),
+  analyzeLearnerProfile: (
+    id: string,
+  ): Promise<LearnerProfileExtraction> =>
+    useLocalMock
+      ? lessonKitMockApi.getExtractedLearnerProfile(id)
+      : backendClient.post(`/v2/learners/${id}/profile-extraction`),
 
   getInitialLessonChat: async (
     learnerId: string,

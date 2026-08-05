@@ -8,6 +8,7 @@ const pageSource=readFileSync(new URL("../src/v2/pages/PlanWithAIChatPage.tsx",i
 const backendClientSource=readFileSync(new URL("../src/v2/api/backendClient.ts",import.meta.url),"utf8");
 const profilePageSource=readFileSync(new URL("../src/v2/pages/ReviewLearnerPage.tsx",import.meta.url),"utf8");
 const profileStyles=readFileSync(new URL("../src/v2/pages/ReviewLearnerPage.css",import.meta.url),"utf8");
+const uploadPageSource=readFileSync(new URL("../src/v2/pages/UploadRecordsPage.tsx",import.meta.url),"utf8");
 const styles=readFileSync(new URL("../src/v2/styles.css",import.meta.url),"utf8");
 
 test("lesson suggestions use classroom-situation language and styled selection cards",()=>{
@@ -37,6 +38,19 @@ test("learner profile keeps detailed factors available without showing every car
   assert.match(profilePageSource,/Show teaching details/);
   assert.match(profileStyles,/\.v2-teaching-details\s*>\s*summary/);
   assert.doesNotMatch(profilePageSource,/<details className="v2-teaching-details" open/);
+});
+
+test("learner profile analysis shows durable progress and a safe retry",()=>{
+  assert.match(profilePageSource,/Preparing learner summary/);
+  assert.match(profilePageSource,/Your reviewed record is safely saved/);
+  assert.match(profilePageSource,/Your uploaded record is safe/);
+  assert.match(profilePageSource,/Try profile analysis again/);
+  assert.match(profilePageSource,/Record ready for AI analysis/);
+  assert.match(profilePageSource,/Prepare learner summary/);
+  assert.match(profileStyles,/\.v2-profile-loading__spinner/);
+  assert.match(uploadPageSource,/analyzeLearnerProfile\(learnerId\)/);
+  assert.match(uploadPageSource,/AI is preparing the summary/);
+  assert.match(uploadPageSource,/Your record is safely saved/);
 });
 
 test("lesson planning layout wraps long tags and buttons inside their containers",()=>{

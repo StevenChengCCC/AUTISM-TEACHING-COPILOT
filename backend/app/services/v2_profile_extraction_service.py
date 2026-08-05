@@ -1,3 +1,6 @@
+from threading import Lock
+from typing import ClassVar
+
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
 from app.core.exceptions import ValidationError
 from app.schemas.v2_dto import (
@@ -25,6 +28,11 @@ from app.services.v2_instructional_constraint_service import (
 
 
 class V2ProfileExtractionService:
+    # Services are constructed per request. Keep learner-scoped locks shared so
+    # a reload/double-click cannot start duplicate paid calls in this process.
+    _lock_registry_guard: ClassVar[Lock] = Lock()
+    _learner_locks: ClassVar[dict[str, Lock]] = {}
+
     def __init__(
         self,
         repos: V2Repositories = repositories,
@@ -37,6 +45,17 @@ class V2ProfileExtractionService:
         self.upload_security = upload_security
 
     def extract(
+        self, learner_id: str, *, force: bool = False
+    ) -> LearnerProfileExtractionDto:
+        with self._lock_for(learner_id):
+            return self._extract_locked(learner_id, force=force)
+
+    @classmethod
+    def _lock_for(cls, learner_id: str) -> Lock:
+        with cls._lock_registry_guard:
+            return cls._learner_locks.setdefault(learner_id, Lock())
+
+    def _extract_locked(
         self, learner_id: str, *, force: bool = False
     ) -> LearnerProfileExtractionDto:
         learner = self.learners.get(learner_id)
