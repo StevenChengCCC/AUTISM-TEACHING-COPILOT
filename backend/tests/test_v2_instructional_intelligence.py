@@ -17,6 +17,7 @@ from app.schemas.v2_dto import (
     ProfileSignal,
     ProfileSignalReviewRequest,
     QuestionAnswerUpdate,
+    StandardsCheckDto,
     utc_now,
 )
 from app.services.v2_ai_context_service import build_lesson_generation_context
@@ -374,6 +375,38 @@ def test_unsafe_package_and_material_cannot_be_approved():
     )
     with pytest.raises(ConflictError):
         safe_materials.approve_generated(unsafe_material.id)
+
+
+def test_teacher_can_approve_safe_package_with_advisory_quality_findings(monkeypatch):
+    repos = V2Repositories()
+    service = V2LessonPackageService(repos)
+    package = service.generate_product(product_draft(id="advisory-quality"))
+    advisory = StandardsCheckDto(
+        id="advisory-classroom-preparation",
+        skillId="classroom-preparation",
+        label="Optional classroom preparation detail",
+        description="An optional preparation detail could be expanded.",
+        severity="high",
+        status="blocked",
+        recommendation="Consider adding more preparation detail.",
+    )
+    monkeypatch.setattr(
+        service.standards,
+        "evaluate_product",
+        lambda *_args, **_kwargs: [advisory],
+    )
+
+    revalidated = service.revalidate_product(package.id)
+    assert revalidated.validationStatus == "passed"
+    assert revalidated.standardsChecks[0].status == "blocked"
+
+    approved = service.approve_product(
+        revalidated.id,
+        LessonPackageDecisionRequest(expectedVersion=revalidated.version),
+    )
+    assert approved.status == "approved"
+    assert approved.validationStatus == "passed"
+    assert approved.standardsChecks[0].status == "blocked"
 
 
 def test_editing_an_approved_material_creates_teacher_review_draft():

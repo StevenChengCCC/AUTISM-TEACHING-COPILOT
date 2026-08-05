@@ -625,7 +625,7 @@ export function ReviewPrintableContentPage({
             <div className="v2-preview-head">
               <h2>{title || "Material"} Preview</h2>
               <Button
-                variant="secondary"
+                className="v2-preview-download-button"
                 disabled={actionBusy || !printReadiness?.ready || !printPresetCatalog?.presets.find((item) => item.printPreset === printPreset)?.available}
                 onClick={() => void exportPdf()}
               >

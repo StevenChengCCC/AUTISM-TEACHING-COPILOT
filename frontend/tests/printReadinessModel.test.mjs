@@ -89,6 +89,23 @@ test("both print screens consume the backend contract and disable silent downloa
   );
   assert.doesNotMatch(panel, /Fix next issue ·/);
   assert.doesNotMatch(panel, /Package revision/);
-  assert.match(panel, /Download opens automatically after the last required page is approved/);
+  assert.match(panel, /Your approvals are saved\. This updates automatically\./);
+  assert.doesNotMatch(panel, /Refresh download/);
+  assert.match(panel, /needsDirectAction/);
   assert.doesNotMatch(panel, /remaining\.map/);
+});
+
+test("print review keeps scenario and data content inside the center column", () => {
+  const canvas = readFileSync(
+    new URL("../src/v2/components/PrintableMaterialCanvas.tsx", import.meta.url),
+    "utf8",
+  );
+  const styles = readFileSync(
+    new URL("../src/v2/styles.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(canvas, /v2-scenario-generalization/);
+  assert.doesNotMatch(styles, /\.v2-paper div\s*\{\s*font-size:48px/);
+  assert.match(styles, /grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(styles, /\.v2-printable-canvas--data>section h3\{[^}]*font-size:18px/);
 });
