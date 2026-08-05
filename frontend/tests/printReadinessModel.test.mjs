@@ -69,6 +69,10 @@ test("both print screens consume the backend contract and disable silent downloa
     "utf8",
   );
   assert.match(readyPage, /getPackagePrintReadiness/);
+  assert.match(readyPage, /const schedule=.*setTimeout/);
+  assert.match(readyPage, /const updated=await lessonKitApi\.getLessonPackage\(lessonPackage\.id\)/);
+  assert.match(readyPage, /Printing is paused/);
+  assert.doesNotMatch(readyPage, /did not pass the instructional safety gate/);
   assert.match(reviewPage, /getPackagePrintReadiness/);
   assert.match(reviewPage, /disabled=\{actionBusy \|\| !printReadiness\?\.ready/);
   assert.match(reviewPage, /Approve and open next pending item/);
