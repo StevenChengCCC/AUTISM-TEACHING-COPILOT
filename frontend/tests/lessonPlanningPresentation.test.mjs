@@ -25,7 +25,6 @@ test("package review replaces the selection board and keeps optional content com
   assert.match(pageSource,/<details className="v2-content-plan__disclosure">/);
   assert.match(pageSource,/Edit lesson choices/);
 });
-
 test("package-plan failures show the exact issue and retry package planning",()=>{
   assert.match(backendClientSource,/public issues\?: string\[\]/);
   assert.match(backendClientSource,/payload\.issues/);

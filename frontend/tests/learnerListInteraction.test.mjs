@@ -28,7 +28,6 @@ test("new lesson learner chooser scrolls and supports both open paths",()=>{
   assert.match(css,/\.v2-learner-list \{[^}]*max-height:420px;[^}]*overflow-y:auto;[^}]*overscroll-behavior:contain;/s);
   assert.match(css,/\.v2-start-grid \{[^}]*align-items:start;/s);
 });
-
 test("records remain lazy-loaded for only the selected learner",()=>{
   const page=fs.readFileSync(new URL("../src/v2/pages/StudentsPage.tsx",import.meta.url),"utf8");
   assert.match(page,/getRecordsForLearner\(selectedId\)/);
