@@ -65,6 +65,88 @@ def test_visual_background_work_has_a_single_winner_claim():
     assert service.claim_visual_work(job.jobId) is False
 
 
+class _LegacyVisualPackageService(V2LessonPackageService):
+    """Exercise supported visual content that has no typed plan yet."""
+
+    def __init__(self, repos, config):
+        super().__init__(repos, config=config)
+        self.image_calls = 0
+
+    def generate_product(self, draft):
+        package = super().generate_product(draft)
+        target = next(
+            item for item in package.materials
+            if item.visualAssetPlan is not None
+            and any(
+                visual.generation_method == "ai_generated"
+                for visual in item.visualAssetPlan.visual_items
+            )
+        )
+        legacy = target.model_copy(update={
+            "materialSpec": None,
+            "visualAssetPlan": None,
+        })
+        self.repos.generated_materials.save(legacy)
+        package = package.model_copy(update={
+            "materials": [
+                legacy if item.id == target.id else item for item in package.materials
+            ]
+        })
+        return self.repos.lesson_packages.save(package)
+
+    def prepare_material_image(self, material_id, **kwargs):
+        self.image_calls += 1
+        material = self.repos.generated_materials.get(material_id)
+        items = material.content.get("visualItems")
+        updated = material.model_copy(update={
+            "content": {
+                **material.content,
+                "visualItems": [
+                    {
+                        **item,
+                        "generationStatus": "ready",
+                        "imageAssetId": f"generated:{item['id']}",
+                    }
+                    for item in items
+                ],
+                "imageGenerationStatus": "ready",
+            }
+        })
+        return self.repos.generated_materials.save(updated)
+
+
+def test_legacy_visual_items_are_not_skipped_and_complete_as_one_image_batch():
+    repos = V2Repositories()
+    config = _config()
+    packages = _LegacyVisualPackageService(repos, config)
+    service = V2GenerationJobService(
+        repos, package_service=packages, config=config
+    )
+
+    job, _ = service.create_or_resume(_draft())
+
+    legacy_artifact = next(
+        item for item in job.artifacts
+        if item.visuals
+        and repos.generated_materials.get(item.artifactId).visualAssetPlan is None
+    )
+    assert len(legacy_artifact.visuals) >= 1
+    image_stage = next(
+        item for item in job.stages if item.stage == "image_generation"
+    )
+    assert image_stage.status == "pending"
+
+    completed = service.resume(job.jobId)
+
+    finished = next(
+        item for item in completed.artifacts
+        if item.artifactId == legacy_artifact.artifactId
+    )
+    assert packages.image_calls == 1
+    assert {item.status for item in finished.visuals} == {"completed"}
+    assert completed.cost.actualVisualCount >= len(finished.visuals)
+
+
 class _TimeoutOncePackageService(V2LessonPackageService):
     def __init__(self, repos, config):
         super().__init__(repos, config=config)
@@ -109,7 +191,11 @@ def test_optional_visual_failure_preserves_package_and_only_failed_visual_retrie
     packages = _OneVisualFailurePackageService(repos, config=config)
     service = V2GenerationJobService(repos, package_service=packages, config=config)
     job, package = service.create_or_resume(_draft())
-    target_artifact = next(item for item in job.artifacts if item.visuals)
+    target_artifact = next(
+        item for item in job.artifacts
+        if item.visuals
+        and repos.generated_materials.get(item.artifactId).visualAssetPlan is not None
+    )
     target_visual = target_artifact.visuals[0]
     packages.fail_visual_id = target_visual.visualId
     revised_artifacts = [
@@ -117,6 +203,8 @@ def test_optional_visual_failure_preserves_package_and_only_failed_visual_retrie
             "visuals": [
                 visual.model_copy(update={"required": False})
                 if visual.visualId == target_visual.visualId else visual
+                if repos.generated_materials.get(item.artifactId).visualAssetPlan is not None
+                else visual.model_copy(update={"status": "completed"})
                 for visual in item.visuals
             ]
         })
