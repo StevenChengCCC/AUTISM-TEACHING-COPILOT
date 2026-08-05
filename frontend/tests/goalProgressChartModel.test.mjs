@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   accessibleSeriesSummary,
+  buildProgressEvidenceReport,
   chartCoordinates,
   contextComparisonText,
   contextSummaryText,
@@ -144,6 +145,94 @@ test("material usage wording does not claim causality", () => {
   });
   assert.equal(text, "Used in 4 sessions with 7 independent responses.");
   assert.doesNotMatch(text, /improved|effective|caused|because/i);
+});
+
+test("progress evidence report expands raw teacher-recorded history without mastery claims", () => {
+  const report = buildProgressEvidenceReport(series);
+  assert.equal(report.totalValidOpportunities, 20);
+  assert.equal(report.totalIndependentResponses, 10);
+  assert.equal(report.totalPromptedResponses, 10);
+  assert.equal(report.responseModeCounts.speech, 10);
+  assert.equal(report.responseModeCounts.AAC, 10);
+  assert.equal(report.breakRequestCount, 4);
+  assert.equal(report.breaksDeliveredCount, 4);
+  assert.equal(report.returnedAfterBreakCount, 4);
+  assert.equal(report.teacherObservationCount, 4);
+  assert.equal(
+    report.scopeStatement,
+    "Totals and session details include all recorded contexts in this goal series.",
+  );
+  assert.match(report.changeStatement, /80%/);
+  assert.match(report.changeStatement, /20%/);
+  assert.doesNotMatch(
+    report.changeStatement,
+    /master|diagnos|effective|caused/i,
+  );
+});
+
+test("progress evidence report avoids a false comparison with fewer than two sessions", () => {
+  assert.equal(
+    buildProgressEvidenceReport({ ...series, points: [], sessionCount: 0 })
+      .changeStatement,
+    null,
+  );
+  assert.equal(
+    buildProgressEvidenceReport({
+      ...series,
+      points: [series.points[0]],
+      sessionCount: 1,
+    }).changeStatement,
+    null,
+  );
+});
+
+test("progress evidence report names the active structured context filter", () => {
+  const filtered = {
+    ...series,
+    activeContextKey: "context-transit",
+    contextSummaries: [
+      {
+        contextKey: "context-transit",
+        contextLabel: "Transit map to table work",
+      },
+    ],
+  };
+  assert.equal(
+    buildProgressEvidenceReport(filtered).scopeStatement,
+    "Counts and metric values are filtered to Transit map to table work; teacher observations remain whole-session notes.",
+  );
+});
+
+test("progress evidence report never describes an unmatched active filter as all contexts", () => {
+  const filtered = {
+    ...series,
+    activeContextKey: "stale-context-key",
+    contextSummaries: [],
+  };
+  assert.match(
+    buildProgressEvidenceReport(filtered).scopeStatement,
+    /filtered to the selected structured context/,
+  );
+  assert.doesNotMatch(
+    buildProgressEvidenceReport(filtered).scopeStatement,
+    /include all recorded contexts/,
+  );
+});
+
+test("teacher-facing progress report keeps session evidence and interpretation boundary", () => {
+  const source = readFileSync(
+    new URL("../src/v2/components/GoalProgressPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /Progress evidence report/);
+  assert.match(source, /Session-by-session evidence/);
+  assert.match(source, /metricLabels\[series\.metric\]/);
+  assert.match(source, /Scrollable session-by-session evidence table/);
+  assert.match(source, /This report summarizes teacher-recorded observations/);
+  assert.match(
+    source,
+    /does not\s+diagnose,\s+claim causality,\s+or determine mastery/,
+  );
 });
 
 test("the default progress chart renders one line rather than context overlays", () => {

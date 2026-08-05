@@ -1,5 +1,9 @@
+from base64 import b64encode
+
 from fastapi.testclient import TestClient
 
+from app.core.config import Settings
+from app.integrations.private_object_storage import LocalPrivateObjectStorage
 from app.main import app
 from app.schemas.v2_dto import (
     ApproveImageAssetRequest,
@@ -9,6 +13,19 @@ from app.schemas.v2_dto import (
 from app.services.v2_image_asset_service import V2ImageAssetService
 from app.services.v2_lesson_package_service import V2LessonPackageService
 from app.services.v2_repositories import V2Repositories
+from app.services.v2_visual_asset_resolver import V2VisualAssetResolver
+
+
+class _GeneratedPngProvider:
+    def __init__(self, body: bytes):
+        self.body = body
+
+    def generate_material_image(self, *_args, **_kwargs):
+        return {
+            "status": "ready",
+            "imageBase64": b64encode(self.body).decode("ascii"),
+            "imageId": "synthetic-provider-image",
+        }
 
 
 def test_image_asset_seed_library_is_complete_and_safe():
@@ -199,3 +216,43 @@ def test_generate_candidate_route_remains_available_in_mock_mode():
     assert response.json()["sourceType"] in {"internal", "mock"}
     assert response.json()["approved"] in {True, False}
     assert "safetyStatus" in response.json()
+
+
+def test_generated_visual_is_durable_and_resolves_after_local_cache_loss(tmp_path):
+    body = (tmp_path.parent / "unused").name.encode() + b"-synthetic-png-bytes"
+    config = Settings(
+        _env_file=None,
+        OBJECT_STORAGE_PROVIDER="s3",
+        STORAGE_DIR=str(tmp_path / "cache"),
+        LOCAL_PRIVATE_STORAGE_DIR=str(tmp_path / "private"),
+        S3_IMAGE_PREFIX="learner-records/generated-visual-assets",
+    )
+    repos = V2Repositories()
+    storage = LocalPrivateObjectStorage(config)
+    service = V2ImageAssetService(
+        repos,
+        external_providers=[],
+        ai=_GeneratedPngProvider(body),
+        config=config,
+        storage=storage,
+    )
+
+    asset = service._generate_asset(
+        "synthetic-learner",
+        "apple",
+        "visual_card",
+        "One isolated apple with no text.",
+        "clean printable illustration",
+        "1024x1024",
+    )
+
+    assert asset is not None
+    assert asset.storageObjectKey == (
+        f"learner-records/generated-visual-assets/{asset.id}.png"
+    )
+    assert storage.read_bytes(asset.storageObjectKey, 1024) == body
+    cached = tmp_path / "cache" / str(asset.imageUrl).removeprefix("/storage/")
+    cached.unlink()
+    resolver = V2VisualAssetResolver(repos, storage=storage, config=config)
+    assert resolver.read_raster_bytes({"imageAssetId": asset.id}) == body
+    assert resolver.is_resolvable({"imageAssetId": asset.id}) is True

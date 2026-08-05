@@ -82,6 +82,10 @@ from app.services.v2_instructional_constraint_service import (
 )
 from app.services.v2_material_service import V2MaterialService
 from app.services.v2_material_spec_service import V2MaterialSpecService
+from app.services.v2_concept_exemplar_service import (
+    concept_exemplar_variations,
+    extract_concept_labels,
+)
 from app.services.v2_material_blueprint_service import V2MaterialBlueprintService
 from app.services.v2_lesson_package_quality_service import (
     V2LessonPackageQualityService,
@@ -476,7 +480,10 @@ class V2LessonPackageService:
                 teacherOverride=lesson_spec.prompting_plan.teacher_override,
             ),
             reinforcementPlan=ReinforcementPlanDto(
-                selectedSupport=lesson_spec.reinforcement_plan.earned_reward,
+                selectedSupport=(
+                    lesson_spec.reinforcement_plan.earned_reward
+                    or lesson_spec.reinforcement_plan.specific_praise
+                ),
                 deliveryTiming="Immediately after the confirmed target response or meaningful approximation",
                 targetResponse=lesson_spec.goal.observable_behavior,
                 learnerChoice="Offer a choice when more than one confirmed support is available",
@@ -1984,40 +1991,34 @@ class V2LessonPackageService:
             ]
 
         if material_type == "visual_card":
-            # Concept learning requires multiple exemplars. Four varied, isolated
-            # renderings help the learner generalize the concept without mixing in
-            # distractors or turning the card into a scene of an adult teaching.
-            variations = (
-                "",
-                " from a clear side view",
-                " with a small natural variation in shape",
-                " from a different clear angle",
-            )
+            # Concept learning requires multiple exemplars. A single target gets
+            # six meaningfully different real-object views so the page can teach
+            # the concept rather than one memorized picture. Two targets retain
+            # four examples each to stay inside the eight-image package budget.
+            # These are object-level changes, not decorative scene changes.
             result: list[dict] = []
-            for label in labels[:2]:
-                clean_label = " ".join(str(label).split())
-                if not clean_label:
-                    continue
-                for variation_index, variation in enumerate(variations):
-                    item_concept = f"one isolated {clean_label}{variation}"
-                    result.append(
-                        {
-                            "id": (f"concept-exemplar-{len(result) + 1}"),
-                            "label": clean_label,
-                            "assetRole": "concept_exemplar",
-                            "concept": item_concept,
-                            "prompt": (
-                                base_prompt.format(concept=item_concept)
-                                + f" Show only {clean_label}; do not include any "
-                                "other fruit, object, person, hand, scene, or text."
-                            ),
-                            "imageAltText": (
-                                f"Clear exemplar of {clean_label}, variation "
-                                f"{variation_index + 1}."
-                            ),
-                            "generationStatus": "not_started",
-                        }
-                    )
+            for variation_index, exemplar in enumerate(
+                concept_exemplar_variations(labels), start=1
+            ):
+                clean_label = exemplar["label"]
+                item_concept = exemplar["concept"]
+                result.append(
+                    {
+                        "id": f"concept-exemplar-{variation_index}",
+                        "label": clean_label,
+                        "assetRole": "concept_exemplar",
+                        "concept": item_concept,
+                        "prompt": (
+                            base_prompt.format(concept=item_concept)
+                            + f" Show only {clean_label}; do not include any "
+                            "other fruit, object, person, hand, scene, or text."
+                        ),
+                        "imageAltText": (
+                            f"Clear exemplar of {clean_label}, variation {variation_index}."
+                        ),
+                        "generationStatus": "not_started",
+                    }
+                )
             return result[:8]
 
         if material_type in {"help_card", "break_card", "teacher_cue_card"}:
@@ -2183,70 +2184,10 @@ class V2LessonPackageService:
         card, not one image of a teacher presenting fruit.
         """
 
-        import re
-
         # goalText reflects the teacher's latest confirmed request. Only consult
         # observableResponse when a goal has not been set; joining both can leak
         # an old concept from a prior lesson into the new printable kit.
-        source = (
-            draft.goalText
-            if isinstance(draft.goalText, str) and draft.goalText.strip()
-            else (
-                draft.observableResponse
-                if isinstance(draft.observableResponse, str)
-                else ""
-            )
-        )
-        if not source:
-            return []
-        normalized = " ".join(source.split())
-        action = r"(?:identify|identifies|label|labels|name|names|recognize|recognizes)"
-        patterns = (
-            r"(?:pictures?|images?|photos?|objects?)\s+of\s+(.+?)(?:\s+when\b|\s+after\b|\s+from\b|[.;]|$)",
-            rf"{action}(?:\s+and\s+{action})?\s+"
-            rf"(?:(?:the\s+)?(?:pictures?|images?|photos?|objects?)\s+of\s+)?"
-            rf"(?:the\s+)?(.+?)(?:\s+when\b|\s+after\b|\s+from\b|[.;]|$)",
-        )
-        captured = ""
-        for pattern in patterns:
-            match = re.search(pattern, normalized, flags=re.IGNORECASE)
-            if match:
-                captured = match.group(1)
-                break
-        if not captured:
-            return []
-        captured = re.sub(
-            r"^(?:the\s+)?(?:pictures?|images?|photos?|objects?)\s+of\s+",
-            "",
-            captured,
-            flags=re.IGNORECASE,
-        )
-        captured = re.sub(
-            r"\b(?:using|with|during|in)\b.*$",
-            "",
-            captured,
-            flags=re.IGNORECASE,
-        )
-        raw_labels = re.split(r"\s*(?:,|/|\band\b|\bor\b)\s*", captured)
-        labels: list[str] = []
-        for raw in raw_labels:
-            label = re.sub(r"^(?:a|an|the)\s+", "", raw.strip(), flags=re.I)
-            label = re.sub(r"\s+(?:picture|image|photo)s?$", "", label, flags=re.I)
-            if not label or len(label.split()) > 4 or len(label) > 42:
-                continue
-            # Identification cards name one visible referent.  Keep this narrow
-            # and deterministic so common goals such as “apples and bananas”
-            # become the child-facing labels “Apple” and “Banana”.
-            if (
-                len(label) > 3
-                and label.casefold().endswith("s")
-                and not label.casefold().endswith(("ss", "us", "is"))
-            ):
-                label = label[:-1]
-            display = label[:1].upper() + label[1:]
-            if display.casefold() not in {item.casefold() for item in labels}:
-                labels.append(display)
-        return labels[:6]
+        return extract_concept_labels(draft.goalText, draft.observableResponse)
 
     @staticmethod
     def _counting_labels(text: str) -> list[str]:

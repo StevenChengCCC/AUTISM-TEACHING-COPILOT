@@ -58,7 +58,7 @@
   "tableOfContents": true,
   "pageNumbers": true,
   "textProfile": "standard",
-  "rendererVersion": "print-package-reportlab-v4-accessible-text",
+  "rendererVersion": "print-package-reportlab-v5-teacher-efficient",
   "sourceApprovalReadinessEvidence": {
     "ready": true,
     "packageApprovalStatus": "approved",

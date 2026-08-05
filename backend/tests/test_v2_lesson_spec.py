@@ -160,6 +160,25 @@ def issue_codes(report):
     return {item.code for item in report.issues}
 
 
+def test_plain_language_bus_token_theme_is_preserved():
+    assert V2LessonSpecService._token_theme(
+        ["Use exactly five bus tokens."]
+    ) == "bus"
+
+
+def test_explicit_acknowledgment_is_separated_from_prohibited_reward_clause():
+    source = [
+        "Food rewards are not approved; use specific verbal acknowledgment only."
+    ]
+
+    assert V2LessonSpecService._explicit_acknowledgment(source) == (
+        "specific verbal acknowledgment"
+    )
+    assert V2LessonSpecService._excluded_reinforcer_clause(source[0]) == (
+        "Food rewards are not approved"
+    )
+
+
 def test_valid_lesson_spec_creation_and_teacher_edit_precedence(canonical_case):
     service, snapshot, spec = canonical_case
     assert service.validate(spec, snapshot).valid

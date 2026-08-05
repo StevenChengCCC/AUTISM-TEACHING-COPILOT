@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from app.core.config import Settings, settings
 from app.core.exceptions import NotFoundError
+from app.integrations.private_object_storage import PrivateObjectStorage
 from app.schemas.v2_dto import (
     GeneratedMaterialDto,
     GenerationJobDto,
@@ -13,12 +15,13 @@ from app.schemas.v2_dto import (
 )
 from app.services.v2_package_content_plan_service import V2PackageContentPlanService
 from app.services.v2_repositories import V2Repositories, repositories
+from app.services.v2_visual_asset_resolver import V2VisualAssetResolver
 
 
 class V2PrintReadinessService:
     """Canonical, privacy-safe decision boundary for complete-kit printing."""
 
-    renderer_version = "print-package-reportlab-v4-accessible-text"
+    renderer_version = "print-package-reportlab-v5-teacher-efficient"
     _priority = {
         "generation_job_failed": 10,
         "generation_job_incomplete": 20,
@@ -38,8 +41,16 @@ class V2PrintReadinessService:
         "renderer_manifest_incompatibility": 160,
     }
 
-    def __init__(self, repos: V2Repositories = repositories) -> None:
+    def __init__(
+        self,
+        repos: V2Repositories = repositories,
+        storage: PrivateObjectStorage | None = None,
+        config: Settings = settings,
+    ) -> None:
         self.repos = repos
+        self.visual_assets = V2VisualAssetResolver(
+            repos, storage=storage, config=config
+        )
 
     @staticmethod
     def _revision(material: GeneratedMaterialDto) -> int:
@@ -169,7 +180,17 @@ class V2PrintReadinessService:
                 if spec is None or spec.safety_validation.status != "passed":
                     add("safety_validation_failure", f"{label} has not passed safety validation.", "repair_material", "reviewPrintableContent", material=material, expected_revision=revision, current_revision=revision)
             plan = material.visualAssetPlan
+            rendered_items = [
+                item
+                for item in material.content.get("visualItems", [])
+                if isinstance(item, dict)
+            ]
             if plan is not None:
+                rendered_visuals = {
+                    str(item.get("id")): item
+                    for item in rendered_items
+                    if item.get("id")
+                }
                 if plan.material_revision != revision:
                     add("stale_visual_plan_revision", f"{label}'s visual plan belongs to an older material revision.", "regenerate_visual_plan", "reviewPrintableContent", material=material, expected_revision=revision, current_revision=plan.material_revision, retry=True)
                 for visual in plan.visual_items:
@@ -182,6 +203,61 @@ class V2PrintReadinessService:
                         add("failed_optional_visual_with_fallback", f"An optional visual for {label} failed; its approved deterministic fallback will be printed.", "review_fallback", "reviewPrintableContent", material=material, visual_id=visual.id, severity="warning", retry=True)
                     elif not visual.required and visual.status == "failed":
                         add("pending_visual", f"An optional visual for {label} failed without a fallback and will be omitted unless retried.", "retry_visual", "reviewPrintableContent", material=material, visual_id=visual.id, severity="warning", retry=True)
+                    elif (
+                        visual.required
+                        and visual.status in {"ready", "needs_review"}
+                        and not self.visual_assets.is_resolvable(
+                            rendered_visuals.get(visual.id, {})
+                        )
+                    ):
+                        add(
+                            "storage_download_preparation_failure",
+                            f"A required visual for {label} is marked ready but its stored image cannot be reopened.",
+                            "retry_visual",
+                            "reviewPrintableContent",
+                            material=material,
+                            visual_id=visual.id,
+                            retry=True,
+                        )
+            planned_ids = {
+                item.id for item in plan.visual_items
+            } if plan is not None else set()
+            for rendered in rendered_items:
+                visual_id = str(rendered.get("id") or "rendered-visual")
+                if visual_id in planned_ids:
+                    continue
+                required = bool(rendered.get("required", True))
+                status = str(rendered.get("generationStatus") or "").casefold()
+                if required and status == "failed":
+                    add(
+                        "failed_required_visual",
+                        f"A required visual for {label} failed and must be replaced or regenerated.",
+                        "retry_visual",
+                        "reviewPrintableContent",
+                        material=material,
+                        visual_id=visual_id,
+                        retry=True,
+                    )
+                elif required and status in {"pending", "processing", "not_started"}:
+                    add(
+                        "pending_visual",
+                        f"A required visual for {label} is not ready.",
+                        "retry_visual",
+                        "reviewPrintableContent",
+                        material=material,
+                        visual_id=visual_id,
+                        retry=True,
+                    )
+                elif required and not self.visual_assets.is_resolvable(rendered):
+                    add(
+                        "storage_download_preparation_failure",
+                        f"A required visual for {label} is marked ready but its stored image cannot be reopened.",
+                        "retry_visual",
+                        "reviewPrintableContent",
+                        material=material,
+                        visual_id=visual_id,
+                        retry=True,
+                    )
             approval = spec.approval if spec else None
             if spec is not None and (approval.reviewed_revision != revision or approval.status == "not_reviewed"):
                 add("material_revision_not_reviewed", f"The current {label} revision has not been individually reviewed.", "review_material", "reviewPrintableContent", material=material, expected_revision=revision, current_revision=approval.reviewed_revision)

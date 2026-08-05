@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { lessonKitApi } from "../api/lessonKitApi";
 import {
+  accessibleSeriesSummary,
+  buildProgressEvidenceReport,
   contextComparisonText,
   contextSummaryText,
+  formatMetricValue,
   materialUsageText,
   metricLabels,
 } from "../goalProgressChartModel";
@@ -14,6 +17,7 @@ import type {
 import { GoalProgressChart } from "./ProgressTrendChart";
 import { NextSessionRecommendationsPanel } from "./NextSessionRecommendationsPanel";
 import { NextSessionImpactPlanPanel } from "./NextSessionImpactPlanPanel";
+import "./progressEvidenceReport.css";
 
 export function GoalProgressPanel({ learnerId }: { learnerId: string }) {
   const [options, setOptions] = useState<GoalProgressSeriesOption[]>([]);
@@ -123,6 +127,7 @@ export function GoalProgressPanel({ learnerId }: { learnerId: string }) {
             onContextChange={setContextKey}
           />
           <MaterialUsage series={series} />
+          <ProgressEvidenceReport series={series} />
           {series.sessionCount > 0 && (
             <>
               <NextSessionRecommendationsPanel
@@ -132,7 +137,9 @@ export function GoalProgressPanel({ learnerId }: { learnerId: string }) {
               />
               {series.points.length > 0 && (
                 <NextSessionImpactPlanPanel
-                  previousPackageId={series.points[series.points.length - 1].lessonPackageId}
+                  previousPackageId={
+                    series.points[series.points.length - 1].lessonPackageId
+                  }
                 />
               )}
             </>
@@ -143,6 +150,186 @@ export function GoalProgressPanel({ learnerId }: { learnerId: string }) {
       )}
     </section>
   );
+}
+
+function ProgressEvidenceReport({ series }: { series: GoalProgressSeries }) {
+  const report = buildProgressEvidenceReport(series);
+  const comparison = series.activeContextKey
+    ? null
+    : contextComparisonText(series.contextSummaries);
+  const responseModes = Object.entries(report.responseModeCounts)
+    .filter(([, count]) => count > 0)
+    .map(([mode, count]) => `${responseModeLabel(mode)}: ${count}`)
+    .join(" · ");
+  return (
+    <section
+      className="v2-progress-evidence-report"
+      aria-labelledby="progress-evidence-report-heading"
+    >
+      <header>
+        <div>
+          <small>Teacher-facing evidence from completed sessions</small>
+          <h4 id="progress-evidence-report-heading">
+            Progress evidence report
+          </h4>
+        </div>
+        <span>{report.observationWindow}</span>
+      </header>
+      <div className="v2-progress-report-goal">
+        <strong>Observed goal</strong>
+        <p>{series.operationalizedGoal}</p>
+      </div>
+      <p className="v2-progress-report-scope">{report.scopeStatement}</p>
+      <div className="v2-progress-report-totals" aria-label="Recorded totals">
+        <article>
+          <b>{series.sessionCount}</b>
+          <span>completed sessions</span>
+        </article>
+        <article>
+          <b>{report.totalValidOpportunities}</b>
+          <span>valid opportunities</span>
+        </article>
+        <article>
+          <b>{report.totalIndependentResponses}</b>
+          <span>independent responses</span>
+        </article>
+        <article>
+          <b>{report.totalPromptedResponses}</b>
+          <span>prompted successes</span>
+        </article>
+      </div>
+      <section className="v2-progress-report-narrative">
+        <h5>What the recorded observations show</h5>
+        <p>{accessibleSeriesSummary(series)}</p>
+        {report.changeStatement && (
+          <p>
+            {report.changeStatement} This is a descriptive comparison, not a
+            mastery decision.
+          </p>
+        )}
+        {comparison && <p>{comparison}</p>}
+        {series.trendEvidence.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+        <p
+          className={
+            series.confidence === "low" ? "v2-low-confidence-note" : ""
+          }
+        >
+          <b>Confidence: {series.confidence}.</b>{" "}
+          {series.confidenceReasons.length
+            ? series.confidenceReasons.join(" ")
+            : "The recorded sessions meet the configured completeness checks, while teacher judgment remains necessary."}
+        </p>
+      </section>
+      <div className="v2-progress-report-supports">
+        <section>
+          <h5>Communication and support record</h5>
+          <p>
+            <b>Successful response modes:</b> {responseModes || "Not recorded"}
+          </p>
+          <p>
+            <b>Teacher observations:</b> notes were recorded in{" "}
+            {report.teacherObservationCount} of {series.sessionCount} completed
+            sessions.
+          </p>
+        </section>
+        <section>
+          <h5>Break and return record</h5>
+          <p>
+            {report.breakRequestCount} break requests,{" "}
+            {report.breaksDeliveredCount} delivered breaks, and{" "}
+            {report.returnedAfterBreakCount} recorded returns after a break.
+          </p>
+          <p>
+            These counts describe recorded events and do not evaluate whether a
+            break should have been requested or delivered.
+          </p>
+        </section>
+      </div>
+      <div className="v2-progress-report-sessions">
+        <h5>Session-by-session evidence</h5>
+        <div
+          className="v2-progress-report-table-wrap"
+          role="region"
+          aria-label="Scrollable session-by-session evidence table"
+          tabIndex={0}
+        >
+          <table>
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>{metricLabels[series.metric]}</th>
+                <th>Independent</th>
+                <th>Prompted</th>
+                <th>Valid opportunities</th>
+                <th>Response modes</th>
+                <th>Contexts</th>
+                <th>Teacher observation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {series.points.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    No completed session evidence is available.
+                  </td>
+                </tr>
+              ) : (
+                series.points.map((point, index) => {
+                  const modes = Object.entries(point.details.responseModeCounts)
+                    .filter(([, count]) => count > 0)
+                    .map(
+                      ([mode, count]) => `${responseModeLabel(mode)}: ${count}`,
+                    )
+                    .join(", ");
+                  const teacherObservation = point.details.teacherNotes.trim();
+                  return (
+                    <tr key={point.sessionId}>
+                      <td>
+                        Session {index + 1}
+                        <small>
+                          {new Date(point.completedAt).toLocaleDateString()}
+                        </small>
+                      </td>
+                      <td>{formatMetricValue(series.metric, point.value)}</td>
+                      <td>
+                        {point.details.independentSuccessfulCount ??
+                          point.numeratorCount}
+                      </td>
+                      <td>{point.details.promptedSuccessfulCount}</td>
+                      <td>{point.validOpportunityCount}</td>
+                      <td>{modes || "Not recorded"}</td>
+                      <td>
+                        {point.contextsAttempted.join(", ") || "Not recorded"}
+                      </td>
+                      <td>
+                        {teacherObservation ||
+                          "No teacher observation recorded"}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <aside>
+        <strong>Interpretation boundary</strong>
+        <p>
+          This report summarizes teacher-recorded observations. It does not
+          diagnose, claim causality, or determine mastery. The teacher decides
+          how these observations should inform instruction.
+        </p>
+      </aside>
+    </section>
+  );
+}
+
+function responseModeLabel(mode: string): string {
+  if (mode.toLowerCase() === "aac") return "AAC";
+  return mode.charAt(0).toUpperCase() + mode.slice(1).replace(/_/g, " ");
 }
 
 function TrendSummary({ series }: { series: GoalProgressSeries }) {

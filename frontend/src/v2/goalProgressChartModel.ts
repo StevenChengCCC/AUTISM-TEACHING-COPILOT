@@ -88,6 +88,87 @@ export function materialUsageText(material: GoalMaterialUsageSummary): string {
   return `Used in ${material.sessionCount} session${material.sessionCount === 1 ? "" : "s"} with ${material.independentSuccessfulCount} independent response${material.independentSuccessfulCount === 1 ? "" : "s"}.`;
 }
 
+export interface ProgressEvidenceReport {
+  observationWindow: string;
+  scopeStatement: string;
+  totalValidOpportunities: number;
+  totalIndependentResponses: number;
+  totalPromptedResponses: number;
+  responseModeCounts: Record<string, number>;
+  breakRequestCount: number;
+  breaksDeliveredCount: number;
+  returnedAfterBreakCount: number;
+  teacherObservationCount: number;
+  changeStatement: string | null;
+}
+
+export function buildProgressEvidenceReport(
+  series: GoalProgressSeries,
+): ProgressEvidenceReport {
+  const points = series.points;
+  const first = points[0];
+  const latest = points[points.length - 1];
+  const responseModeCounts: Record<string, number> = {};
+  let totalValidOpportunities = 0;
+  let totalIndependentResponses = 0;
+  let totalPromptedResponses = 0;
+  let breakRequestCount = 0;
+  let breaksDeliveredCount = 0;
+  let returnedAfterBreakCount = 0;
+  let teacherObservationCount = 0;
+  for (const point of points) {
+    totalValidOpportunities += point.validOpportunityCount;
+    totalIndependentResponses +=
+      point.details.independentSuccessfulCount ?? point.numeratorCount;
+    totalPromptedResponses += point.details.promptedSuccessfulCount;
+    breakRequestCount += point.details.breakRequestCount;
+    breaksDeliveredCount += point.details.breaksDeliveredCount;
+    returnedAfterBreakCount += point.details.returnedAfterBreakCount;
+    if (point.details.teacherNotes.trim()) teacherObservationCount += 1;
+    for (const [mode, count] of Object.entries(
+      point.details.responseModeCounts,
+    )) {
+      responseModeCounts[mode] = (responseModeCounts[mode] ?? 0) + count;
+    }
+  }
+  const observationWindow =
+    first && latest
+      ? `${new Date(first.completedAt).toLocaleDateString()} to ${new Date(latest.completedAt).toLocaleDateString()}`
+      : "No completed observation window";
+  const activeContext = series.activeContextKey
+    ? series.contextSummaries?.find(
+        (context) => context.contextKey === series.activeContextKey,
+      )
+    : undefined;
+  const scopeStatement = series.activeContextKey
+    ? activeContext
+      ? `Counts and metric values are filtered to ${activeContext.contextLabel}; teacher observations remain whole-session notes.`
+      : "Counts and metric values are filtered to the selected structured context; its saved label is unavailable. Teacher observations remain whole-session notes."
+    : "Totals and session details include all recorded contexts in this goal series.";
+  let changeStatement: string | null = null;
+  if (first && latest && points.length >= 2) {
+    const firstValue = formatMetricValue(series.metric, first.value);
+    const latestValue = formatMetricValue(series.metric, latest.value);
+    changeStatement =
+      first.value === latest.value
+        ? `The first and most recent recorded values were both ${latestValue}.`
+        : `The most recent recorded value was ${latestValue}, compared with ${firstValue} in the first recorded session.`;
+  }
+  return {
+    observationWindow,
+    scopeStatement,
+    totalValidOpportunities,
+    totalIndependentResponses,
+    totalPromptedResponses,
+    responseModeCounts,
+    breakRequestCount,
+    breaksDeliveredCount,
+    returnedAfterBreakCount,
+    teacherObservationCount,
+    changeStatement,
+  };
+}
+
 export function chartCoordinates(
   series: GoalProgressSeries,
   width = 640,

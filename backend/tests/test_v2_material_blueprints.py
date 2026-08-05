@@ -58,6 +58,32 @@ def test_core_goal_families_resolve_to_complete_professional_bundles():
     ]
 
 
+def test_concept_identification_uses_exemplar_cards_without_theme_leakage():
+    draft = _draft(
+        "Learner will identify or name an apple across varied examples.",
+        theme="The learner enjoys sorting produce during pretend grocery activities.",
+    )
+
+    assert V2MaterialBlueprintService.classify_goal(draft) == "concept_identification"
+    assert V2MaterialBlueprintService.recommended_bundle(draft) == [
+        "visual_card",
+        "data_sheet",
+        "summary_template",
+        "teacher_cue_card",
+    ]
+
+
+def test_classification_goal_still_uses_sorting_and_matching_bundle():
+    draft = _draft(
+        "Learner will sort classroom objects by category.",
+        theme="Apple photographs",
+    )
+
+    assert V2MaterialBlueprintService.classify_goal(draft) == "concepts_classification"
+    assert "sorting_page" in V2MaterialBlueprintService.recommended_bundle(draft)
+    assert "matching_page" in V2MaterialBlueprintService.recommended_bundle(draft)
+
+
 def test_material_catalog_defines_professional_construction_rules():
     for material_type in {
         "quantity_cards",

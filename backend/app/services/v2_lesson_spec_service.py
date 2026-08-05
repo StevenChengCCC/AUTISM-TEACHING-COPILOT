@@ -161,6 +161,10 @@ class V2LessonSpecService:
             resolved("teacherEdits", "teacher_authored", "Preserves explicit teacher notes and structured follow-up edits verbatim.")
 
         reinforcers = list(snapshot.engagement.effective_reinforcers)
+        raw_excluded_reinforcers = [
+            *snapshot.engagement.not_approved_reinforcers,
+            *snapshot.engagement.not_meaningful_reinforcers,
+        ]
         confirmed_token_count = self._first_number(reinforcers, ("token",))
         token_requested = any(
             self._material_type(item) == "token_board"
@@ -178,6 +182,8 @@ class V2LessonSpecService:
         )
         reward_minutes = self._minutes(earned_reward)
         praise = next((item for item in reinforcers if "praise" in item.casefold()), "")
+        if not praise:
+            praise = self._explicit_acknowledgment(raw_excluded_reinforcers)
         earned_reward = self._concrete_reward_phrase(earned_reward, reward_minutes)
         praise = re.sub(r"^specific\s+praise\s*:\s*", "", praise, flags=re.I).strip()
         resolved(
@@ -253,10 +259,12 @@ class V2LessonSpecService:
                 earnedReward=earned_reward,
                 rewardDurationMinutes=reward_minutes,
                 specificPraise=praise,
-                excludedReinforcers=[
-                    *snapshot.engagement.not_approved_reinforcers,
-                    *snapshot.engagement.not_meaningful_reinforcers,
-                ],
+                excludedReinforcers=self._unique(
+                    [
+                        self._excluded_reinforcer_clause(item)
+                        for item in raw_excluded_reinforcers
+                    ]
+                ),
             ),
             transitionPlan=LessonTransitionPlan(
                 warning=warning,
@@ -542,6 +550,13 @@ class V2LessonSpecService:
             match = re.search(r"with\s+([a-z]+)[- ]icon\s+tokens?", value, re.I)
             if not match:
                 match = re.search(r"([a-z]+)[- ]icon\s+tokens?", value, re.I)
+            if not match:
+                match = re.search(
+                    r"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+                    r"([a-z][a-z-]*)\s+tokens?\b",
+                    value,
+                    re.I,
+                )
             if match:
                 return match.group(1).casefold()
         return ""
@@ -561,6 +576,38 @@ class V2LessonSpecService:
         )
         subject = re.sub(r"\s+reward$", "", subject, flags=re.I).strip()
         return f"{minutes} minutes with {subject}" if subject else value
+
+    @staticmethod
+    def _explicit_acknowledgment(values: list[str]) -> str:
+        """Preserve an explicitly approved acknowledgment embedded in a limit.
+
+        Profiles sometimes say, for example, "Food rewards are not approved;
+        use specific verbal acknowledgment only." The first clause is an
+        exclusion while the second is a confirmed support, not an invented
+        reward.
+        """
+
+        for value in values:
+            match = re.search(
+                r"\buse\s+(.+?)(?:\s+only)?(?:[.;]|$)", value, re.I
+            )
+            if not match:
+                continue
+            support = re.sub(
+                r"\s+only$", "", match.group(1).strip(" .;:"), flags=re.I
+            )
+            if any(
+                term in support.casefold()
+                for term in ("acknowledgment", "acknowledgement", "praise")
+            ):
+                return support
+        return ""
+
+    @staticmethod
+    def _excluded_reinforcer_clause(value: str) -> str:
+        """Keep the prohibited clause separate from any approved alternative."""
+
+        return value.split(";", 1)[0].strip()
 
     @staticmethod
     def _scalar(value: Any) -> str | int | float | bool | None:

@@ -2089,7 +2089,7 @@ class MaterialVisualAssetRequest(V2Model):
 
 
 VisualAssetRole = Literal[
-    "task_item", "scenario", "choice", "first", "then", "token", "reward",
+    "task_item", "scenario", "choice", "concept_exemplar", "first", "then", "token", "reward",
     "communication_symbol", "timer_state", "example", "teacher_reference",
     "decorative",
 ]
@@ -2288,6 +2288,42 @@ class ChoiceBoardContent(TypedMaterialContent):
     teacher_action_after_selection: str = Field(min_length=1)
 
 
+class ConceptExemplarItem(TypedMaterialContent):
+    id: str
+    label: str = Field(min_length=1, max_length=42)
+    concept_description: str = Field(min_length=1)
+
+
+class ConceptExemplarCardsContent(TypedMaterialContent):
+    target_labels: list[str] = Field(min_length=1, max_length=2)
+    exemplars: list[ConceptExemplarItem] = Field(min_length=3, max_length=8)
+    accepted_response_modes: list[str] = Field(min_length=1)
+    teacher_instruction: str = Field(min_length=1)
+    wait_time_seconds: int = Field(ge=1, le=60)
+    independence_rule: str = Field(min_length=1)
+    neutral_correction: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def varied_examples_for_every_target(self):
+        targets = [item.strip().casefold() for item in self.target_labels]
+        if len(targets) != len(set(targets)):
+            raise ValueError("concept targets must be distinct")
+        counts = {target: 0 for target in targets}
+        concepts: list[str] = []
+        for exemplar in self.exemplars:
+            key = exemplar.label.strip().casefold()
+            if key not in counts:
+                raise ValueError("every exemplar label must match a target label")
+            counts[key] += 1
+            concepts.append(exemplar.concept_description.strip().casefold())
+        minimum = 6 if len(targets) == 1 else 4
+        if any(count < minimum for count in counts.values()):
+            raise ValueError(f"each concept needs at least {minimum} varied exemplars")
+        if len(concepts) != len(set(concepts)):
+            raise ValueError("concept exemplars must have distinct semantic descriptions")
+        return self
+
+
 class RegulationScaleLevel(TypedMaterialContent):
     order: int = Field(ge=1)
     label: str = Field(min_length=1)
@@ -2402,6 +2438,11 @@ class ChoiceBoardSpec(MaterialSpecBase):
     content: ChoiceBoardContent
 
 
+class ConceptExemplarCardsSpec(MaterialSpecBase):
+    artifact_type: Literal["concept_exemplar_cards"] = "concept_exemplar_cards"
+    content: ConceptExemplarCardsContent
+
+
 class RegulationScaleSpec(MaterialSpecBase):
     artifact_type: Literal["regulation_scale"] = "regulation_scale"
     content: RegulationScaleContent
@@ -2425,6 +2466,7 @@ MaterialSpec = Annotated[
     | VisualTimerSpec
     | ScenarioCardsSpec
     | ChoiceBoardSpec
+    | ConceptExemplarCardsSpec
     | RegulationScaleSpec
     | GoalSpecificDataSheetSpec
     | LessonSummarySpec,
@@ -3452,6 +3494,7 @@ class ImageAssetDto(V2Model):
     concept: str
     imageUrl: str | None = None
     imageBase64: str | None = None
+    storageObjectKey: str | None = None
     thumbnailUrl: str | None = None
     altText: str
     tags: list[str] = Field(default_factory=list)

@@ -10,6 +10,9 @@ from app.schemas.v2_dto import (
     ChoiceBoardChoice,
     ChoiceBoardContent,
     ChoiceBoardSpec,
+    ConceptExemplarCardsContent,
+    ConceptExemplarCardsSpec,
+    ConceptExemplarItem,
     CommunicationCardContent,
     CommunicationCardSpec,
     FirstThenBoardContent,
@@ -42,6 +45,10 @@ from app.schemas.v2_dto import (
     VisualTimerContent,
     VisualTimerSpec,
 )
+from app.services.v2_concept_exemplar_service import (
+    concept_exemplar_variations,
+    extract_concept_labels,
+)
 
 
 class V2MaterialSpecService:
@@ -55,6 +62,7 @@ class V2MaterialSpecService:
         "token_board",
         "visual_timer",
         "scenario_cards",
+        "visual_card",
         "choice_board",
         "emotion_scale",
         "data_sheet",
@@ -81,6 +89,7 @@ class V2MaterialSpecService:
         "visual_timer": "_validate_visual_timer",
         "scenario_cards": "_validate_scenario_cards",
         "choice_board": "_validate_choice_board",
+        "concept_exemplar_cards": "_validate_concept_exemplar_cards",
         "regulation_scale": "_validate_regulation_scale",
         "goal_specific_data_sheet": "_validate_data_sheet",
         "lesson_summary": "_validate_lesson_summary",
@@ -144,6 +153,21 @@ class V2MaterialSpecService:
             projected.update({
                 "options": [item["label"] for item in typed["choices"]],
                 "instruction": typed["promptOrQuestion"],
+            })
+        elif artifact == "concept_exemplar_cards":
+            projected.update({
+                "label": typed["targetLabels"][0],
+                "instruction": typed["teacherInstruction"],
+                "visualItems": [
+                    {
+                        "id": item["id"],
+                        "label": item["label"],
+                        "assetRole": "concept_exemplar",
+                        "concept": item["conceptDescription"],
+                        "generationStatus": "not_started",
+                    }
+                    for item in typed["exemplars"]
+                ],
             })
         elif artifact == "regulation_scale":
             projected.update({
@@ -225,8 +249,22 @@ class V2MaterialSpecService:
         response_modes = lesson_spec.goal.accepted_response_modes
         reward = lesson_spec.reinforcement_plan.earned_reward
         prompt_sequence = lesson_spec.prompting_plan.sequence
+        consequence_or_reinforcement = (
+            reward.strip()
+            or lesson_spec.reinforcement_plan.specific_praise.strip()
+            or (
+                "Honor the communicated break or stop request and follow the "
+                "confirmed return routine."
+                if lesson_spec.transition_plan.break_request
+                else (
+                    "Acknowledge the observed response and continue the "
+                    "teacher-confirmed lesson routine."
+                )
+            )
+        )
 
         if material_type == "blue_line_activity":
+            observable = lesson_spec.goal.observable_behavior.strip().rstrip(".")
             spec: MaterialSpec = PersonalizedInstructionalActivitySpec(
                 **common,
                 artifactType="personalized_instructional_activity",
@@ -235,7 +273,7 @@ class V2MaterialSpecService:
                     instructionalObjective=lesson_spec.goal.display_text,
                     learnerAction=(
                         f"Place, point to, or order the {len(contexts)} station cards along the route; "
-                        f"at each transition opportunity, {lesson_spec.goal.observable_behavior[:1].casefold() + lesson_spec.goal.observable_behavior[1:]}."
+                        f"at each transition opportunity, {observable[:1].casefold() + observable[1:]}."
                     ),
                     teacherSetup=[
                         "Place the route page on a stable surface.",
@@ -375,11 +413,16 @@ class V2MaterialSpecService:
                                 f"{item.transition_from} to {item.transition_to}"
                                 if item.transition_from and item.transition_to else item.setting
                             ),
-                            learnerOpportunity=lesson_spec.goal.conditions or item.label,
-                            expectedResponse=lesson_spec.goal.observable_behavior,
+                            learnerOpportunity=self._scenario_opportunity(
+                                lesson_spec, item.label, item.transition_from,
+                                item.transition_to,
+                            ),
+                            expectedResponse=self._scenario_expected_response(
+                                lesson_spec, item.label
+                            ),
                             acceptedModalities=response_modes,
                             promptSequence=self._prompt_sequence_steps(prompt_sequence),
-                            consequenceOrReinforcement=reward or lesson_spec.reinforcement_plan.specific_praise,
+                            consequenceOrReinforcement=consequence_or_reinforcement,
                             generalizationDimension=item.generalization_dimension,
                     visualCue=(
                         f"Show the First–Then board for {item.label} and keep the break card available."
@@ -408,6 +451,41 @@ class V2MaterialSpecService:
                         )
                         for item in contexts
                     ]
+                ),
+            )
+        elif material_type == "visual_card":
+            target_labels = extract_concept_labels(
+                lesson_spec.goal.display_text,
+                lesson_spec.goal.observable_behavior,
+            )
+            exemplars = concept_exemplar_variations(target_labels)
+            if not target_labels or not exemplars or not response_modes:
+                return None
+            correction = "; ".join(lesson_spec.error_correction_plan.strategies).strip()
+            spec = ConceptExemplarCardsSpec(
+                **common,
+                artifactType="concept_exemplar_cards",
+                content=ConceptExemplarCardsContent(
+                    targetLabels=target_labels,
+                    exemplars=[
+                        ConceptExemplarItem(
+                            id=f"concept-exemplar-{index + 1}",
+                            label=item["label"],
+                            conceptDescription=item["concept"],
+                        )
+                        for index, item in enumerate(exemplars)
+                    ],
+                    acceptedResponseModes=response_modes,
+                    teacherInstruction=(
+                        f"Present varied {', '.join(target_labels)} cards in a field of two or three; "
+                        "ask the confirmed identification question and rotate examples across trials."
+                    ),
+                    waitTimeSeconds=lesson_spec.prompting_plan.wait_time_seconds or 5,
+                    independenceRule=lesson_spec.data_plan.independence_definition,
+                    neutralCorrection=(
+                        correction
+                        or "Reduce the field, model once, and offer a new opportunity without physical prompting."
+                    ),
                 ),
             )
         elif material_type == "choice_board":
@@ -462,6 +540,30 @@ class V2MaterialSpecService:
         else:
             if not response_modes:
                 return None
+            is_teacher_cue = material_type == "teacher_cue_card"
+            wait_instruction = (
+                f"Wait {lesson_spec.prompting_plan.wait_time_seconds} seconds before prompting."
+                if lesson_spec.prompting_plan.wait_time_seconds is not None
+                else "Use the teacher-confirmed processing wait before prompting."
+            )
+            correction = "; ".join(lesson_spec.error_correction_plan.strategies).strip()
+            if not correction:
+                correction = "Respond neutrally, model once, and offer another opportunity."
+            break_and_return = " ".join(
+                item for item in (
+                    lesson_spec.transition_plan.break_request,
+                    (
+                        f"Use the visible {lesson_spec.transition_plan.break_duration_minutes}-minute timer."
+                        if lesson_spec.transition_plan.break_duration_minutes
+                        else ""
+                    ),
+                    lesson_spec.transition_plan.return_support,
+                )
+                if item
+            ) or (
+                "Honor any learner communication to pause or stop; this lesson "
+                "does not prescribe a break-return sequence."
+            )
             spec = LessonSummarySpec(
                 **common,
                 artifactType="lesson_summary",
@@ -478,33 +580,27 @@ class V2MaterialSpecService:
                     # Prompt-fading decisions are teacher-facing instructions,
                     # not provenance-only metadata. Keep the exact reviewed
                     # fade rule beside the prompt sequence for rendering.
-                    promptsUsed=list(
-                        dict.fromkeys(
-                            [
-                                *prompt_sequence,
-                                lesson_spec.prompting_plan.fade_rule,
-                            ]
-                        )
-                    ),
+                    promptsUsed=list(dict.fromkeys([
+                        *([wait_instruction] if is_teacher_cue else []),
+                        *prompt_sequence,
+                        lesson_spec.prompting_plan.fade_rule,
+                    ])),
                     reinforcementDelivered=(
                         reward
                         or lesson_spec.reinforcement_plan.specific_praise
                         or "No earned reinforcement is specified in this LessonSpec."
                     ),
-                    regulationAndBreakNotes="Record break requests, whether they were honored, duration, and return support.",
-                    nextStep="Compare performance with the confirmed success criterion and select the next context or support adjustment.",
-                    reportingFields=[
-                        "Opportunities completed",
-                        "Independent requests",
-                        "AAC requests",
-                        "Spoken requests",
-                        "Lowest prompt used",
-                        "Returned after break",
-                        "Context with strongest performance",
-                        "Context needing more support",
-                        "Suggested next generalization step",
-                        "Teacher notes",
-                    ],
+                    regulationAndBreakNotes=(
+                        break_and_return
+                        if is_teacher_cue
+                        else self._summary_regulation_note(lesson_spec)
+                    ),
+                    nextStep=(
+                        f"Neutral correction: {correction} Teacher judgment overrides this guide."
+                        if is_teacher_cue
+                        else "Compare performance with the confirmed success criterion and select the next context or support adjustment."
+                    ),
+                    reportingFields=self._summary_reporting_fields(lesson_spec),
                 ),
             )
 
@@ -518,6 +614,36 @@ class V2MaterialSpecService:
             if repair is not None
             else self.require_valid(spec, lesson_spec)
         )
+
+    def _scenario_opportunity(
+        self,
+        lesson_spec: LessonSpec,
+        context_label: str,
+        transition_from: str,
+        transition_to: str,
+    ) -> str:
+        phrase = self._communication_phrase(lesson_spec, "break_card")
+        if phrase and lesson_spec.transition_plan.break_request:
+            transition = (
+                f"from {transition_from} to {transition_to}"
+                if transition_from and transition_to
+                else f"during {context_label}"
+            )
+            return f"Request a break {transition} using speech or AAC."
+        return f"Respond to the natural cue during {context_label}."
+
+    def _scenario_expected_response(
+        self, lesson_spec: LessonSpec, context_label: str
+    ) -> str:
+        phrase = self._communication_phrase(lesson_spec, "break_card")
+        if phrase and lesson_spec.transition_plan.break_request:
+            wait = lesson_spec.prompting_plan.wait_time_seconds
+            wait_copy = f" after the {wait}-second wait" if wait is not None else ""
+            return (
+                f"During {context_label}, say or select '{phrase}'{wait_copy}; "
+                "speech and AAC are both accepted."
+            )
+        return f"During {context_label}, {lesson_spec.goal.observable_behavior.strip()}"
 
     def validate(
         self,
@@ -809,6 +935,37 @@ class V2MaterialSpecService:
         if maximum is not None and len(labels) > maximum:
             issue("content.choices", "choice_limit_exceeded", "Choice board exceeds the confirmed visual-choice limit.", f"Use no more than {maximum} choices.")
 
+    def _validate_concept_exemplar_cards(self, spec, lesson_spec, issue) -> None:
+        content = spec.content
+        expected_modes = {self._norm(item) for item in lesson_spec.goal.accepted_response_modes}
+        actual_modes = {self._norm(item) for item in content.accepted_response_modes}
+        if actual_modes != expected_modes:
+            issue(
+                "content.acceptedResponseModes",
+                "communication_mode_mismatch",
+                "Concept-card response modes disagree with LessonSpec.",
+                "Preserve all accepted response modes equally.",
+            )
+        if (
+            lesson_spec.prompting_plan.wait_time_seconds is not None
+            and content.wait_time_seconds != lesson_spec.prompting_plan.wait_time_seconds
+        ):
+            issue(
+                "content.waitTimeSeconds",
+                "wait_time_mismatch",
+                "Concept-card wait time disagrees with LessonSpec.",
+                "Use the confirmed processing interval.",
+            )
+        if self._norm(content.independence_rule) != self._norm(
+            lesson_spec.data_plan.independence_definition
+        ):
+            issue(
+                "content.independenceRule",
+                "independence_rule_mismatch",
+                "Concept-card independence rule disagrees with LessonSpec.",
+                "Use the current goal-specific independence definition.",
+            )
+
     def _validate_regulation_scale(self, spec, lesson_spec, issue) -> None:
         levels = spec.content.levels
         orders = [item.order for item in levels]
@@ -831,15 +988,78 @@ class V2MaterialSpecService:
         if self._norm(spec.content.goal) != self._norm(lesson_spec.goal.display_text):
             issue("content.goal", "goal_mismatch", "Summary goal disagrees with LessonSpec.", "Use the current confirmed goal.")
         expected = {
-            "opportunities completed", "independent requests", "aac requests",
-            "spoken requests", "lowest prompt used", "returned after break",
-            "context with strongest performance", "context needing more support",
-            "suggested next generalization step", "teacher notes",
+            self._norm(item)
+            for item in self._summary_reporting_fields(lesson_spec)
         }
         actual = {self._norm(item) for item in spec.content.reporting_fields}
         missing = sorted(expected - actual)
         if missing:
             issue("content.reportingFields", "incomplete_goal_summary", f"Lesson summary is missing: {', '.join(missing)}.", "Include every goal-specific outcome and next-step field.")
+
+    @staticmethod
+    def _has_break_measure(lesson_spec: LessonSpec) -> bool:
+        transition = lesson_spec.transition_plan
+        return bool(
+            transition.break_request.strip()
+            or transition.break_duration_minutes is not None
+            or transition.return_support.strip()
+            or any(
+                measure in {
+                    "break_requested",
+                    "break_honored",
+                    "break_duration_minutes",
+                    "returned_to_activity",
+                }
+                for measure in lesson_spec.data_plan.measures
+            )
+        )
+
+    @classmethod
+    def _summary_regulation_note(cls, lesson_spec: LessonSpec) -> str:
+        if cls._has_break_measure(lesson_spec):
+            return (
+                "Record any break or stop request, whether it was honored, its "
+                "duration when applicable, and return support."
+            )
+        return (
+            "Preserve the teacher's observation of any pause or stop; no "
+            "break-return outcome is required for this goal."
+        )
+
+    @classmethod
+    def _summary_reporting_fields(cls, lesson_spec: LessonSpec) -> list[str]:
+        """Project closeout fields only from the current goal and data plan."""
+
+        measures = set(lesson_spec.data_plan.measures)
+        fields = [
+            "Opportunities completed",
+            "Successful responses (independent / prompted)",
+        ]
+        if "response_mode" in measures:
+            modes = [
+                mode.strip().upper()
+                if mode.strip().casefold() == "aac"
+                else mode.strip().title()
+                for mode in lesson_spec.goal.accepted_response_modes
+                if mode.strip()
+            ]
+            if modes:
+                fields.append(f"Responses by mode ({' / '.join(modes)})")
+        if {"prompt_level", "latency_seconds"} & measures:
+            fields.append("Prompt level and latency notes")
+        if cls._has_break_measure(lesson_spec):
+            fields.append("Break or stop honored / return status")
+        if len(lesson_spec.contexts) > 1:
+            fields.extend(
+                [
+                    "Context comparison",
+                    "Suggested next generalization step",
+                ]
+            )
+        else:
+            fields.append("Next teaching step")
+        fields.append("Teacher notes")
+        return list(dict.fromkeys(fields))
 
     @staticmethod
     def _lesson_path_for_code(code: str) -> str:

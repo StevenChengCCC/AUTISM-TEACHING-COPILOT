@@ -15,6 +15,10 @@ from app.integrations.image_search_provider import (
     ImageSearchProvider,
     get_image_search_providers,
 )
+from app.integrations.private_object_storage import (
+    PrivateObjectStorage,
+    get_private_object_storage,
+)
 from app.schemas.v2_dto import (
     ApproveImageAssetRequest,
     ImageAssetDto,
@@ -48,10 +52,12 @@ class V2ImageAssetService:
         external_providers: list[ImageSearchProvider] | None = None,
         ai: V2AIProvider | None = None,
         config: Settings = settings,
+        storage: PrivateObjectStorage | None = None,
     ):
         self.repos = repos
         self.config = config
         self.ai = ai or get_v2_ai_provider(config)
+        self.storage = storage or get_private_object_storage(config)
         self.external_providers = (
             get_image_search_providers(config)
             if external_providers is None
@@ -214,7 +220,7 @@ class V2ImageAssetService:
         allow_external_search: bool = True,
         force_generation: bool = False,
     ) -> ImageAssetDto:
-        normalized_concept = _normalize(concept)
+        normalized_concept = self._storage_concept(_normalize(concept))
         normalized_material_type = _normalize(material_type)
         reuse_first = self.config.IMAGE_ASSET_STRATEGY == "reuse_search_generate"
         if not force_generation:
@@ -292,6 +298,15 @@ class V2ImageAssetService:
         self._attach_if_present(material_id, fallback)
         return fallback
 
+    @staticmethod
+    def _storage_concept(concept: str, max_length: int = 255) -> str:
+        """Keep semantic identity within the durable database column boundary."""
+
+        if len(concept) <= max_length:
+            return concept
+        suffix = f" [{sha256(concept.encode('utf-8')).hexdigest()[:12]}]"
+        return concept[: max_length - len(suffix)].rstrip() + suffix
+
     def generate_candidate(
         self, request: GenerateImageCandidateRequest
     ) -> ImageAssetDto:
@@ -313,7 +328,8 @@ class V2ImageAssetService:
         learner_id: str,
         style: str | None,
     ) -> ImageAssetDto | None:
-        type_tag = self._material_type_tag(material_type)
+        normalized_material_type = _normalize(material_type)
+        type_tag = _normalize(self._material_type_tag(material_type))
         object_asset_types = {
             "visual card",
             "matching page",
@@ -324,8 +340,8 @@ class V2ImageAssetService:
         compatible_type_tags = {
             self._material_type_tag(item) for item in object_asset_types
         }
-        lineage_tag = f"lineage learner {learner_id}"
-        style_tag = self._style_tag(style)
+        lineage_tag = _normalize(f"lineage learner {learner_id}")
+        style_tag = _normalize(self._style_tag(style))
         matches = [
             asset
             for asset in self.repos.image_assets.list()
@@ -333,7 +349,7 @@ class V2ImageAssetService:
             and (
                 type_tag in {_normalize(tag) for tag in asset.tags}
                 or (
-                    material_type in object_asset_types
+                    normalized_material_type in object_asset_types
                     and bool(
                         compatible_type_tags
                         & {_normalize(tag) for tag in asset.tags}
@@ -392,10 +408,14 @@ class V2ImageAssetService:
                 "Configured image generation was unavailable; continuing with safe fallbacks"
             )
             return None
+        asset_id = f"generated-asset-{uuid4().hex}"
         image_url = result.get("imageUrl")
         image_base64 = result.get("imageBase64")
+        storage_object_key = None
         if image_base64:
-            saved_url = self._save_generated_image(image_base64)
+            saved_url, storage_object_key = self._save_generated_image(
+                image_base64, asset_id
+            )
             if saved_url:
                 image_url = saved_url
                 image_base64 = None
@@ -404,12 +424,13 @@ class V2ImageAssetService:
             return None
         source_type = "generated" if status == "ready" else "mock"
         asset = ImageAssetDto(
-            id=f"generated-asset-{uuid4().hex}",
+            id=asset_id,
             sourceType=source_type,
             title=f"{material_type.replace('_', ' ').title()} – {concept.title()}",
             concept=concept,
             imageUrl=image_url,
             imageBase64=image_base64,
+            storageObjectKey=storage_object_key,
             thumbnailUrl=image_url,
             altText=f"Teacher-reviewable {material_type.replace('_', ' ')} illustration for {concept}.",
             tags=[concept, self._material_type_tag(material_type), "teacher review"],
@@ -498,24 +519,39 @@ class V2ImageAssetService:
         )
         return self.repos.image_assets.save(contextual)
 
-    def _save_generated_image(self, image_base64: str) -> str | None:
+    def _save_generated_image(
+        self, image_base64: str, asset_id: str
+    ) -> tuple[str | None, str | None]:
         try:
             image_bytes = b64decode(image_base64, validate=True)
         except (Base64Error, ValueError):
             logger.warning("Generated image data was invalid; using fallback asset")
-            return None
+            return None, None
         if not image_bytes or len(image_bytes) > 25 * 1024 * 1024:
             logger.warning("Generated image exceeded the local storage safety limit")
-            return None
+            return None, None
+        storage_object_key = None
+        if self.config.OBJECT_STORAGE_PROVIDER == "s3":
+            storage_object_key = (
+                f"{self.config.S3_IMAGE_PREFIX.strip('/')}/{asset_id}.png"
+            )
+            self.storage.write_bytes(
+                storage_object_key, image_bytes, "image/png"
+            )
         try:
             output_dir = Path(self.config.STORAGE_DIR) / "generated-images"
             output_dir.mkdir(parents=True, exist_ok=True)
             file_name = f"{uuid4().hex}.png"
             (output_dir / file_name).write_bytes(image_bytes)
         except OSError:
+            if storage_object_key:
+                logger.warning(
+                    "Generated image local cache was unavailable; durable storage succeeded"
+                )
+                return None, storage_object_key
             logger.warning("Generated image could not be saved to local storage")
-            return None
-        return f"/storage/generated-images/{file_name}"
+            return None, None
+        return f"/storage/generated-images/{file_name}", storage_object_key
 
     def _attach_if_present(
         self, material_id: str, asset: ImageAssetDto

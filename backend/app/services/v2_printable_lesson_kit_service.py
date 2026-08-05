@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from base64 import b64decode
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape as html_escape
 from io import BytesIO
-from pathlib import Path
 import re
 import time
 from typing import Any
@@ -19,7 +17,6 @@ from reportlab.graphics.shapes import Circle, Drawing, Line, Path as GraphicsPat
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Image,
-    KeepTogether,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -64,6 +61,7 @@ from app.services.v2_print_layout_policy import (
     print_layout_policy,
 )
 from app.services.v2_repositories import V2Repositories, repositories
+from app.services.v2_visual_asset_resolver import V2VisualAssetResolver
 
 
 def _now() -> datetime:
@@ -92,7 +90,7 @@ def escape(value: object) -> str:
 class V2PrintableLessonKitService:
     """Build one classroom-ready PDF instead of a data handoff ZIP."""
 
-    renderer_version = "print-package-reportlab-v4-accessible-text"
+    renderer_version = "print-package-reportlab-v5-teacher-efficient"
 
     def __init__(
         self,
@@ -103,6 +101,9 @@ class V2PrintableLessonKitService:
         self.repos = repos
         self.storage = storage or get_private_object_storage(config)
         self.config = config
+        self.visual_assets = V2VisualAssetResolver(
+            repos, storage=self.storage, config=config
+        )
 
     def create(
         self, package_id: str, request: PrintableLessonKitRequest
@@ -262,27 +263,11 @@ class V2PrintableLessonKitService:
                     "Every selected current material revision must be validated, reviewed, and approved before printing: "
                     + ", ".join(invalid_revisions)
                 )
-        incomplete_visuals = [
-            item.title
-            for item in materials
-            if not self._has_complete_visual_set(item)
-        ]
-        if incomplete_visuals:
-            raise ConflictError(
-                "Every planned classroom visual must be ready before printing: "
-                + ", ".join(incomplete_visuals)
-            )
-        unresolved_visuals = [
-            item.title
-            for item in materials
-            if not self._has_resolvable_visual_set(item)
-        ]
-        if unresolved_visuals:
-            raise ConflictError(
-                "Every required classroom visual must resolve before printing: "
-                + ", ".join(unresolved_visuals)
-            )
-        readiness = V2PrintReadinessService(self.repos).evaluate(package.id)
+        # Visual readiness and storage resolvability are owned by the canonical
+        # readiness service below so API preview and PDF creation cannot drift.
+        readiness = V2PrintReadinessService(
+            self.repos, storage=self.storage, config=self.config
+        ).evaluate(package.id)
         blocking = [item for item in readiness.blockers if item.severity == "blocking"]
         if blocking:
             first = blocking[0]
@@ -539,7 +524,9 @@ class V2PrintableLessonKitService:
         preset_service.require_available(resolution)
         materials = resolution.materials
         ordered = self._ordered_materials(materials)
-        readiness = V2PrintReadinessService(self.repos).evaluate(package.id)
+        readiness = V2PrintReadinessService(
+            self.repos, storage=self.storage, config=self.config
+        ).evaluate(package.id)
         blocking = [item for item in readiness.blockers if item.severity == "blocking"]
         if blocking:
             raise ConflictError(
@@ -1048,7 +1035,63 @@ class V2PrintableLessonKitService:
                 ),
             )
         )
-        story.extend([Spacer(1, 7), Paragraph("Timed lesson flow", styles["Heading2"])])
+        reminder = "<br/>".join(
+            f"- {escape(value)}" for value in sheet.dataReminder
+        )
+        closeout = "<br/>".join(f"[ ] {escape(value)}" for value in sheet.closeout)
+        story.extend(
+            [
+                Spacer(1, 7),
+                Table(
+                    [
+                        [
+                            Paragraph("In-the-moment data", label),
+                            Paragraph("Two-minute closeout", label),
+                        ],
+                        [Paragraph(reminder, compact), Paragraph(closeout, compact)],
+                    ],
+                    colWidths=[3.3 * inch, 3.3 * inch],
+                    splitByRow=1,
+                    splitInRow=1,
+                    style=TableStyle(
+                        [
+                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            (
+                                "BOX",
+                                (0, 0),
+                                (-1, -1),
+                                0.6,
+                                colors.HexColor("#93C5FD"),
+                            ),
+                            (
+                                "INNERGRID",
+                                (0, 0),
+                                (-1, -1),
+                                0.4,
+                                colors.HexColor("#DBEAFE"),
+                            ),
+                            (
+                                "BACKGROUND",
+                                (0, 0),
+                                (-1, 0),
+                                colors.HexColor("#EFF6FF"),
+                            ),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                            ("TOPPADDING", (0, 0), (-1, -1), 4),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                        ]
+                    ),
+                ),
+                Spacer(1, 6),
+                Paragraph(
+                    f"<b>{escape(sheet.teacherJudgmentNote)}</b>",
+                    styles["RunSheetNote"],
+                ),
+                PageBreak(),
+                Paragraph("Timed lesson flow", styles["Heading2"]),
+            ]
+        )
         flow_rows: list[list[Any]] = [
             [Paragraph("Step", label), Paragraph("Run the lesson", label)]
         ]
@@ -1102,39 +1145,6 @@ class V2PrintableLessonKitService:
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                     ]
                 ),
-            )
-        )
-        reminder = "<br/>".join(f"- {escape(value)}" for value in sheet.dataReminder)
-        closeout = "<br/>".join(f"[ ] {escape(value)}" for value in sheet.closeout)
-        story.append(
-            KeepTogether(
-                [
-                    Spacer(1, 7),
-                    Table(
-                    [
-                        [Paragraph("In-the-moment data", label), Paragraph("Two-minute closeout", label)],
-                        [Paragraph(reminder, compact), Paragraph(closeout, compact)],
-                    ],
-                    colWidths=[3.3 * inch, 3.3 * inch],
-                    style=TableStyle(
-                        [
-                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#93C5FD")),
-                            ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DBEAFE")),
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EFF6FF")),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                            ("TOPPADDING", (0, 0), (-1, -1), 4),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                        ]
-                    ),
-                    ),
-                    Spacer(1, 6),
-                    Paragraph(
-                        f"<b>{escape(sheet.teacherJudgmentNote)}</b>",
-                        styles["RunSheetNote"],
-                    ),
-                ]
             )
         )
         return story
@@ -1477,9 +1487,14 @@ class V2PrintableLessonKitService:
                 ):
                     value = scenario.get(key)
                     if isinstance(value, list):
-                        value = " -> ".join(str(item) for item in value)
+                        separator = " or " if key == "acceptedModalities" else " -> "
+                        value = separator.join(str(item) for item in value)
                     if key == "learnerOpportunity":
                         value = f"{value}; wait {scenario.get('waitTimeSeconds')} seconds."
+                    if key == "generalizationLabel":
+                        value = re.sub(
+                            r"^generalization\s*:\s*", "", str(value or ""), flags=re.I
+                        )
                     result.append(Paragraph(f"<b>{label}:</b> {escape(str(value or ''))}", scenario_style))
             return result
 
@@ -1599,17 +1614,63 @@ class V2PrintableLessonKitService:
                     styles["BodyText"],
                 ),
                 Spacer(1, 8),
+                Paragraph("Accepted responses", styles["Heading3"]),
+                Paragraph(
+                    escape(", ".join(str(item) for item in content.get("responseModesUsed", [])) or "Use the current LessonSpec response modes."),
+                    styles["BodyText"],
+                ),
+                Spacer(1, 8),
+                Paragraph("Independent response", styles["Heading3"]),
+                Paragraph(
+                    escape(str(content.get("independenceSummary") or "Use the current LessonSpec independence definition.")),
+                    styles["BodyText"],
+                ),
+                Spacer(1, 8),
                 Paragraph("Prompting and fading", styles["Heading3"]),
             ]
             result.extend(
                 Paragraph(escape(str(prompt)), styles["BodyText"])
                 for prompt in prompts
             )
+            if content.get("regulationAndBreakNotes"):
+                transition = package.lessonSpec.transition_plan if package.lessonSpec else None
+                has_break_plan = bool(
+                    transition
+                    and (
+                        transition.break_request.strip()
+                        or transition.break_duration_minutes is not None
+                        or transition.return_support.strip()
+                    )
+                )
+                result.extend(
+                    [
+                        Spacer(1, 8),
+                        Paragraph(
+                            "Break and return" if has_break_plan else "Pause or stop",
+                            styles["Heading3"],
+                        ),
+                        Paragraph(
+                            escape(str(content["regulationAndBreakNotes"])),
+                            styles["BodyText"],
+                        ),
+                    ]
+                )
+            if content.get("reinforcementDelivered"):
+                result.extend(
+                    [
+                        Spacer(1, 8),
+                        Paragraph("Acknowledgment and reinforcement", styles["Heading3"]),
+                        Paragraph(
+                            escape(str(content["reinforcementDelivered"])),
+                            styles["BodyText"],
+                        ),
+                    ]
+                )
             if content.get("nextStep"):
                 result.extend(
                     [
                         Spacer(1, 8),
-                        Paragraph("Next step", styles["Heading3"]),
+                        Paragraph("Neutral correction and teacher judgment", styles["Heading3"]),
                         Paragraph(
                             escape(str(content["nextStep"])), styles["BodyText"]
                         ),
@@ -1741,7 +1802,15 @@ class V2PrintableLessonKitService:
             if not isinstance(columns, list) or not columns:
                 columns = ["Opportunity", "Response", "Prompt level", "Notes"]
             columns = [str(item).replace("_", " ").title() for item in columns]
-            requested_rows = content.get("opportunityRows", content.get("rowCount", 10))
+            planned_opportunities = None
+            if package.lessonSpec and package.lessonSpec.goal.success_criterion:
+                planned_opportunities = (
+                    package.lessonSpec.goal.success_criterion.total_opportunities
+                )
+            requested_rows = content.get(
+                "opportunityRows",
+                content.get("rowCount", planned_opportunities or 10),
+            )
             try:
                 row_count = min(max(int(requested_rows), 1), 100)
             except (TypeError, ValueError):
@@ -2049,10 +2118,9 @@ class V2PrintableLessonKitService:
         width: float = 2.5 * inch,
         height: float = 2.5 * inch,
     ) -> Image | Drawing | None:
-        value = content.get("imageBase64")
         try:
-            if isinstance(value, str) and value:
-                raw = b64decode(value.split(",", 1)[-1])
+            raw = self.visual_assets.read_raster_bytes(content)
+            if raw:
                 return Image(
                     BytesIO(raw), width=width, height=height, kind="proportional"
                 )
@@ -2060,16 +2128,7 @@ class V2PrintableLessonKitService:
             image_url = content.get("imageUrl")
             if isinstance(image_url, str) and image_url.startswith("data:image/svg+xml"):
                 return self._deterministic_visual(content, width=width, height=height)
-            if not isinstance(image_url, str) or not image_url.startswith("/storage/"):
-                return None
-            storage_root = Path(self.config.STORAGE_DIR).resolve()
-            relative_path = image_url.removeprefix("/storage/").lstrip("/")
-            source = (storage_root / relative_path).resolve()
-            if storage_root not in source.parents or not source.is_file():
-                return None
-            return Image(
-                str(source), width=width, height=height, kind="proportional"
-            )
+            return None
         except Exception:
             return None
 

@@ -110,6 +110,9 @@ class Settings(BaseSettings):
     S3_REGION: str | None = None
     S3_UPLOAD_PREFIX: str = "learner-records"
     S3_EXPORT_PREFIX: str = "teacher-handoff-exports"
+    # Keep durable visuals under an existing private, non-expiring staging
+    # allowlist until infrastructure provisions a dedicated image prefix.
+    S3_IMAGE_PREFIX: str = "learner-records/generated-visual-assets"
     S3_PRESIGNED_TTL_SECONDS: int = 300
     EXPORT_DOWNLOAD_TTL_SECONDS: int = 300
     EXPORT_RETENTION_DAYS: int = 7

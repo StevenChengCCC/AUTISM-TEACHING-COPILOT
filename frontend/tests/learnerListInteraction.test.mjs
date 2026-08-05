@@ -19,6 +19,16 @@ test("single click selects and double click opens the learner",()=>{
   assert.match(page,/onClick=\{\(\) => onStartLesson\(selected\.id\)\}/);
 });
 
+test("new lesson learner chooser scrolls and supports both open paths",()=>{
+  const page=fs.readFileSync(new URL("../src/v2/pages/StartNewLessonPage.tsx",import.meta.url),"utf8");
+  const css=fs.readFileSync(new URL("../src/v2/styles.css",import.meta.url),"utf8");
+  assert.match(page,/onClick=\{\(\)=>setSelectedId\(learner\.id\)\}/);
+  assert.match(page,/onDoubleClick=\{\(\)=>onSelectExisting\(learner\.id\)\}/);
+  assert.match(page,/onClick=\{\(\)=>onSelectExisting\(selectedId\)\}/);
+  assert.match(css,/\.v2-learner-list \{[^}]*max-height:420px;[^}]*overflow-y:auto;[^}]*overscroll-behavior:contain;/s);
+  assert.match(css,/\.v2-start-grid \{[^}]*align-items:start;/s);
+});
+
 test("records remain lazy-loaded for only the selected learner",()=>{
   const page=fs.readFileSync(new URL("../src/v2/pages/StudentsPage.tsx",import.meta.url),"utf8");
   assert.match(page,/getRecordsForLearner\(selectedId\)/);
