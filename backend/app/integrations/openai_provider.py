@@ -14,6 +14,7 @@ from app.integrations.ai_provider import V2AIProvider
 from app.schemas.v2_dto import (
     AIQuestion,
     AIQuestionOption,
+    CanonicalLearnerProfile,
     LearnerProfile,
     LearnerRecord,
     LessonDesignDraft,
@@ -21,10 +22,10 @@ from app.schemas.v2_dto import (
     MaterialSpec,
     MaterialValidationIssue,
     ProfileExtractionResult,
-    ProfileSignal,
     InstructionalConstraintSnapshot,
 )
 from app.services.v2_ai_context_service import build_ai_safe_profile
+from app.services.v2_profile_normalization_service import canonicalize_profile
 from app.skills.models import PromptEnvelope
 from app.skills.prompt_builder import PromptBuilder
 from app.skills.registry import SkillRegistry, get_skill_registry
@@ -113,6 +114,23 @@ class _LessonPlanningTransport(BaseModel):
     theme: str
     duration: str
     customNotes: str
+
+
+class _ProfileLearnerTransport(BaseModel):
+    """Compact provider boundary; compatibility fields are derived locally."""
+
+    model_config = ConfigDict(extra="forbid")
+    age: int = Field(ge=0, le=30)
+    normalizedProfile: CanonicalLearnerProfile
+
+
+class _ProfileExtractionTransport(BaseModel):
+    """Avoid duplicating the canonical factors in the paid AI response."""
+
+    model_config = ConfigDict(extra="forbid")
+    learner: _ProfileLearnerTransport
+    unknownFields: list[str] = Field(default_factory=list)
+    insights: list[str] = Field(default_factory=list)
 
 
 logger = logging.getLogger(__name__)
@@ -518,15 +536,14 @@ class OpenAIV2AIProvider(V2AIProvider):
                 self._prompts.build(
                     skill,
                     output_contract={
-                        "learner": "LearnerProfile-compatible object with a complete normalizedProfile canonical profile",
-                        "profileSignals": "array of evidence-linked signals",
+                        "learner": "verified age plus one complete normalizedProfile canonical profile",
                         "unknownFields": "array of field names",
                         "insights": "array of short strings",
                     },
                     trusted_input={"learner": payload["learner"]},
                     untrusted_input={"records": payload["records"]},
                 ),
-                ProfileExtractionResult,
+                _ProfileExtractionTransport,
                 model=self._settings.OPENAI_PROFILE_MODEL,
                 timeout_seconds=self._settings.OPENAI_PROFILE_TIMEOUT_SECONDS,
             )
@@ -537,7 +554,7 @@ class OpenAIV2AIProvider(V2AIProvider):
             preserved.update(extracted_values)
             preserved["id"] = learner.id
             preserved["code"] = learner.code
-            extracted = LearnerProfile.model_validate(preserved)
+            extracted = canonicalize_profile(LearnerProfile.model_validate(preserved))
             if (
                 extracted.normalized_profile is None
                 or not extracted.normalized_profile.factors
@@ -550,10 +567,10 @@ class OpenAIV2AIProvider(V2AIProvider):
                 isinstance(item, str) for item in insights
             ):
                 raise _OpenAIOutputError("Insights must be a list of strings")
-            signals = [
-                ProfileSignal.model_validate(item)
-                for item in result.get("profileSignals", [])
-            ]
+            # Canonical profile factors are the single source of truth. Legacy
+            # compatibility fields (including profileSignals) are projected
+            # deterministically instead of asking the model to repeat evidence.
+            signals = []
             unknown_fields = result.get("unknownFields", [])
             if not isinstance(unknown_fields, list) or not all(
                 isinstance(item, str) for item in unknown_fields

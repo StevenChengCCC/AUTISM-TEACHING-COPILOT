@@ -14,6 +14,7 @@ from app.integrations.openai_provider import (
     OpenAIV2AIProvider,
     _LessonPlanningTransport,
     _LessonPackageCopyTransport,
+    _ProfileExtractionTransport,
 )
 from app.schemas.v2_dto import (
     CanonicalLearnerProfile,
@@ -27,7 +28,6 @@ from app.schemas.v2_dto import (
     LessonSpecMaterialRequest,
     LessonSuccessCriterion,
     InstructionalConstraintSnapshot,
-    ProfileExtractionResult,
     ProfileFactor,
 )
 from app.services.v2_lesson_chat_service import V2LessonChatService
@@ -109,13 +109,10 @@ class _FakeParsedResponses:
         self.request = kwargs
         self.text_format = kwargs["text_format"]
         return SimpleNamespace(
-            output_parsed=ProfileExtractionResult(
-                learner=LearnerProfile(
-                    id="a102",
-                    code="Learner A-102",
-                    age=7,
-                    communicationMode="Short phrases",
-                    normalizedProfile=CanonicalLearnerProfile(
+            output_parsed=kwargs["text_format"](
+                learner={
+                    "age": 7,
+                    "normalizedProfile": CanonicalLearnerProfile(
                         learnerId="a102",
                         age=7,
                         factors=[
@@ -131,9 +128,8 @@ class _FakeParsedResponses:
                                 instructionalImplication="Accept short phrase responses.",
                             )
                         ],
-                    ),
-                ),
-                profileSignals=[],
+                    )
+                },
                 unknownFields=[],
                 insights=["Use visual supports"],
             )
@@ -306,13 +302,15 @@ def test_profile_extraction_uses_typed_responses_parse():
 
     result = provider.extract_profile(learner, [record])
 
-    assert responses.text_format is ProfileExtractionResult
+    assert responses.text_format is _ProfileExtractionTransport
     assert responses.request["model"] == "gpt-4.1-mini"
     assert "reasoning" not in responses.request
     assert "Extract every actionable" in responses.request["instructions"]
     assert "not_approved" in responses.request["instructions"]
     assert "generationConstraints" in responses.request["instructions"]
-    assert result.learner.communication_mode == "Short phrases"
+    schema = _ProfileExtractionTransport.model_json_schema()
+    assert "profileSignals" not in schema["properties"]
+    assert result.learner.communication_mode == "Uses short phrases"
     assert result.insights == ["Use visual supports"]
     assert provider.last_fallback_used is False
     assert provider.last_generation_metadata.model == "gpt-4.1-mini"

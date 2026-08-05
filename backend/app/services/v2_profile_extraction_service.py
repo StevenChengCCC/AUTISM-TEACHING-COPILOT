@@ -1,8 +1,9 @@
 from threading import Lock
+from time import monotonic
 from typing import ClassVar
 
 from app.integrations.ai_provider import V2AIProvider, get_v2_ai_provider
-from app.core.exceptions import ValidationError
+from app.core.exceptions import AIInvalidOutputError, AIProviderFailureError, ValidationError
 from app.schemas.v2_dto import (
     LearnerProfile,
     LearnerProfileExtractionDto,
@@ -32,6 +33,9 @@ class V2ProfileExtractionService:
     # a reload/double-click cannot start duplicate paid calls in this process.
     _lock_registry_guard: ClassVar[Lock] = Lock()
     _learner_locks: ClassVar[dict[str, Lock]] = {}
+    _recent_results: ClassVar[dict[str, tuple[float, LearnerProfileExtractionDto]]] = {}
+    _recent_failures: ClassVar[dict[str, tuple[float, type[Exception], str]]] = {}
+    _singleflight_seconds: ClassVar[float] = 10.0
 
     def __init__(
         self,
@@ -47,8 +51,30 @@ class V2ProfileExtractionService:
     def extract(
         self, learner_id: str, *, force: bool = False
     ) -> LearnerProfileExtractionDto:
-        with self._lock_for(learner_id):
-            return self._extract_locked(learner_id, force=force)
+        cache_key = f"{id(self.learners.repos)}:{learner_id}"
+        with self._lock_for(cache_key):
+            now = monotonic()
+            if force:
+                cached = self._recent_results.get(cache_key)
+                if cached and now - cached[0] < self._singleflight_seconds:
+                    return cached[1]
+                failure = self._recent_failures.get(cache_key)
+                if failure and now - failure[0] < self._singleflight_seconds:
+                    raise failure[1](failure[2])
+            try:
+                result = self._extract_locked(learner_id, force=force)
+            except (AIProviderFailureError, AIInvalidOutputError) as exc:
+                if force:
+                    self._recent_failures[cache_key] = (
+                        monotonic(),
+                        type(exc),
+                        exc.message,
+                    )
+                raise
+            if force:
+                self._recent_failures.pop(cache_key, None)
+                self._recent_results[cache_key] = (monotonic(), result)
+            return result
 
     @classmethod
     def _lock_for(cls, learner_id: str) -> Lock:
