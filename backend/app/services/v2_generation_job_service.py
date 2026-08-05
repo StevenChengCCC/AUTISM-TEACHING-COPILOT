@@ -219,6 +219,107 @@ class V2GenerationJobService:
         for artifact in job.artifacts:
             if not artifact.visuals:
                 continue
+            package_material = next(
+                (item for item in package.materials if item.id == artifact.artifactId),
+                None,
+            )
+            # Some supported image materials intentionally remain on the legacy
+            # renderer contract when a typed MaterialSpec cannot be constructed
+            # without inventing teacher-confirmed data. They still carry a real
+            # ``content.visualItems`` plan. Treat that plan as image work instead
+            # of silently declaring the package image-free.
+            if package_material is not None and package_material.visualAssetPlan is None:
+                selected = [
+                    item for item in artifact.visuals
+                    if not only_visual_id or item.visualId == only_visual_id
+                    if only_visual_id or item.status not in {"completed", "fallback"}
+                ]
+                if not selected:
+                    continue
+                try:
+                    updated = self.packages.prepare_material_image(
+                        artifact.artifactId,
+                        force_generation=any(item.attempts > 0 for item in selected),
+                    )
+                    raw_items = updated.content.get("visualItems")
+                    completed_ids = {
+                        str(item.get("id") or "")
+                        for item in raw_items
+                        if isinstance(item, dict)
+                        and str(item.get("generationStatus") or "")
+                        in {"ready", "needs_review"}
+                    } if isinstance(raw_items, list) else set()
+                    selected_ids = {item.visualId for item in selected}
+                    next_visuals = []
+                    for visual in artifact.visuals:
+                        if visual.visualId not in selected_ids:
+                            next_visuals.append(visual)
+                            continue
+                        if visual.visualId in completed_ids:
+                            next_visuals.append(visual.model_copy(update={
+                                "status": "completed",
+                                "attempts": visual.attempts + 1,
+                                "failureCategory": None,
+                                "recoverable": True,
+                            }))
+                            actual_visuals += 1
+                        else:
+                            next_visuals.append(visual.model_copy(update={
+                                "status": "failed",
+                                "attempts": visual.attempts + 1,
+                                "failureCategory": "provider_failure",
+                                "recoverable": True,
+                            }))
+                            if visual.required:
+                                required_failure = True
+                            else:
+                                optional_failure = True
+                    statuses = {item.status for item in next_visuals}
+                    artifact_status = (
+                        "failed" if "failed" in statuses
+                        else "completed" if statuses <= {"completed", "fallback"}
+                        else "pending"
+                    )
+                    job = self.get(job.jobId)
+                    job = self.repos.generation_jobs.save(job.model_copy(update={
+                        "artifacts": [
+                            item.model_copy(update={
+                                "status": artifact_status,
+                                "visuals": next_visuals,
+                            }) if item.artifactId == artifact.artifactId else item
+                            for item in job.artifacts
+                        ],
+                        "lastUpdatedAt": _iso(),
+                        "cost": job.cost.model_copy(update={
+                            "actualVisualCount": actual_visuals,
+                        }),
+                    }))
+                except Exception as exc:
+                    category, recoverable = self._classify_failure(exc)
+                    selected_ids = {item.visualId for item in selected}
+                    next_visuals = [
+                        visual.model_copy(update={
+                            "status": "failed",
+                            "attempts": visual.attempts + 1,
+                            "failureCategory": category,
+                            "recoverable": recoverable,
+                        }) if visual.visualId in selected_ids else visual
+                        for visual in artifact.visuals
+                    ]
+                    if any(item.required for item in selected):
+                        required_failure = True
+                    else:
+                        optional_failure = True
+                    job = self.get(job.jobId)
+                    self.repos.generation_jobs.save(job.model_copy(update={
+                        "artifacts": [
+                            item.model_copy(update={"status": "failed", "visuals": next_visuals})
+                            if item.artifactId == artifact.artifactId else item
+                            for item in job.artifacts
+                        ],
+                        "lastUpdatedAt": _iso(),
+                    }))
+                continue
             current_artifact = artifact
             for visual in artifact.visuals:
                 if only_visual_id and visual.visualId != only_visual_id:
@@ -574,6 +675,25 @@ class V2GenerationJobService:
                     model=(material.generationMetadata.model if material.generationMetadata else ""),
                     fallbackAssetId=item.fallback_asset_id,
                 ) for item in material.visualAssetPlan.visual_items if item.generation_method == "ai_generated"]
+            elif material.type == "visual_card":
+                raw_items = material.content.get("visualItems")
+                if isinstance(raw_items, list):
+                    visuals = [GenerationVisualState(
+                        visualId=str(item.get("id") or f"{material.id}-visual-{index + 1}"),
+                        semanticKey=str(
+                            item.get("semanticKey")
+                            or item.get("concept")
+                            or item.get("label")
+                            or f"legacy-visual-{index + 1}"
+                        ),
+                        required=bool(item.get("required", True)),
+                        provider=(material.generationMetadata.provider if material.generationMetadata else ""),
+                        model=(material.generationMetadata.model if material.generationMetadata else ""),
+                        fallbackAssetId=(
+                            str(item.get("fallbackAssetId"))
+                            if item.get("fallbackAssetId") else None
+                        ),
+                    ) for index, item in enumerate(raw_items) if isinstance(item, dict)]
             states.append(GenerationArtifactState(
                 artifactId=material.id,
                 materialType=material.type,
