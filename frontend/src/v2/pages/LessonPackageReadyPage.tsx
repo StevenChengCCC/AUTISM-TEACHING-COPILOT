@@ -1,4 +1,4 @@
-import { useCallback,useEffect,useState } from "react";
+import { useCallback,useEffect,useRef,useState } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { LearnerAvatar } from "../components/Avatar";
@@ -26,6 +26,11 @@ function materialVisualsReady(material:LessonPackage["materials"][number]):boole
   });
   return Boolean(material.content.imageUrl||material.content.imageBase64);
 }
+function materialRevisionApproved(material:LessonPackage["materials"][number]):boolean {
+  if(material.status!=="approved")return false;
+  if(!material.materialSpec)return true;
+  return material.materialSpec.approval.status==="approved"&&material.materialSpec.approval.approvedRevision===material.materialSpec.revision;
+}
 
 export function LessonPackageReadyPage({ lessonPackage,onModify,onReview,onEdit,onStartOver,onSave,onFeedback }:{ lessonPackage:LessonPackage|null;onModify:()=>void;onReview:(materialId?:string)=>void;onEdit:()=>void;onStartOver:()=>void;onSave:(value:LessonPackage)=>void;onFeedback:(message:string)=>void }) {
   const [learner,setLearner]=useState<LearnerProfile|null>(null);
@@ -36,6 +41,7 @@ export function LessonPackageReadyPage({ lessonPackage,onModify,onReview,onEdit,
   const [printBusy,setPrintBusy]=useState(false);const [retryingId,setRetryingId]=useState("");const [pageSize,setPageSize]=useState<"Letter"|"A4">(()=>lessonPackage?readSelectedPageSize(lessonPackage.id):"Letter");
   const [textProfile,setTextProfile]=useState<PrintTextProfile>(()=>lessonPackage?readSelectedTextProfile(lessonPackage.id):"standard");
   const [pdfDownload,setPdfDownload]=useState<PdfDownloadState>(initialPdfDownloadState);
+  const automaticApprovalAttempts=useRef(new Set<string>());
   useEffect(()=>{if(lessonPackage)void lessonKitApi.getLearnerById(lessonPackage.learnerId).then(setLearner);},[lessonPackage]);
   const refreshPrintReadiness=useCallback(async()=>{if(!lessonPackage)return null;const value=await lessonKitApi.getPackagePrintReadiness(lessonPackage.id);setPrintReadiness(value);return value;},[lessonPackage?.id]);
   useEffect(()=>{setPrintReadiness(null);void refreshPrintReadiness();},[refreshPrintReadiness,lessonPackage?.version]);
@@ -70,6 +76,25 @@ export function LessonPackageReadyPage({ lessonPackage,onModify,onReview,onEdit,
     void refresh();
     return()=>{cancelled=true;window.clearInterval(timer);};
   },[lessonPackage?.id,imageStateKey,refreshPrintReadiness]);
+  const materialApprovalKey=lessonPackage?.materials.map((item)=>`${item.id}:${item.status}:${item.materialSpec?.revision??item.version}:${item.materialSpec?.approval.approvedRevision??0}`).join("|")??"";
+  useEffect(()=>{
+    if(!lessonPackage||!printReadiness||printReadiness.ready||!lessonPackage.materials.length||!lessonPackage.materials.every(materialRevisionApproved))return;
+    const needsTeacherContent=printReadiness.blockers.some((item)=>item.materialId||["generation_job_incomplete","generation_job_failed","pending_visual","failed_required_visual","safety_validation_failure"].includes(item.category));
+    if(needsTeacherContent)return;
+    const attemptKey=`${lessonPackage.id}:${printReadiness.packageRevision}:${materialApprovalKey}`;
+    if(automaticApprovalAttempts.current.has(attemptKey))return;
+    automaticApprovalAttempts.current.add(attemptKey);
+    let cancelled=false;
+    void (async()=>{try{
+      const latest=await lessonKitApi.getLessonPackage(lessonPackage.id);
+      const approved=latest.status==="approved"?latest:await lessonKitApi.approveLessonPackage(latest.id,latest.version??1,"Teacher approved every current printable material revision");
+      if(cancelled)return;
+      onSave(approved);
+      const readiness=await refreshPrintReadiness();
+      if(!cancelled&&readiness?.ready)onFeedback("All teacher-approved pages are ready to download.");
+    }catch(reason){if(!cancelled)onFeedback(reason instanceof Error?reason.message:"The approved package could not be finalized.");}})();
+    return()=>{cancelled=true;};
+  },[lessonPackage?.id,materialApprovalKey,printReadiness?.packageRevision,printReadiness?.ready,refreshPrintReadiness,onSave,onFeedback]);
   if(!lessonPackage)return <section className="v2-empty"><h2>No lesson package yet</h2><Button onClick={onStartOver}>Start a New Lesson</Button></section>;
   const goalTitle=lessonPackage.goal.toLowerCase().includes("ask for help")?"Asking for Help":lessonPackage.goal;
   const summaryMaterial=lessonPackage.materials.find((item)=>item.type==="summary_template");
