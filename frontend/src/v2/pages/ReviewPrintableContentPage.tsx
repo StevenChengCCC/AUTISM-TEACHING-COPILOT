@@ -468,6 +468,24 @@ export function ReviewPrintableContentPage({
       }
       return;
     }
+    if (["revalidate_package", "repair_package"].includes(item.recoveryAction)) {
+      setActionBusy(true);
+      try {
+        const updated = await lessonKitApi.revalidateLessonPackage(lessonPackage.id);
+        setMaterials(updated.materials);
+        const readiness = await refreshPrintReadiness();
+        setLocalMessage(
+          readiness?.ready
+            ? "The complete package is ready to download."
+            : readiness?.recommendedNextAction?.explanation ?? "Package checks refreshed.",
+        );
+      } catch (reason) {
+        setLocalMessage(reason instanceof Error ? reason.message : "Package checks could not be refreshed.");
+      } finally {
+        setActionBusy(false);
+      }
+      return;
+    }
     setLocalMessage(item.explanation);
     onBack();
   };
@@ -648,10 +666,10 @@ export function ReviewPrintableContentPage({
               </section>
             )}
           </Card>
-          {selected?.materialSpec && <Card className="v2-personalization-trace"><h3>Personalized using</h3><div><section><h4>Profile factors</h4>{personalizedFactors.length?<ul>{personalizedFactors.map((factor)=><li key={factor.id}><b>{factor.label}:</b> {factor.value}</li>)}</ul>:<p>Profile revision {lessonPackage.lessonSpec?.profileRevision ?? "recorded"}</p>}</section><section><h4>Teacher decisions</h4><ul>{selected.materialSpec.decisionIds.map((id)=><li key={id}>{id}</li>)}</ul></section><section><h4>Access constraints</h4><ul>{accessConstraints.map((value)=><li key={value}>{value}</li>)}</ul></section><section><h4>Excluded elements</h4>{semanticExclusions.length?<ul>{semanticExclusions.map((value)=><li key={value}>{value}</li>)}</ul>:<p>No additional excluded elements.</p>}</section></div></Card>}
+          {selected?.materialSpec && <details className="v2-personalization-trace"><summary><span><b>Why this material is personalized</b><small>Profile needs and your confirmed choices</small></span><em>View</em></summary><div><section><h4>Learner needs applied</h4>{personalizedFactors.length?<ul>{personalizedFactors.slice(0,4).map((factor)=><li key={factor.id}><b>{factor.label}:</b> {factor.value}</li>)}</ul>:<p>Uses the current teacher-reviewed learner profile.</p>}</section><section><h4>Your choices applied</h4><p>Uses your confirmed goal, classroom situations, and material selections.</p></section>{accessConstraints.length>0&&<section><h4>Access supports</h4><ul>{accessConstraints.slice(0,4).map((value)=><li key={value}>{value}</li>)}</ul></section>}{semanticExclusions.length>0&&<section><h4>Kept out</h4><ul>{semanticExclusions.slice(0,4).map((value)=><li key={value}>{value}</li>)}</ul></section>}</div></details>}
           <Card className="v2-print-controls">
             <span>▣ &nbsp; Print view</span>
-            <PrintPresetPicker catalog={printPresetCatalog} selected={printPreset} onSelect={(value) => { setPrintPreset(value); rememberSelectedPrintPreset(lessonPackage.id, value); setPdfDownload(initialPdfDownloadState); }}/>
+            <PrintPresetPicker compact catalog={printPresetCatalog} selected={printPreset} onSelect={(value) => { setPrintPreset(value); rememberSelectedPrintPreset(lessonPackage.id, value); setPdfDownload(initialPdfDownloadState); }}/>
             <label>
               Page size
               <select

@@ -263,6 +263,57 @@ def test_readiness_distinguishes_incomplete_and_stale_package_boundaries():
     assert "stale_package_revision" in categories
 
 
+def test_stale_generation_job_offers_retry_instead_of_permanent_wait():
+    repos = V2Repositories()
+    package = _generated_package(repos)
+    repos.generation_jobs.save(GenerationJobDto(
+        jobId="synthetic-stale-job",
+        learnerId=package.learnerId,
+        draftId=package.draftId,
+        lessonSpecId=package.lessonSpec.id,
+        lessonSpecRevision=package.lessonSpec.revision,
+        packageContentPlanRevision=package.packageContentPlan.lesson_spec_revision,
+        packageId=package.id,
+        status="in_progress",
+        lastUpdatedAt="2020-01-01T00:00:00+00:00",
+        idempotencyKey="synthetic-stale-key",
+    ))
+
+    blocker = next(
+        item for item in V2PrintReadinessService(repos).evaluate(package.id).blockers
+        if item.category == "generation_job_incomplete"
+    )
+    assert blocker.recoveryAction == "retry_generation"
+    assert blocker.retryPossible is True
+
+
+def test_revalidation_persists_current_package_and_lesson_spec_revisions():
+    repos = V2Repositories()
+    package = _generated_package(repos)
+    current = repos.lesson_packages.get(package.id)
+    stale = repos.lesson_packages.save(current.model_copy(update={
+        "status": "teacher_review_needed",
+        "validatedRevision": None,
+        "validatedLessonSpecRevision": None,
+    }))
+
+    updated = V2LessonPackageService(repos).revalidate_product(stale.id)
+    persisted = repos.lesson_packages.get(stale.id)
+
+    assert updated.validationStatus == "passed"
+    assert updated.validatedRevision == updated.version
+    assert updated.validatedLessonSpecRevision == updated.lessonSpec.revision
+    assert persisted.validatedRevision == persisted.version
+    assert persisted.status == "teacher_review_needed"
+    categories = {
+        item.category
+        for item in V2PrintReadinessService(repos).evaluate(stale.id).blockers
+    }
+    assert "stale_lesson_spec_revision" not in categories
+    assert "stale_package_revision" not in categories
+    assert "package_not_approved" in categories
+
+
 def test_package_semantic_and_safety_failures_are_separate_categories():
     repos = V2Repositories()
     package = _generated_package(repos)

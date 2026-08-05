@@ -77,4 +77,15 @@ test("both print screens consume the backend contract and disable silent downloa
   assert.match(reviewPage, /disabled=\{actionBusy \|\| !printReadiness\?\.ready/);
   assert.match(reviewPage, /Approve and open next pending item/);
   assert.doesNotMatch(reviewPage, /const generating = visualMaterials\.find/);
+  assert.match(readyPage, /revalidateLessonPackage/);
+  assert.match(reviewPage, /revalidateLessonPackage/);
+  assert.doesNotMatch(reviewPage, /decisionIds\.map/);
+  assert.doesNotMatch(reviewPage, /Profile revision/);
+
+  const panel = readFileSync(
+    new URL("../src/v2/components/PrintReadinessPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(panel, /Fix next issue ·/);
+  assert.doesNotMatch(panel, /Package revision/);
 });

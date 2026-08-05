@@ -407,9 +407,11 @@ export const lessonKitApi = {
     useLocalMock
       ? lessonKitMockApi.approveLessonPackage(id)
       : backendClient.post(`/v2/lesson-packages/${id}/approve`, {
-          expectedVersion,
-          reason,
-        }),
+        expectedVersion,
+        reason,
+      }),
+  revalidateLessonPackage: (id: string): Promise<LessonPackage> =>
+    backendClient.post(`/v2/lesson-packages/${id}/revalidate`),
   rejectLessonPackage: (
     id: string,
     expectedVersion: number,
