@@ -88,4 +88,6 @@ test("both print screens consume the backend contract and disable silent downloa
   );
   assert.doesNotMatch(panel, /Fix next issue ·/);
   assert.doesNotMatch(panel, /Package revision/);
+  assert.match(panel, /Download opens automatically after the last required page is approved/);
+  assert.doesNotMatch(panel, /remaining\.map/);
 });
